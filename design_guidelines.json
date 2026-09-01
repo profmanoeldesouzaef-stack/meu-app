@@ -1,0 +1,182 @@
+{
+  "app_name": "Vyra Training & Performance",
+  "personality": "6 Glass / Luxe (with 7 Dark-First Utility metrics)",
+  "personality_one_liner": "A premium, dark, silent, and editorial training club where cinematic glass aesthetics meet high-performance utility.",
+  "color": {
+    "surface": "#0A0A0A",
+    "onSurface": "#F5F5F7",
+    "surfaceSecondary": "#151515",
+    "onSurfaceSecondary": "#9B9BA1",
+    "surfaceTertiary": "#1D1D1F",
+    "onSurfaceTertiary": "#9B9BA1",
+    "surfaceInverse": "#F5F5F7",
+    "onSurfaceInverse": "#0A0A0A",
+    "brand": "#FF6A2A",
+    "brandPrimary": "#FF6A2A",
+    "onBrandPrimary": "#F5F5F7",
+    "brandSecondary": "#FF9A62",
+    "onBrandSecondary": "#0A0A0A",
+    "brandTertiary": "#D8B46A",
+    "onBrandTertiary": "#0A0A0A",
+    "success": "#34C759",
+    "onSuccess": "#F5F5F7",
+    "warning": "#D8B46A",
+    "onWarning": "#0A0A0A",
+    "error": "#FF3B30",
+    "onError": "#F5F5F7",
+    "info": "#6D9BFF",
+    "onInfo": "#F5F5F7",
+    "border": "#2B2B2F",
+    "borderStrong": "#4A4A52",
+    "divider": "#2B2B2F",
+    "shapePlan": "#D96E92",
+    "forgePlan": "#6D9BFF"
+  },
+  "typography": {
+    "displayFontFamily": "System",
+    "textFontFamily": "System",
+    "scale": {
+      "sm": 12,
+      "base": 15,
+      "lg": 16,
+      "xl": 22,
+      "2xl": 34
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room. Cards must not be flush to edges. Apply safe area padding correctly.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glass on bottom tab bar, sticky headers, bottom sheets, and modal scrims.",
+      "Use 15% opacity fill over #151515 with 10-20px blur for cards.",
+      "Always include a 1px solid translucent border (#2B2B2F) on glass surfaces.",
+      "Pair blur with a translucent tinted base underneath."
+    ],
+    "dont's": [
+      "Never apply glass to form fields or body text regions.",
+      "Do not use glass if it sacrifices WCAG AA legibility."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Login/Demo",
+      "purpose": "Cinematic entry point showcasing the premium club feel, allowing login or demo persona selection.",
+      "states": {
+        "loading": "Centered sleek spinner in brand orange.",
+        "empty": "N/A",
+        "error": "Bottom sheet toast with red error message and retry."
+      },
+      "layout": "Full-bleed abstract obsidian/gold background. Gradient scrim at bottom 40%. Large logo at top. Primary action ('Login') and secondary action ('Demo Persona') in thumb zone. 52px height buttons, 16px radius."
+    },
+    {
+      "name": "Paywall/Showcase",
+      "purpose": "Showcases premium plans (Project Reset 12, Shape, Forge) with a luxurious, editorial layout.",
+      "states": {
+        "loading": "Skeleton cards with glass shimmer.",
+        "empty": "N/A",
+        "error": "Retry block."
+      },
+      "layout": "Scrollable list of premium cards. Each card uses glassmorphism (#151515 background + blur), 24px radius, 1px border. Plan specific accents: Shape uses pink (#D96E92), Forge uses blue (#6D9BFF). Sticky checkout button at the bottom."
+    },
+    {
+      "name": "Home",
+      "purpose": "A personalized dashboard showing weekly progress, today's workout, and macro summary.",
+      "states": {
+        "loading": "Skeleton loaders matching card dimensions.",
+        "empty": "Onboarding prompt to start first workout.",
+        "error": "Sleek inline error with 'Reload' button."
+      },
+      "layout": "Greeting at top left. Horizontal scroll for weekly progress. Large hero card for 'Today's Workout' with a dark fitness model background and vertical gradient scrim. Below it, a macro-resumo card. 24px padding between sections."
+    },
+    {
+      "name": "Workout (Treino)",
+      "purpose": "Detailed view of the day's training, exercises, and sets, prioritizing fast scanning during motion.",
+      "states": {
+        "loading": "Skeleton rows.",
+        "empty": "Illustration of gym equipment with 'No workout today'.",
+        "error": "Error state with retry."
+      },
+      "layout": "List of exercise cards. Highly tactical: bold metrics, clear checkboxes to mark done, prominent FAB for 'Form Checker (AI)' using gold accent. Sticky 'Finish Workout' CTA at bottom."
+    },
+    {
+      "name": "Diet (Dieta)",
+      "purpose": "Manages nutrition with a macro calculator and daily food list.",
+      "states": {
+        "loading": "Skeleton rows.",
+        "empty": "Prompt to set up diet.",
+        "error": "Retry button."
+      },
+      "layout": "Top section shows macro distribution using segmented progress rings. Below, list of foods grouped by meal. Dark food imagery with gradients. Substitution action on swipe."
+    },
+    {
+      "name": "Evolution (Evolução) & Challenges",
+      "purpose": "Tracks user weight, measurements, and showcases Before/After photo galleries.",
+      "states": {
+        "loading": "Skeleton graph.",
+        "empty": "Prompt to log first measurement.",
+        "error": "Retry button."
+      },
+      "layout": "Line chart for weight history at the top. Grid (2-col) of Before/After cards for Challenges. Filtering chips pinned under header with a glass background."
+    }
+  ],
+  "images": {
+    "login_hero": {
+      "url": "https://images.unsplash.com/photo-1609083590460-7b8cc0ca65f8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBvYnNpZGlhbiUyMGdvbGQlMjB0ZXh0dXJlfGVufDB8fHx8MTc4ODI5ODgxNHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract dark obsidian gold texture for splash"
+    },
+    "workout_hero": {
+      "url": "https://images.pexels.com/photos/29667299/pexels-photo-29667299.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Two muscular men posing in a dimly lit gym"
+    },
+    "diet_hero": {
+      "url": "https://images.unsplash.com/photo-1649067846117-2d71b76be1e0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxoZWFsdGh5JTIwZm9vZCUyMG1hY3JvcyUyMGRpZXQlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODgyOTg4MTR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Healthy food and macros on dark background"
+    },
+    "challenge_model": {
+      "url": "https://images.unsplash.com/photo-1550345332-09e3ac987658?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwxfHxmaXRuZXNzJTIwbW9kZWwlMjBkYXJrJTIwc3R1ZGlvJTIwbGlnaHRpbmd8ZW58MHx8fHwxNzg4Mjk4ODE0fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Fitness model in dark studio lighting"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette: Obsidian (#0A0A0A) background, glass surfaces (#151515 / #1D1D1F), and transluscent borders (#2B2B2F). No lime green allowed.",
+    "Implement the primary buttons with exactly 52px height, 16px border radius, and font weight 500 (semibold look without going beyond 500).",
+    "Cards must use a 20-24px border radius, 1px transluscent border (#2B2B2F), and a low shadow.",
+    "Use SF Pro (system font) for iOS fallback to generic sans-serif on Android. Follow exact font sizing: 30-34px for titles, 20-22px for sections, 15-16px for body.",
+    "Bottom tab bar must accommodate 5 tabs exactly as requested (Início, Treinos, Dieta, Evolução, Perfil). Maintain linear monochromatic icons that colorize only when active.",
+    "Place the Community FAB on the bottom right, hovering directly above the bottom tab bar. Use glassmorphism on the FAB.",
+    "Every background image needs a top-to-bottom linear gradient scrim (transparent to #0A0A0A at the bottom) to guarantee text readability.",
+    "Use Gold (#D8B46A) specifically for premium elements and the Form Checker AI assistant badge.",
+    "Use Pink (#D96E92) and Blue (#6D9BFF) strictly as accents for the Shape and Forge plans respectively."
+  ]
+}
