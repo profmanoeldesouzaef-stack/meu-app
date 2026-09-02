@@ -14,7 +14,7 @@ type Cycle = "month" | "quarter" | "year";
 export default function Paywall() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { t, fmtPrice, lang } = useApp();
+  const { t, fmtPrice, lang, anamnesisDone } = useApp();
   const [plans, setPlans] = useState<any[]>([]);
   const [cycle, setCycle] = useState<Cycle>("quarter");
   const [selected, setSelected] = useState<string>("reset12");
@@ -112,13 +112,22 @@ export default function Paywall() {
       </ScrollView>
 
       <View style={[styles.stickyBar, { paddingBottom: insets.bottom + spacing.md }]}>
+        {!anamnesisDone && (
+          <View testID="anamnesis-warn" style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", padding: spacing.sm, borderRadius: radius.md, backgroundColor: "rgba(216,180,106,0.12)", borderWidth: 1, borderColor: "rgba(216,180,106,0.4)", marginBottom: spacing.sm }}>
+            <Ionicons name="alert-circle" size={16} color={colors.gold} />
+            <Text style={{ color: colors.gold, fontSize: fs.sm, flex: 1, fontWeight: "600" }}>{t("paywall.blocked")}</Text>
+            <Pressable testID="go-anamnesis" onPress={() => router.push("/anamnesis")}>
+              <Text style={{ color: colors.gold, fontSize: fs.sm, fontWeight: "700", textDecorationLine: "underline" }}>{t("cta.start_anamnesis")}</Text>
+            </Pressable>
+          </View>
+        )}
         <Pressable
           testID="paywall-continue"
-          disabled={!chosen}
+          disabled={!chosen || !anamnesisDone}
           onPress={() =>
             router.push({ pathname: "/checkout", params: { slug: chosen.slug, cycle } })
           }
-          style={({ pressed }) => [styles.cta, { opacity: pressed ? 0.85 : 1 }]}
+          style={({ pressed }) => [styles.cta, { opacity: !anamnesisDone ? 0.4 : pressed ? 0.85 : 1 }]}
         >
           <Text style={styles.ctaText}>{t("cta.continue")}</Text>
           <Ionicons name="arrow-forward" size={18} color={colors.text} />

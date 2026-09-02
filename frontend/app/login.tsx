@@ -3,18 +3,32 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 
-import { colors, radius, spacing, fs } from "@/src/theme/tokens";
+import { radius, spacing, fs } from "@/src/theme/tokens";
 import { useApp } from "@/src/context/AppContext";
 
 export default function Login() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { t, lang, setLang } = useApp();
+  const { t, lang, setLang, colors, loggedIn, setLoggedIn, anamnesisDone } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    // auto-redirect if already authenticated on this device
+    if (loggedIn) {
+      if (!anamnesisDone) router.replace("/anamnesis");
+      else router.replace("/(tabs)");
+    }
+  }, [loggedIn, anamnesisDone, router]);
+
+  const proceed = () => {
+    setLoggedIn(true);
+    if (!anamnesisDone) router.replace("/anamnesis");
+    else router.replace("/(tabs)");
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -24,7 +38,7 @@ export default function Login() {
         contentFit="cover"
       />
       <LinearGradient
-        colors={["rgba(10,10,10,0.55)", "rgba(10,10,10,0.85)", colors.bg]}
+        colors={["rgba(10,10,10,0.55)", "rgba(10,10,10,0.85)", "#0A0A0A"]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -36,21 +50,16 @@ export default function Login() {
           paddingHorizontal: spacing.xl,
           justifyContent: "space-between",
         }}
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.langRow}>
-          <Pressable
-            testID="lang-toggle-pt"
-            onPress={() => setLang("pt")}
-            style={[styles.langPill, lang === "pt" && styles.langPillActive]}
-          >
-            <Text style={[styles.langText, lang === "pt" && styles.langTextActive]}>PT</Text>
+          <Pressable testID="lang-toggle-pt" onPress={() => setLang("pt")}
+            style={[styles.langPill, lang === "pt" && { backgroundColor: colors.brand, borderColor: colors.brand }]}>
+            <Text style={[styles.langText, lang === "pt" && { color: "#F5F5F7" }]}>PT</Text>
           </Pressable>
-          <Pressable
-            testID="lang-toggle-en"
-            onPress={() => setLang("en")}
-            style={[styles.langPill, lang === "en" && styles.langPillActive]}
-          >
-            <Text style={[styles.langText, lang === "en" && styles.langTextActive]}>EN</Text>
+          <Pressable testID="lang-toggle-en" onPress={() => setLang("en")}
+            style={[styles.langPill, lang === "en" && { backgroundColor: colors.brand, borderColor: colors.brand }]}>
+            <Text style={[styles.langText, lang === "en" && { color: "#F5F5F7" }]}>EN</Text>
           </Pressable>
         </View>
 
@@ -62,40 +71,18 @@ export default function Login() {
 
         <View style={styles.card}>
           <Text style={styles.label}>{t("login.email")}</Text>
-          <TextInput
-            testID="login-email"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="you@vyra.club"
-            placeholderTextColor={colors.textDim}
-            style={styles.input}
-          />
+          <TextInput testID="login-email" value={email} onChangeText={setEmail} autoCapitalize="none"
+            keyboardType="email-address" placeholder="you@vyra.club" placeholderTextColor="#9B9BA1" style={styles.input} />
           <Text style={styles.label}>{t("login.password")}</Text>
-          <TextInput
-            testID="login-password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="••••••••"
-            placeholderTextColor={colors.textDim}
-            style={styles.input}
-          />
+          <TextInput testID="login-password" value={password} onChangeText={setPassword} secureTextEntry
+            placeholder="••••••••" placeholderTextColor="#9B9BA1" style={styles.input} />
 
-          <Pressable
-            testID="login-submit-button"
-            onPress={() => router.replace("/paywall")}
-            style={({ pressed }) => [styles.primary, { opacity: pressed ? 0.85 : 1 }]}
-          >
+          <Pressable testID="login-submit-button" onPress={proceed}
+            style={({ pressed }) => [styles.primary, { backgroundColor: colors.brand, opacity: pressed ? 0.85 : 1 }]}>
             <Text style={styles.primaryText}>{t("cta.login")}</Text>
           </Pressable>
 
-          <Pressable
-            testID="enter-demo-button"
-            onPress={() => router.replace("/paywall")}
-            style={styles.secondary}
-          >
+          <Pressable testID="enter-demo-button" onPress={proceed} style={styles.secondary}>
             <Ionicons name="flash-outline" size={16} color={colors.brand} />
             <Text style={styles.secondaryText}>{t("cta.enter_demo")}</Text>
           </Pressable>
@@ -111,60 +98,18 @@ export default function Login() {
 
 const styles = StyleSheet.create({
   langRow: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm },
-  langPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(21,21,21,0.7)",
-  },
-  langPillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  langText: { color: colors.textDim, fontSize: fs.sm, fontWeight: "600" },
-  langTextActive: { color: colors.text },
-  mark: { color: colors.text, fontSize: 46, fontWeight: "800", letterSpacing: 8 },
-  tag: { color: colors.gold, fontSize: fs.base, letterSpacing: 3, marginTop: spacing.sm, textTransform: "uppercase" },
-  sub: { color: colors.textDim, fontSize: fs.lg, marginTop: spacing.md, lineHeight: 22 },
-  card: {
-    backgroundColor: "rgba(21,21,21,0.9)",
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    gap: spacing.md,
-  },
-  label: { color: colors.textDim, fontSize: fs.sm, textTransform: "uppercase", letterSpacing: 1 },
-  input: {
-    backgroundColor: colors.surface2,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.text,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-    fontSize: fs.lg,
-  },
-  primary: {
-    height: 52,
-    borderRadius: radius.lg,
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: spacing.md,
-  },
-  primaryText: { color: colors.text, fontSize: fs.lg, fontWeight: "600" },
-  secondary: {
-    height: 52,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(29,29,31,0.7)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-  },
-  secondaryText: { color: colors.text, fontSize: fs.lg, fontWeight: "500" },
+  langPill: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill, borderWidth: 1, borderColor: "#2B2B2F", backgroundColor: "rgba(21,21,21,0.7)" },
+  langText: { color: "#9B9BA1", fontSize: fs.sm, fontWeight: "600" },
+  mark: { color: "#F5F5F7", fontSize: 46, fontWeight: "800", letterSpacing: 8 },
+  tag: { color: "#D8B46A", fontSize: fs.base, letterSpacing: 3, marginTop: spacing.sm, textTransform: "uppercase" },
+  sub: { color: "#9B9BA1", fontSize: fs.lg, marginTop: spacing.md, lineHeight: 22 },
+  card: { backgroundColor: "rgba(21,21,21,0.9)", borderColor: "#2B2B2F", borderWidth: 1, borderRadius: radius.xl, padding: spacing.xl, gap: spacing.md },
+  label: { color: "#9B9BA1", fontSize: fs.sm, textTransform: "uppercase", letterSpacing: 1 },
+  input: { backgroundColor: "#1D1D1F", borderRadius: radius.md, borderWidth: 1, borderColor: "#2B2B2F", color: "#F5F5F7", paddingHorizontal: spacing.md, paddingVertical: 14, fontSize: fs.lg },
+  primary: { height: 52, borderRadius: radius.lg, alignItems: "center", justifyContent: "center", marginTop: spacing.md },
+  primaryText: { color: "#F5F5F7", fontSize: fs.lg, fontWeight: "600" },
+  secondary: { height: 52, borderRadius: radius.lg, borderWidth: 1, borderColor: "#2B2B2F", backgroundColor: "rgba(29,29,31,0.7)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
+  secondaryText: { color: "#F5F5F7", fontSize: fs.lg, fontWeight: "500" },
   link: { alignItems: "center", paddingVertical: spacing.sm },
-  linkText: { color: colors.textDim, fontSize: fs.base },
+  linkText: { color: "#9B9BA1", fontSize: fs.base },
 });

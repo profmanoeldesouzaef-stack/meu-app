@@ -1,15 +1,50 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox, StatusBar } from "react-native";
+import { LogBox, StatusBar, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
-import { AppProvider } from "@/src/context/AppContext";
+import { AppProvider, useApp } from "@/src/context/AppContext";
+import { api } from "@/src/api/client";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
+
+// Hide default web scrollbar globally (user requested)
+if (Platform.OS === "web" && typeof document !== "undefined") {
+  const style = document.createElement("style");
+  style.innerHTML = `
+    * { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+    *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+    body { background-color: #0A0A0A; }
+  `;
+  document.head.appendChild(style);
+}
+
+function AppInner() {
+  const { setAnamnesisDone } = useApp();
+  // sync remote profile → local flag once on cold start
+  useEffect(() => {
+    api.profile()
+      .then((p) => { if (p?.anamnesis_done) setAnamnesisDone(true); })
+      .catch(() => {});
+  }, [setAnamnesisDone]);
+
+  return (
+    <>
+      <StatusBar barStyle="light-content" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "#0A0A0A" },
+          animation: "fade",
+        }}
+      />
+    </>
+  );
+}
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
@@ -26,14 +61,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
       <SafeAreaProvider>
         <AppProvider>
-          <StatusBar barStyle="light-content" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: "#0A0A0A" },
-              animation: "fade",
-            }}
-          />
+          <AppInner />
         </AppProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -18,11 +18,19 @@ export default function FormChecker() {
   const run = async () => {
     setLoading(true);
     setResult(null);
-    setTimeout(async () => {
-      const res = await api.formChecker();
+    try {
+      const res = await api.aiFormChecker("Supino reto barra", [
+        "Postura neutra do quadril",
+        "Amplitude completa do movimento",
+        "Controle da fase excêntrica",
+        "Estabilidade do core",
+      ]);
       setResult(res);
+    } catch (e) {
+      // handled via fallback in backend
+    } finally {
       setLoading(false);
-    }, 1200);
+    }
   };
 
   return (
