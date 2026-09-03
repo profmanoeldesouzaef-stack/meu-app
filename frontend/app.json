@@ -1,24 +1,24 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "VYRA",
+    "slug": "vyra-fitness",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "vyra",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.docchangesmobile.rj8qhl"
+      "bundleIdentifier": "com.vyra.fitness"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#0A0A0A"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.docchangesmobile.rj8qhl"
+      "package": "com.vyra.fitness"
     },
     "web": {
       "bundler": "metro",

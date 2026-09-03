@@ -1,0 +1,6 @@
+{
+  "name": "VYRA Training & Performance",
+  "description": "Clube de treino e performance com estética premium, galeria de fotos e votação Supabase, diário com aferição de perimetria, treinos e radar do coach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
