@@ -1,22 +1,43 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
-import { HallEntry, ChallengeEvent } from "../types";
-import { GaleriaView } from "./GaleriaView";
+import { supabase } from "../lib/supabase";
+import { getVotingUserId } from "../lib/supabaseClient";
 import { AccessGate } from "../components/AccessGate";
+import { GaleriaPhotoUpload } from "../components/GaleriaPhotoUpload";
 import {
   Trophy,
-  Award,
-  Sparkles,
-  ShieldCheck,
+  Flame,
+  Heart,
+  Calendar,
+  Megaphone,
   Clock,
   ArrowRight,
-  Eye,
-  EyeOff,
+  Plus,
+  PlusCircle,
+  UploadCloud,
+  Share2,
+  Check,
+  X,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle,
+  Filter,
+  Sparkles,
   Camera,
-  ChevronDown,
-  ChevronUp,
+  Award,
+  Lock,
 } from "lucide-react";
+
+// Filtros de categoria
+const FILTERS = ["all", "reset12", "shape", "forge"] as const;
+
+// Ícone oficial estilizado do WhatsApp
+const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = "w-3.5 h-3.5" }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+  </svg>
+);
 
 export const ChallengesView: React.FC = () => {
   const { t, persona, subscription, setActiveView } = useApp();
@@ -33,313 +54,759 @@ export const ChallengesView: React.FC = () => {
     );
   }
 
-  const [hall, setHall] = useState<HallEntry[]>([]);
-  const [challengeEvent, setChallengeEvent] = useState<ChallengeEvent | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showGallery, setShowGallery] = useState(false);
+  const [tab, setTab] = useState<"active" | "hall">("active");
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [items, setItems] = useState<any[]>([]);
+  const [hall, setHall] = useState<any[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
 
-  const loadData = async () => {
+  // Simulação de data para testes de Coach / Administrador
+  const [simulatedDay, setSimulatedDay] = useState<number | null>(null);
+
+  // --- O CÉREBRO DO CALENDÁRIO ---
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = hoje.getMonth();
+  const diaReal = hoje.getDate(); 
+  const diaAtual = simulatedDay !== null ? simulatedDay : diaReal;
+  
+  // Descobre qual é o último dia do mês atual
+  const ultimoDiaDoMes = new Date(ano, mes + 1, 0).getDate(); 
+  const penultimoDia = ultimoDiaDoMes - 1;
+
+  // As regras do jogo:
+  const isFaseApresentacao = diaAtual >= 1 && diaAtual <= 6;
+  const isFaseInscricao = diaAtual >= 7 && diaAtual <= 25;
+  const isFaseVotacaoExterna = diaAtual >= 26 && diaAtual <= penultimoDia;
+  const isDiaDeTransicao = diaAtual === ultimoDiaDoMes;
+  // -------------------------------
+
+  const loadActive = async () => {
     try {
-      const [hl, evt] = await Promise.all([
-        api.getHall().catch(() => []),
-        api.getChallengeEvent().catch(() => null),
-      ]);
-      setHall(hl);
-      if (evt) setChallengeEvent(evt);
+      const { data, error } = await supabase
+        .from("challenge_photos")
+        .select("*")
+        .order("votes_count", { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        let filtered = data;
+        if (filter !== "all") {
+          filtered = data.filter((item: any) => item.category === filter);
+        }
+        const formatados = filtered.map((item: any) => ({
+          id: item.id,
+          before_image: { uri: item.before_image || item.photo_url },
+          after_image: { uri: item.photo_url || item.after_image },
+          title: item.caption || "Desafio Vyra",
+          author: item.participant_name || "Atleta Vyra",
+          weeks: 12, 
+          likes: Number(item.votes_count) || 0,
+          vote_url: item.vote_url || null, // Puxando o link do post do Instagram que você colocar
+        }));
+        setItems(formatados);
+        return;
+      }
     } catch (e) {
-      console.error("Error loading challenge event info:", e);
-    } finally {
-      setLoading(false);
+      console.warn("Supabase fetch notice:", e);
+    }
+
+    // Fallback: consome API interna
+    try {
+      const apiChallenges = await api.getChallenges(filter === "all" ? undefined : filter);
+      const formatados = apiChallenges.map((item) => ({
+        id: item.id,
+        before_image: { uri: item.before_image },
+        after_image: { uri: item.after_image },
+        title: item.title || "Desafio Vyra",
+        author: item.author || "Atleta Vyra",
+        weeks: item.weeks || 12,
+        likes: item.votes || item.likes || 0,
+        vote_url: item.vote_url || null,
+      }));
+      setItems(formatados);
+    } catch (err) {
+      console.error("Error loading fallback challenges:", err);
     }
   };
+
+  const loadHall = () => api.hall().then(setHall).catch(() => {});
 
   useEffect(() => {
-    loadData();
+    loadActive();
+  }, [filter]);
+
+  useEffect(() => {
+    loadHall();
   }, []);
 
-  const handleToggleChallengeEvent = async () => {
+  const like = async (id: string) => {
     try {
-      const updated = await api.toggleChallengeEvent();
-      setChallengeEvent(updated);
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id || getVotingUserId();
+      const { error: insertError } = await supabase
+        .from("photo_votes")
+        .insert({ photo_id: id, user_id: userId });
+
+      if (insertError) {
+        await supabase.from("photo_votes").delete().match({ photo_id: id, user_id: userId });
+      }
     } catch (e) {
-      console.error("Error toggling event:", e);
+      await api.likeChallenge(id).catch(() => {});
     }
+    loadActive(); 
   };
 
-  // Check if challenge is in "Aguardando" / Loading status
-  const isLoadingStatus =
-    challengeEvent && (challengeEvent.status === "loading" || !challengeEvent.is_active);
+  const closeChallenge = async (id: string) => {
+    try {
+      await api.closeChallenge(id);
+    } catch (e) {
+      console.error("Error closing challenge:", e);
+    }
+    loadActive(); 
+    loadHall();
+  };
+
+  // Função que abre o WhatsApp pedindo votos
+  const pedirVotos = async (nome: string, url: string | null) => {
+    if (!url) {
+      alert("Aviso: O link da votação no Instagram ainda não foi liberado pelo Coach!");
+      return;
+    }
+    const message = `Fala galera! Meu shape tá na reta no Desafio Vyra 🏆\n\nCliquem no link abaixo, vão lá no post e comentem MEU NOME (${nome}) pra me ajudar a ganhar essa batalha!\n\nVote aqui: ${url}`;
+    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: "Desafio Vyra 🏆 - Vote em mim!",
+          text: message,
+          url: url,
+        });
+        return;
+      } catch (error) {
+        console.log("Compartilhamento nativo não acionado, abrindo WhatsApp:", error);
+      }
+    }
+    window.open(whatsappUrl, "_blank");
+  };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-28 md:pb-12 space-y-8 animate-in fade-in duration-300">
-      {/* Top Section Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#2B2B2F] pb-6">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-36 space-y-6 animate-in fade-in duration-300">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#2B2B2F] pb-5">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black tracking-widest text-[#D8B46A] uppercase bg-[#D8B46A]/15 px-3 py-1 rounded-full border border-[#D8B46A]/30 flex items-center gap-1.5">
               <Trophy className="w-3 h-3 text-[#D8B46A]" />
-              {t("sec.challenges")}
+              {t("ch.title")}
             </span>
+
+            {/* Current Phase Badge */}
+            {isFaseApresentacao && (
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#1D1D1F] text-[#9B9BA1] border border-[#2B2B2F] flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                Fase 1: Apresentação (Dia {diaAtual}/{ultimoDiaDoMes})
+              </span>
+            )}
+            {isFaseInscricao && (
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#FF6A2A]/15 text-[#FF9A62] border border-[#FF6A2A]/30 flex items-center gap-1">
+                <Flame className="w-3 h-3" />
+                Fase 2: Inscrições Abertas (Dia {diaAtual}/{ultimoDiaDoMes})
+              </span>
+            )}
+            {isFaseVotacaoExterna && (
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/40 flex items-center gap-1">
+                <Megaphone className="w-3 h-3" />
+                Fase 3: Votação Oficial (Dia {diaAtual}/{ultimoDiaDoMes})
+              </span>
+            )}
+            {isDiaDeTransicao && (
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/40 flex items-center gap-1">
+                <Trophy className="w-3 h-3" />
+                Fase 4: Transição & Apuração (Último dia)
+              </span>
+            )}
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight mt-2.5">
-            {challengeEvent?.title || "Desafio Oficial da Comunidade"}
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight mt-2">
+            {t("ch.title")}
           </h1>
           <p className="text-xs sm:text-sm text-[#9B9BA1] mt-1 max-w-2xl">
-            {challengeEvent?.subtitle ||
-              "Participe dos desafios oficiais da comunidade, alcance sua melhor versão e dispute premiações exclusivas."}
+            {t("ch.sub")}
           </p>
         </div>
+
+        {/* Coach / Admin Phase Simulator bar for immediate testing */}
+        {(persona === "coach" || persona === "moderator") && (
+          <div className="flex flex-col sm:items-end gap-1 bg-[#151515] p-2.5 rounded-2xl border border-[#2B2B2F]">
+            <span className="text-[10px] font-black text-[#D8B46A] uppercase tracking-wider">
+              Painel Admin: Simular Calendário
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setSimulatedDay(null)}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  simulatedDay === null
+                    ? "bg-[#D8B46A] text-black"
+                    : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+              >
+                Hoje ({diaReal})
+              </button>
+              <button
+                onClick={() => setSimulatedDay(3)}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  simulatedDay === 3
+                    ? "bg-[#D8B46A] text-black"
+                    : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+                title="Fase 1: Dias 1 a 6"
+              >
+                Dia 3 (Apresentação)
+              </button>
+              <button
+                onClick={() => setSimulatedDay(12)}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  simulatedDay === 12
+                    ? "bg-[#D8B46A] text-black"
+                    : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+                title="Fase 2: Dias 7 a 25"
+              >
+                Dia 12 (Inscrição)
+              </button>
+              <button
+                onClick={() => setSimulatedDay(27)}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  simulatedDay === 27
+                    ? "bg-[#25D366] text-black"
+                    : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+                title="Fase 3: Dias 26 a penúltimo dia"
+              >
+                Dia 27 (Votação WhatsApp)
+              </button>
+              <button
+                onClick={() => setSimulatedDay(ultimoDiaDoMes)}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  simulatedDay === ultimoDiaDoMes
+                    ? "bg-[#D8B46A] text-black"
+                    : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+                title="Fase 4: Último dia do mês"
+              >
+                Dia {ultimoDiaDoMes} (Transição)
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Coach Quick Control Bar (When logged as coach) */}
-      {persona === "coach" && (
-        <div className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#D8B46A]/40 flex flex-wrap items-center justify-between gap-3 shadow-lg">
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-3 h-3 rounded-full ${
-                challengeEvent?.is_active ? "bg-[#34C759]" : "bg-[#FF453A]"
-              } animate-pulse`}
-            />
-            <div>
-              <p className="text-xs font-bold text-[#F5F5F7]">Controle de Desafios do Coach</p>
-              <p className="text-[11px] text-[#9B9BA1]">
-                {challengeEvent?.is_active
-                  ? "Status: Desafio ativo e aberto para fotos e votações."
-                  : "Status: Desafio em aguardo/oculto para os alunos."}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              id="coach-toggle-challenge-event-btn"
-              onClick={handleToggleChallengeEvent}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
-                challengeEvent?.is_active
-                  ? "bg-[#FF453A]/15 text-[#FF453A] border-[#FF453A]/40 hover:bg-[#FF453A]/25"
-                  : "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/40 hover:bg-[#34C759]/25"
-              }`}
-            >
-              {challengeEvent?.is_active ? (
-                <>
-                  <EyeOff className="w-3.5 h-3.5" />
-                  <span>Pausar Desafio (Aguardando)</span>
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Ativar Desafio Oficial</span>
-                </>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveView("coach")}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#151515] text-[#D8B46A] border border-[#2B2B2F] hover:border-[#D8B46A]"
-            >
-              Painel do Coach
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* STATUS DE AGUARDO: DESAFIO CARREGANDO... (If inactive) */}
-      {isLoadingStatus ? (
-        <div className="p-8 sm:p-14 rounded-3xl bg-[#151515] border border-[#FF9F0A]/40 text-center space-y-5 shadow-2xl relative overflow-hidden">
-          <div className="absolute -right-16 -top-16 w-56 h-56 bg-[#FF9F0A]/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="w-16 h-16 rounded-2xl bg-[#FF9F0A]/20 border border-[#FF9F0A]/40 text-[#FF9F0A] flex items-center justify-center mx-auto animate-pulse">
-            <Clock className="w-8 h-8" />
-          </div>
-
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-widest text-[#FF9F0A] bg-[#FF9F0A]/15 px-3 py-1 rounded-full border border-[#FF9F0A]/30">
-              STATUS DE AGUARDO
+      {/* Tabs Bar */}
+      <div className="flex items-center justify-between gap-3 border-b border-[#2B2B2F] pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            id="tab-active"
+            onClick={() => setTab("active")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              tab === "active"
+                ? "bg-[#FF6A2A] text-white shadow-lg shadow-[#FF6A2A]/20"
+                : "bg-[#151515] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5" />
+            <span>{t("sec.active")}</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30">
+              {items.length}
             </span>
-            <h2 className="text-2xl sm:text-4xl font-black text-[#F5F5F7] tracking-tight mt-3">
-              DESAFIO CARREGANDO...
-            </h2>
-            <p className="text-xs sm:text-sm text-[#9B9BA1] max-w-lg mx-auto mt-2 leading-relaxed">
-              O Coach está preparando a próxima temporada com novas diretrizes de treino e premiação especial. Fique atento às notificações!
-            </p>
-          </div>
+          </button>
 
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
-            <div className="px-4 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#34C759]" />
-              <span>Votação com auditoria antifraude por IP único</span>
-            </div>
-
-            {persona === "coach" && (
-              <button
-                onClick={() => setActiveView("coach")}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D8B46A] text-black hover:brightness-110 transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>Abrir Gestão no Painel do Coach</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+          <button
+            id="tab-hall"
+            onClick={() => setTab("hall")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              tab === "hall"
+                ? "bg-[#D8B46A] text-black shadow-lg shadow-[#D8B46A]/20"
+                : "bg-[#151515] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+            }`}
+          >
+            <Trophy className="w-3.5 h-3.5" />
+            <span>{t("sec.hall")}</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
+              {hall.length}
+            </span>
+          </button>
         </div>
-      ) : (
-        <>
-          {/* Champion Crowned Banner (If previous edition finalized) */}
-          {challengeEvent?.champion && (
-            <div className="p-6 rounded-3xl bg-gradient-to-r from-[#D8B46A]/25 via-[#1D1B14] to-[#151515] border-2 border-[#D8B46A] shadow-2xl relative overflow-hidden space-y-4">
-              <div className="flex flex-col sm:flex-row items-center gap-5">
-                <div className="relative">
-                  <img
-                    src={challengeEvent.champion.photo}
-                    alt={challengeEvent.champion.name}
-                    className="w-24 h-24 rounded-2xl object-cover border-2 border-[#D8B46A] shadow-lg shadow-[#D8B46A]/25"
-                  />
-                  <div className="absolute -top-2.5 -right-2.5 w-8 h-8 rounded-full bg-[#D8B46A] text-[#0A0A0A] flex items-center justify-center font-black shadow-md">
-                    👑
-                  </div>
-                </div>
 
-                <div className="text-center sm:text-left flex-1 min-w-0">
-                  <span className="text-[10px] font-black uppercase text-[#D8B46A] bg-[#D8B46A]/20 px-3 py-0.5 rounded-full border border-[#D8B46A]/40">
-                    CAMPEÃ COROADA DO DESAFIO
-                  </span>
-                  <h3 className="text-2xl font-black text-[#F5F5F7] tracking-tight mt-1">
-                    {challengeEvent.champion.name}
-                  </h3>
-                  <p className="text-xs text-[#9B9BA1] mt-0.5">
-                    Eleita pela comunidade com {challengeEvent.champion.votes} votos populares auditados!
-                  </p>
-                </div>
-
-                <div className="px-5 py-3 rounded-2xl bg-[#D8B46A]/15 border border-[#D8B46A]/40 text-center shrink-0">
-                  <span className="text-[10px] text-[#D8B46A] font-bold block uppercase tracking-wider">
-                    VOTAÇÃO ENCERRADA
-                  </span>
-                  <span className="text-sm font-black text-[#F5F5F7]">Hall da Fama Oficial</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Active Challenge Guidelines Card */}
-          {challengeEvent && (
-            <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-3 shadow-xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#2B2B2F]">
-                <div className="flex items-center gap-2">
-                  <Trophy className="w-4 h-4 text-[#D8B46A]" />
-                  <h3 className="text-xs font-bold text-[#F5F5F7] uppercase tracking-wider">
-                    Premiação & Regras Oficiais
-                  </h3>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-[#9B9BA1]">
-                  <ShieldCheck className="w-4 h-4 text-[#34C759]" />
-                  <span>Trava antifraude: 1 voto por usuário/IP</span>
-                </div>
-              </div>
-
-              {challengeEvent.prize && (
-                <div className="p-3 rounded-xl bg-[#D8B46A]/10 border border-[#D8B46A]/20 text-xs text-[#D8B46A] font-bold flex items-center gap-2">
-                  <span>🏆 Premiação:</span>
-                  <span className="text-[#F5F5F7] font-semibold">{challengeEvent.prize}</span>
-                </div>
-              )}
-
-              {challengeEvent.rules && (
-                <div className="text-xs text-[#9B9BA1] whitespace-pre-line leading-relaxed">
-                  {challengeEvent.rules}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Seção da Galeria dentro de Desafios com Botão Escondido */}
-          <div className="pt-2">
-            {!showGallery ? (
-              <div className="p-4 sm:p-5 rounded-3xl bg-[#151515] border border-[#2B2B2F] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-center text-[#FF6A2A] shrink-0">
-                    <Camera className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-extrabold text-[#F5F5F7]">
-                      Galeria de Fotos dos Participantes
-                    </h4>
-                    <p className="text-xs text-[#9B9BA1] mt-0.5">
-                      Confira as fotos de evolução dos alunos e vote na sua transformação favorita.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  id="reveal-hidden-gallery-btn"
-                  onClick={() => setShowGallery(true)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#FF9A62] border border-[#FF6A2A]/40 hover:bg-[#FF6A2A]/15 hover:border-[#FF6A2A] transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md"
-                >
-                  <Eye className="w-4 h-4 text-[#FF6A2A]" />
-                  <span>Acessar Galeria</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4 pt-2 border-t border-[#2B2B2F] animate-in fade-in duration-300">
-                <div className="flex items-center justify-between bg-[#151515] p-3.5 rounded-2xl border border-[#2B2B2F]">
-                  <div className="flex items-center gap-2.5">
-                    <Camera className="w-4 h-4 text-[#FF6A2A]" />
-                    <span className="text-xs font-extrabold text-[#F5F5F7]">
-                      Galeria Oficial do Desafio
-                    </span>
-                  </div>
-                  <button
-                    id="hide-gallery-btn"
-                    onClick={() => setShowGallery(false)}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F] flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <EyeOff className="w-3.5 h-3.5" />
-                    <span>Ocultar Galeria</span>
-                  </button>
-                </div>
-
-                <GaleriaView embedded={true} />
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Hall of Fame */}
-      {hall.length > 0 && (
-        <div className="pt-6 border-t border-[#2B2B2F] space-y-4">
-          <div className="flex items-center gap-2">
-            <Award className="w-5 h-5 text-[#D8B46A]" />
-            <h2 className="text-lg font-black text-[#F5F5F7] tracking-tight">{t("sec.hall")}</h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {hall.map((item) => (
-              <div
-                key={item.id}
-                className="p-4 rounded-2xl bg-[#151515] border border-[#D8B46A]/30 flex items-center gap-4 shadow-lg shadow-[#D8B46A]/5"
+        {/* Category Filters (when on active tab) */}
+        {tab === "active" && (
+          <div className="hidden sm:flex items-center gap-1.5 bg-[#151515] p-1 rounded-xl border border-[#2B2B2F]">
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all capitalize cursor-pointer ${
+                  filter === f
+                    ? "bg-[#2B2B2F] text-[#F5F5F7]"
+                    : "text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
               >
-                <img
-                  src={item.photo}
-                  alt={item.champion}
-                  className="w-16 h-16 rounded-xl object-cover border border-[#2B2B2F] shrink-0"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-[10px] font-black text-[#D8B46A] uppercase">
-                    <Trophy className="w-3 h-3" />
-                    <span>Campeã · {item.date}</span>
-                  </div>
-                  <h4 className="text-sm font-bold text-[#F5F5F7] truncate mt-0.5">
-                    {item.champion}
-                  </h4>
-                  <p className="text-xs text-[#9B9BA1] truncate">{item.title}</p>
-                  <span className="text-xs font-bold text-[#34C759] mt-1 block">
-                    {item.votes} votos comunitários
-                  </span>
-                </div>
-              </div>
+                {f === "all" ? t("ch.filter.all") : f}
+              </button>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Tab: Active Challenges */}
+      {tab === "active" && (
+        <div className="space-y-6">
+          {items.length === 0 ? (
+            <div className="p-12 rounded-3xl bg-[#151515] border border-[#2B2B2F] text-center space-y-3">
+              <Camera className="w-10 h-10 text-[#9B9BA1] mx-auto opacity-50" />
+              <h3 className="text-base font-bold text-[#F5F5F7]">
+                Nenhuma foto ativa no momento
+              </h3>
+              <p className="text-xs text-[#9B9BA1] max-w-md mx-auto">
+                {isFaseInscricao
+                  ? "As inscrições estão abertas! Publique sua transformação agora para concorrer à premiação."
+                  : "Aguarde a próxima fase de inscrições no dia 7 para enviar suas fotos."}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {items.map((c) => {
+                const beforeSrc =
+                  (typeof c.before_image === "object" && c.before_image?.uri
+                    ? c.before_image.uri
+                    : c.before_image || c.photo_url) || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=400&auto=format&fit=crop&q=80";
+                const afterSrc =
+                  (typeof c.after_image === "object" && c.after_image?.uri
+                    ? c.after_image.uri
+                    : c.after_image || c.photo_url || beforeSrc) || "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&auto=format&fit=crop&q=80";
+
+                return (
+                  <div
+                    key={c.id}
+                    className="p-4 rounded-3xl bg-[#151515] border border-[#2B2B2F] hover:border-[#FF6A2A]/40 transition-all flex flex-col justify-between space-y-3 shadow-xl group"
+                  >
+                    {/* Before & After Images */}
+                    <div className="relative rounded-2xl overflow-hidden bg-black/40 border border-[#2B2B2F] aspect-video flex">
+                      <div className="w-1/2 h-full relative border-r border-[#2B2B2F]/60">
+                        <img
+                          src={beforeSrc}
+                          alt="Antes"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <span className="absolute bottom-1.5 left-1.5 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/70 text-[#9B9BA1] backdrop-blur-sm">
+                          Antes
+                        </span>
+                      </div>
+                      <div className="w-1/2 h-full relative">
+                        <img
+                          src={afterSrc}
+                          alt="Depois"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <span className="absolute bottom-1.5 right-1.5 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#FF6A2A]/85 text-white backdrop-blur-sm">
+                          Depois
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Info */}
+                    <div className="space-y-1">
+                      <h4
+                        className="text-sm font-bold text-[#F5F5F7] truncate"
+                        title={c.title}
+                      >
+                        {c.title}
+                      </h4>
+                      <p className="text-xs text-[#9B9BA1] font-semibold">{c.author}</p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="pt-2 border-t border-[#2B2B2F] flex items-center justify-between gap-2 flex-wrap">
+                      {/* Like Button */}
+                      <button
+                        id={`like-${c.id}`}
+                        onClick={() => like(c.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] hover:border-[#FF6A2A]/40 text-[#F5F5F7] text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Heart className="w-3.5 h-3.5 text-[#FF6A2A] fill-[#FF6A2A]" />
+                        <span>{c.likes}</span>
+                      </button>
+
+                      {/* Botão de WhatsApp só aparece a partir do dia 26 (Fase de Votação Externa) */}
+                      {isFaseVotacaoExterna && (
+                        <button
+                          id={`share-${c.id}`}
+                          onClick={() => pedirVotos(c.author, c.vote_url)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#25D366] bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#25D366] text-xs font-extrabold transition-all active:scale-95 cursor-pointer shadow-sm shadow-[#25D366]/20"
+                          title="Compartilhar no WhatsApp pedindo votos no post do Instagram"
+                        >
+                          <WhatsAppIcon className="w-3.5 h-3.5" />
+                          <span>Pedir Votos</span>
+                        </button>
+                      )}
+
+                      {/* Botão Encerrar para Coach / Moderador */}
+                      {(persona === "coach" || persona === "moderator") && (
+                        <button
+                          id={`close-${c.id}`}
+                          onClick={() => closeChallenge(c.id)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-[#D8B46A]/40 bg-[#D8B46A]/10 text-[#D8B46A] text-xs font-bold hover:bg-[#D8B46A]/20 transition-all cursor-pointer"
+                        >
+                          <Trophy className="w-3 h-3 text-[#D8B46A]" />
+                          <span>Encerrar</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
+
+      {/* Tab: Hall of Fame */}
+      {tab === "hall" && (
+        <div className="space-y-4">
+          {hall.length === 0 ? (
+            <div className="p-12 rounded-3xl bg-[#151515] border border-[#2B2B2F] text-center space-y-3">
+              <Trophy className="w-10 h-10 text-[#D8B46A] mx-auto opacity-50" />
+              <h3 className="text-base font-bold text-[#F5F5F7]">
+                Hall da Fama em Construção
+              </h3>
+              <p className="text-xs text-[#9B9BA1] max-w-md mx-auto">
+                Ao final de cada temporada mensal, os campeões coroados pela comunidade são imortalizados aqui.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {hall.map((h, i) => {
+                const photoSrc =
+                  typeof h.photo === "object" && h.photo?.uri
+                    ? h.photo.uri
+                    : h.photo || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=300&q=80";
+
+                return (
+                  <div
+                    key={h.id || i}
+                    className="p-4 rounded-3xl bg-[#151515] border border-[#D8B46A]/30 flex items-center gap-4 shadow-xl relative overflow-hidden"
+                  >
+                    {/* Medalha com Posição */}
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA000] text-black font-black text-xs flex items-center justify-center shadow-md shrink-0">
+                      {i + 1}
+                    </div>
+
+                    <img
+                      src={photoSrc}
+                      alt={h.champion}
+                      className="w-16 h-16 rounded-2xl object-cover border border-[#2B2B2F] shrink-0"
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-sm font-extrabold text-[#F5F5F7] truncate">
+                        {h.champion}
+                      </h4>
+                      <p className="text-xs text-[#9B9BA1] truncate mt-0.5">{h.title}</p>
+                      {h.votes !== undefined && (
+                        <span className="text-[11px] font-bold text-[#34C759] mt-1 block">
+                          {h.votes} votos populares auditados
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* --- BARRA INFERIOR INTELIGENTE --- */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0A0A0A]/90 backdrop-blur-xl border-t border-[#2B2B2F] px-4 py-3.5 flex items-center justify-center shadow-2xl">
+        <div className="w-full max-w-md">
+          {persona === "coach" || persona === "moderator" ? (
+            <button
+              id="admin-new-challenge-btn"
+              onClick={() => setCreateOpen(true)}
+              className="w-full py-3 px-6 rounded-2xl bg-[#D8B46A] text-black font-extrabold text-sm flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-[#D8B46A]/20 cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4 text-black" />
+              <span>Novo Desafio (Admin)</span>
+            </button>
+          ) : (
+            <>
+              {isFaseApresentacao && (
+                <div
+                  id="fase-apresentacao-bar"
+                  className="w-full py-3 px-6 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] font-bold text-sm flex items-center justify-center gap-2 select-none"
+                >
+                  <Calendar className="w-4 h-4 text-[#9B9BA1]" />
+                  <span>Inscrições abrem dia 7!</span>
+                </div>
+              )}
+
+              {isFaseInscricao && (
+                <button
+                  id="fase-inscricao-publish-btn"
+                  onClick={() => setPublishOpen(true)}
+                  className="w-full py-3 px-6 rounded-2xl bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white font-extrabold text-sm flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-[#FF6A2A]/25 cursor-pointer"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Publicar Transformação</span>
+                </button>
+              )}
+
+              {isFaseVotacaoExterna && (
+                <div
+                  id="fase-votacao-bar"
+                  className="w-full py-3 px-6 rounded-2xl bg-[#25D366] text-black font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/25 select-none"
+                >
+                  <Megaphone className="w-4 h-4 text-black" />
+                  <span>Votação Oficial Aberta!</span>
+                </div>
+              )}
+
+              {isDiaDeTransicao && (
+                <div
+                  id="fase-transicao-bar"
+                  className="w-full py-3 px-6 rounded-2xl bg-[#D8B46A] text-black font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#D8B46A]/25 select-none"
+                >
+                  <Trophy className="w-4 h-4 text-black" />
+                  <span>Calculando Campeões...</span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      {/* --------------------------------- */}
+
+      {/* Modal: Novo Desafio (Admin / Coach) */}
+      <NewChallengeModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={loadActive}
+      />
+
+      {/* Modal: Publicar Transformação */}
+      <PublishPhotoModal
+        open={publishOpen}
+        onClose={() => setPublishOpen(false)}
+        onPublished={loadActive}
+      />
     </div>
   );
 };
+
+// --- MODAL: NOVO DESAFIO (ADMIN) ---
+interface NewChallengeModalProps {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}
+
+const NewChallengeModal: React.FC<NewChallengeModalProps> = ({
+  open,
+  onClose,
+  onCreated,
+}) => {
+  const [title, setTitle] = useState("");
+  const [participantName, setParticipantName] = useState("");
+  const [voteUrl, setVoteUrl] = useState("");
+  const [beforeUrl, setBeforeUrl] = useState("");
+  const [afterUrl, setAfterUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !participantName.trim()) {
+      alert("Preencha o título e o nome do participante.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // 1. Tenta salvar no Supabase
+      const { error: sbError } = await supabase.from("challenge_photos").insert({
+        participant_name: participantName.trim(),
+        caption: title.trim(),
+        photo_url: afterUrl.trim() || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80",
+        before_image: beforeUrl.trim() || "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80",
+        after_image: afterUrl.trim() || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80",
+        vote_url: voteUrl.trim() || null,
+        votes_count: 0,
+      });
+
+      if (sbError) {
+        console.warn("Supabase insert notice, saving to local api:", sbError);
+      }
+
+      // 2. Salva na API local
+      await api.createChallenge({
+        title: title.trim(),
+        author: participantName.trim(),
+        before_image: beforeUrl.trim() || "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80",
+        after_image: afterUrl.trim() || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80",
+        vote_url: voteUrl.trim() || undefined,
+        weeks: 12,
+        likes: 0,
+        votes: 0,
+        tag: "shape",
+        status: "active",
+      });
+
+      onCreated();
+      onClose();
+    } catch (err) {
+      console.error("Error creating challenge:", err);
+      alert("Erro ao criar desafio. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-lg bg-[#151515] border border-[#2B2B2F] rounded-3xl p-6 space-y-4 shadow-2xl animate-in zoom-in-95">
+        <div className="flex items-center justify-between border-b border-[#2B2B2F] pb-3">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-[#D8B46A]" />
+            <h3 className="text-base font-bold text-[#F5F5F7]">Novo Desafio (Admin)</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-[#9B9BA1] hover:text-[#F5F5F7] cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3.5">
+          <div>
+            <label className="text-xs font-bold text-[#9B9BA1] block mb-1">
+              Título / Legenda da Transformação
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="Ex: Evolução 12 Semanas - Ganho de 5kg limpo"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-[#9B9BA1] block mb-1">
+              Nome do Participante / Aluno
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="Ex: Carlos Mendes"
+              value={participantName}
+              onChange={(e) => setParticipantName(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-[#25D366] block mb-1">
+              Link da Votação no Instagram (vote_url)
+            </label>
+            <input
+              type="url"
+              placeholder="https://www.instagram.com/p/..."
+              value={voteUrl}
+              onChange={(e) => setVoteUrl(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#25D366]"
+            />
+            <span className="text-[10px] text-[#9B9BA1] mt-1 block">
+              Esse link será compartilhado no WhatsApp a partir do dia 26 para que as pessoas comentem no post oficial.
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-[#9B9BA1] block mb-1">
+                URL da Foto "Antes" (opcional)
+              </label>
+              <input
+                type="url"
+                placeholder="https://..."
+                value={beforeUrl}
+                onChange={(e) => setBeforeUrl(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-[#9B9BA1] block mb-1">
+                URL da Foto "Depois" (opcional)
+              </label>
+              <input
+                type="url"
+                placeholder="https://..."
+                value={afterUrl}
+                onChange={(e) => setAfterUrl(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#2B2B2F]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-[#9B9BA1] hover:text-[#F5F5F7] cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2 rounded-xl text-xs font-black bg-[#D8B46A] text-black hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-lg shadow-[#D8B46A]/20"
+            >
+              {saving ? "Salvando..." : "Criar Desafio"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// --- MODAL: PUBLICAR TRANSFORMAÇÃO (ALUNO) ---
+interface PublishPhotoModalProps {
+  open: boolean;
+  onClose: () => void;
+  onPublished: () => void;
+}
+
+const PublishPhotoModal: React.FC<PublishPhotoModalProps> = ({
+  open,
+  onClose,
+  onPublished,
+}) => {
+  if (!open) return null;
+
+  return (
+    <GaleriaPhotoUpload
+      isOpen={open}
+      onClose={onClose}
+      onPhotoUploaded={onPublished}
+      onToast={(msg) => alert(msg)}
+    />
+  );
+};
+
+// Export aliases
+export const Challenges = ChallengesView;
+export default ChallengesView;

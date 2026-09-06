@@ -21,8 +21,16 @@ export interface SupabaseCredentialStatus {
  * com suporte para sobrescrever via variáveis de ambiente ou localStorage.
  */
 export function getSupabaseCredentials(): SupabaseCredentialStatus {
-  let envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || "";
-  let envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+  let envUrl = "";
+  let envKey = "";
+  try {
+    if (typeof process !== "undefined" && process.env) {
+      envUrl = (process.env as any).EXPO_PUBLIC_SUPABASE_URL || (process.env as any).VITE_SUPABASE_URL || "";
+      envKey = (process.env as any).EXPO_PUBLIC_SUPABASE_ANON_KEY || (process.env as any).VITE_SUPABASE_ANON_KEY || "";
+    }
+  } catch {
+    // ignore
+  }
 
   let localUrl = "";
   let localKey = "";
@@ -106,16 +114,24 @@ export function getSupabaseClient(): SupabaseClient | null {
 export const DEFAULT_VOTING_USER_ID = "b97113b7-65a4-4eda-aca3-1baff1f6c3b6";
 
 /**
- * Retorna o ID do usuário atual para auditoria de votos.
- * Garante que o identificador seja um UUID válido presente em auth.users para satisfazer o foreign key constraint do Supabase.
+ * Retorna o ID único do usuário atual para auditoria e registro de votos.
+ * Gera e persiste um UUID exclusivo por dispositivo/navegador para que os votos não fiquem restritos a um único usuário.
  */
 export function getVotingUserId(): string {
   try {
-    let localUid = localStorage.getItem("vyra_voting_user_id");
+    let localUid = localStorage.getItem("vyra_user_unique_id");
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!localUid || !uuidRegex.test(localUid)) {
-      localUid = DEFAULT_VOTING_USER_ID;
-      localStorage.setItem("vyra_voting_user_id", localUid);
+    if (!localUid || !uuidRegex.test(localUid) || localUid === DEFAULT_VOTING_USER_ID) {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        localUid = crypto.randomUUID();
+      } else {
+        localUid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+          const r = (Math.random() * 16) | 0,
+            v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      }
+      localStorage.setItem("vyra_user_unique_id", localUid);
     }
     return localUid;
   } catch {

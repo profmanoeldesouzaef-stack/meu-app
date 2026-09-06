@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { X, RefreshCw, Check, Search, Dumbbell } from "lucide-react";
 
-interface SubstituteExerciseModalProps {
-  isOpen: boolean;
-  exerciseName: string;
-  muscle: string;
+export interface SubstituteExerciseModalProps {
+  isOpen?: boolean;
+  exerciseName?: string;
+  muscle?: string;
+  currentExercise?: { name: string; muscle?: string; [key: string]: any };
   onClose: () => void;
   onSelectSubstitute: (substituteName: string) => void;
 }
@@ -70,16 +71,20 @@ const exerciseSubstitutesCatalog: Record<string, string[]> = {
 };
 
 export const SubstituteExerciseModal: React.FC<SubstituteExerciseModalProps> = ({
-  isOpen,
-  exerciseName,
-  muscle,
+  isOpen = true,
+  exerciseName: propExerciseName,
+  muscle: propMuscle,
+  currentExercise,
   onClose,
   onSelectSubstitute,
 }) => {
   const [customName, setCustomName] = useState("");
   const [search, setSearch] = useState("");
 
-  if (!isOpen) return null;
+  if (isOpen === false) return null;
+
+  const exerciseName = propExerciseName || currentExercise?.name || "Exercício";
+  const muscle = propMuscle || currentExercise?.muscle || "";
 
   // Find relevant category or fallback to all
   const matchedKey = Object.keys(exerciseSubstitutesCatalog).find((k) =>

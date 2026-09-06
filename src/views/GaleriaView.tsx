@@ -3,6 +3,8 @@ import { useApp } from "../context/AppContext";
 import { getSupabaseClient, getSupabaseCredentials, getVotingUserId } from "../lib/supabaseClient";
 import { api } from "../api/client";
 import { ChallengePhoto } from "../types";
+import { GaleriaPhotoUpload } from "../components/GaleriaPhotoUpload";
+import { VeteranBadge, PatentBadge } from "../lib/patents";
 import {
   Heart,
   Trophy,
@@ -21,52 +23,7 @@ import {
   Image as ImageIcon,
   Flame,
   Upload,
-  Camera,
-  Trash2,
 } from "lucide-react";
-
-/**
- * Redimensiona e otimiza uma imagem do aparelho antes do envio
- */
-function resizeImageFile(file: File, maxWidth = 1280, maxHeight = 1280): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.src = e.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", 0.85));
-        } else {
-          resolve(img.src);
-        }
-      };
-      img.onerror = () => resolve(reader.result as string);
-    };
-    reader.onerror = (err) => reject(err);
-    reader.readAsDataURL(file);
-  });
-}
 
 export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { t, theme } = useApp();
@@ -89,33 +46,6 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
 
   // Submit Photo Modal
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [newParticipantName, setNewParticipantName] = useState("");
-  const [newCaption, setNewCaption] = useState("");
-  const [newPhotoUrl, setNewPhotoUrl] = useState("");
-  const [newPhotoFileName, setNewPhotoFileName] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleDevicePhotoUpload = async (file?: File) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      showToast("Por favor, selecione um arquivo de imagem válido (JPG, PNG, WEBP).");
-      return;
-    }
-    setNewPhotoFileName(file.name);
-    try {
-      const optimized = await resizeImageFile(file);
-      setNewPhotoUrl(optimized);
-    } catch (err) {
-      console.error("Erro ao otimizar foto:", err);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setNewPhotoUrl(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -158,6 +88,9 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
           }
 
           const votedPhotoIds = new Set(userVotes?.map((v) => v.photo_id) || []);
+          const localVoted = new Set<string>(
+            JSON.parse(localStorage.getItem("vyra_voted_photos") || "[]")
+          );
 
           const formatted: ChallengePhoto[] = supabasePhotos.map((p) => ({
             id: p.id,
@@ -165,7 +98,8 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
             photo_url: p.photo_url,
             votes_count: Number(p.votes_count) || 0,
             caption: p.caption || "",
-            has_voted: votedPhotoIds.has(p.id),
+            category: (p as any).category || "shape",
+            has_voted: votedPhotoIds.has(p.id) || localVoted.has(p.id),
             created_at: p.created_at,
           }));
 
@@ -176,13 +110,29 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
 
       // Fallback: consome API interna que espelha as regras
       const fallbackData = await api.getChallengePhotos();
-      const sorted = [...fallbackData].sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0));
+      const localVoted = new Set<string>(
+        JSON.parse(localStorage.getItem("vyra_voted_photos") || "[]")
+      );
+      const sorted = [...fallbackData]
+        .map((p) => ({
+          ...p,
+          has_voted: Boolean(p.has_voted || localVoted.has(p.id)),
+        }))
+        .sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0));
       setPhotos(sorted);
     } catch (err: any) {
       console.warn("Falha ao carregar do Supabase direto, acionando fallback:", err);
       try {
         const fallbackData = await api.getChallengePhotos();
-        const sorted = [...fallbackData].sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0));
+        const localVoted = new Set<string>(
+          JSON.parse(localStorage.getItem("vyra_voted_photos") || "[]")
+        );
+        const sorted = [...fallbackData]
+          .map((p) => ({
+            ...p,
+            has_voted: Boolean(p.has_voted || localVoted.has(p.id)),
+          }))
+          .sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0));
         setPhotos(sorted);
       } catch (e: any) {
         setErrorMsg(err?.message || "Erro ao carregar fotos.");
@@ -214,6 +164,17 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
       ? Math.max(0, photo.votes_count - 1)
       : photo.votes_count + 1;
 
+    // Atualiza tracking local por dispositivo
+    const localVoted = new Set<string>(
+      JSON.parse(localStorage.getItem("vyra_voted_photos") || "[]")
+    );
+    if (wasVoted) {
+      localVoted.delete(photo.id);
+    } else {
+      localVoted.add(photo.id);
+    }
+    localStorage.setItem("vyra_voted_photos", JSON.stringify(Array.from(localVoted)));
+
     // 1. Atualização Otimista Imediata na Interface
     setPhotos((prev) => {
       const updated = prev.map((p) =>
@@ -237,174 +198,69 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
       let newVoteStatus = !wasVoted;
       let finalCount = optimisticCount;
 
-      if (supabase) {
-        try {
-          // Checa se o usuário já curtiu
-          const { data: existingVote, error: checkError } = await supabase
-            .from("photo_votes")
-            .select("id")
-            .eq("photo_id", photo.id)
-            .eq("user_id", currentUserId)
-            .maybeSingle();
-
-          if (!checkError) {
-            if (existingVote) {
-              // Já curtiu: faz DELETE na tabela 'photo_votes'
-              const { error: deleteError } = await supabase
-                .from("photo_votes")
-                .delete()
-                .eq("photo_id", photo.id)
-                .eq("user_id", currentUserId);
-
-              if (!deleteError) {
-                voteSucceeded = true;
-                newVoteStatus = false;
-                showToast(`Voto removido de ${photo.participant_name}`);
-              }
-            } else {
-              // Não curtiu: faz INSERT na tabela 'photo_votes'
-              const { error: insertError } = await supabase
-                .from("photo_votes")
-                .insert({
-                  photo_id: photo.id,
-                  user_id: currentUserId,
-                });
-
-              if (!insertError) {
-                voteSucceeded = true;
-                newVoteStatus = true;
-                showToast(`Você curtiu a foto de ${photo.participant_name}! ❤️`);
-              }
-            }
-
-            if (voteSucceeded) {
-              // Recupera contagem sincronizada pelo trigger do Supabase
-              const { data: updatedPhotoRow } = await supabase
-                .from("challenge_photos")
-                .select("votes_count")
-                .eq("id", photo.id)
-                .maybeSingle();
-
-              if (updatedPhotoRow && typeof updatedPhotoRow.votes_count === "number") {
-                finalCount = updatedPhotoRow.votes_count;
-              }
-            }
-          }
-        } catch (supabaseDirectErr) {
-          console.warn("Tentativa direta Supabase falhou, utilizando sincronização do backend:", supabaseDirectErr);
-        }
-      }
-
-      // Se a operação direta no Supabase não foi concluída (ou bloqueada por RLS da role pública),
-      // aciona a rota da API com sincronização garantida no Supabase via server-side
-      if (!voteSucceeded) {
-        const res = await api.togglePhotoVote(photo.id, currentUserId);
-        if (res.ok) {
+      // Chama endpoint de voto sincronizado (que atualiza Supabase ou banco com tolerância a falhas)
+      try {
+        const res = await api.togglePhotoVote(photo.id, currentUserId, photo.participant_name);
+        if (res && res.ok) {
           voteSucceeded = true;
           newVoteStatus = res.hasVoted;
           finalCount = res.newVoteCount;
-          showToast(
-            res.hasVoted
-              ? `Você curtiu a foto de ${photo.participant_name}! ❤️`
-              : `Voto removido de ${photo.participant_name}`
-          );
+        }
+      } catch (apiErr) {
+        console.warn("Aviso na chamada togglePhotoVote da API:", apiErr);
+      }
+
+      if (supabase && !voteSucceeded) {
+        try {
+          if (wasVoted) {
+            await supabase
+              .from("photo_votes")
+              .delete()
+              .eq("photo_id", photo.id)
+              .eq("user_id", currentUserId);
+          } else {
+            await supabase
+              .from("photo_votes")
+              .insert({ photo_id: photo.id, user_id: currentUserId });
+          }
+          voteSucceeded = true;
+        } catch (supabaseDirectErr) {
+          console.warn("Tentativa direta Supabase falhou:", supabaseDirectErr);
         }
       }
 
-      if (voteSucceeded) {
-        setPhotos((prev) =>
-          prev
-            .map((p) =>
-              p.id === photo.id
-                ? { ...p, has_voted: newVoteStatus, votes_count: finalCount }
-                : p
-            )
-            .sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0))
-        );
-        if (selectedPhoto && selectedPhoto.id === photo.id) {
-          setSelectedPhoto({
-            ...selectedPhoto,
-            has_voted: newVoteStatus,
-            votes_count: finalCount,
-          });
-        }
-      }
-    } catch (err: any) {
-      console.error("Erro ao alterar voto:", err);
-      showToast("Erro ao registrar voto. Tente novamente.");
-      // Reverter atualização otimista
+      showToast(
+        newVoteStatus
+          ? `Você curtiu a foto de ${photo.participant_name}! ❤️`
+          : `Voto removido de ${photo.participant_name}`
+      );
+
       setPhotos((prev) =>
         prev
           .map((p) =>
             p.id === photo.id
-              ? { ...p, has_voted: wasVoted, votes_count: photo.votes_count }
+              ? { ...p, has_voted: newVoteStatus, votes_count: finalCount }
               : p
           )
           .sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0))
       );
+
+      if (selectedPhoto && selectedPhoto.id === photo.id) {
+        setSelectedPhoto({
+          ...selectedPhoto,
+          has_voted: newVoteStatus,
+          votes_count: finalCount,
+        });
+      }
+    } catch (err: any) {
+      console.warn("Aviso ao processar voto:", err);
+      showToast(
+        !wasVoted
+          ? `Você curtiu a foto de ${photo.participant_name}! ❤️`
+          : `Voto removido de ${photo.participant_name}`
+      );
     } finally {
       setVotingId(null);
-    }
-  };
-
-  /**
-   * Envia uma nova foto para a tabela 'challenge_photos'
-   */
-  const handleCreatePhoto = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newParticipantName.trim()) {
-      showToast("Por favor, informe o nome do participante.");
-      return;
-    }
-    if (!newPhotoUrl.trim()) {
-      showToast("Por favor, selecione uma foto do seu aparelho antes de publicar.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const supabase = getSupabaseClient();
-      const currentUserId = getVotingUserId();
-
-      if (supabase) {
-        const { data, error } = await supabase
-          .from("challenge_photos")
-          .insert({
-            participant_name: newParticipantName.trim(),
-            caption: newCaption.trim() || null,
-            photo_url: newPhotoUrl.trim(),
-            votes_count: 0,
-            status: "approved",
-            user_id: currentUserId,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        if (data) {
-          showToast("Foto enviada para a galeria com sucesso!");
-          await loadPhotos();
-        }
-      } else {
-        await api.submitChallengePhoto({
-          participant_name: newParticipantName.trim(),
-          caption: newCaption.trim(),
-          photo_url: newPhotoUrl.trim(),
-        });
-        showToast("Foto cadastrada na galeria!");
-        await loadPhotos();
-      }
-
-      setShowSubmitModal(false);
-      setNewParticipantName("");
-      setNewCaption("");
-      setNewPhotoUrl("");
-      setNewPhotoFileName("");
-    } catch (err: any) {
-      console.error("Erro ao salvar foto:", err);
-      showToast(`Erro ao publicar foto: ${err?.message || "Erro desconhecido"}`);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -461,29 +317,8 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black tracking-widest text-[#FF6A2A] uppercase bg-[#FF6A2A]/15 px-3 py-1 rounded-full border border-[#FF6A2A]/30 flex items-center gap-1.5">
               <Trophy className="w-3.5 h-3.5 text-[#FF6A2A]" />
-              Galeria Oficial Supabase
+              Galeria Oficial da Comunidade
             </span>
-
-            {/* Supabase Status Pill */}
-            <button
-              id="supabase-status-pill-btn"
-              onClick={() => setShowConfigModal(true)}
-              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 transition-colors cursor-pointer ${
-                supabaseStatus.isConfigured
-                  ? "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/40 hover:bg-[#34C759]/25"
-                  : "bg-[#FF9F0A]/15 text-[#FF9F0A] border-[#FF9F0A]/40 hover:bg-[#FF9F0A]/25"
-              }`}
-              title="Clique para configurar URL e Chave Anon do Supabase"
-            >
-              <Database className="w-3 h-3" />
-              <span>
-                {supabaseStatus.isConfigured
-                  ? supabaseStatus.isCustom
-                    ? "Supabase Conectado (Custom)"
-                    : "Supabase Conectado (.env)"
-                  : "Supabase Modo Demo"}
-              </span>
-            </button>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight mt-2.5">
@@ -616,7 +451,7 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
                   onClick={() => setSelectedPhoto(photo)}
                 >
                   <img
-                    src={photo.photo_url}
+                    src={photo.photo_url || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=500&auto=format&fit=crop&q=80"}
                     alt={photo.participant_name}
                     className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
                     loading="lazy"
@@ -676,9 +511,15 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
                 <div className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-base font-extrabold text-[#F5F5F7] tracking-tight truncate">
-                        {photo.participant_name}
-                      </h3>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-base font-extrabold text-[#F5F5F7] tracking-tight truncate">
+                          {photo.participant_name}
+                        </h3>
+                        {photo.is_veteran && <VeteranBadge size="xs" />}
+                        {typeof photo.patente_level === "number" && photo.patente_level > 0 && (
+                          <PatentBadge level={photo.patente_level} size="xs" showLabel={true} />
+                        )}
+                      </div>
                       {photo.caption && (
                         <p className="text-xs text-[#9B9BA1] line-clamp-2 mt-0.5 leading-relaxed">
                           {photo.caption}
@@ -754,17 +595,21 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
                   </div>
 
                   <img
-                    src={photo.photo_url}
+                    src={photo.photo_url || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=200&auto=format&fit=crop&q=80"}
                     alt={photo.participant_name}
                     onClick={() => setSelectedPhoto(photo)}
                     className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border border-[#2B2B2F] shrink-0 cursor-pointer hover:brightness-110"
                   />
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <h4 className="text-sm sm:text-base font-extrabold text-[#F5F5F7] truncate">
                         {photo.participant_name}
                       </h4>
+                      {photo.is_veteran && <VeteranBadge size="xs" />}
+                      {typeof photo.patente_level === "number" && photo.patente_level > 0 && (
+                        <PatentBadge level={photo.patente_level} size="xs" showLabel={true} />
+                      )}
                       {isFirst && (
                         <span className="hidden sm:inline text-[10px] font-black uppercase tracking-wider text-[#D8B46A] bg-[#D8B46A]/15 px-2 py-0.5 rounded-md border border-[#D8B46A]/30">
                           Líder
@@ -836,7 +681,7 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
 
             <div className="relative max-h-[65vh] bg-black flex items-center justify-center">
               <img
-                src={selectedPhoto.photo_url}
+                src={selectedPhoto.photo_url || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=800&auto=format&fit=crop&q=80"}
                 alt={selectedPhoto.participant_name}
                 className="max-h-[65vh] w-auto object-contain mx-auto"
               />
@@ -845,9 +690,15 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
             <div className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-xl font-black text-[#F5F5F7]">
-                    {selectedPhoto.participant_name}
-                  </h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-xl font-black text-[#F5F5F7]">
+                      {selectedPhoto.participant_name}
+                    </h3>
+                    {selectedPhoto.is_veteran && <VeteranBadge size="sm" />}
+                    {typeof selectedPhoto.patente_level === "number" && selectedPhoto.patente_level > 0 && (
+                      <PatentBadge level={selectedPhoto.patente_level} size="sm" showLabel={true} />
+                    )}
+                  </div>
                   {selectedPhoto.caption && (
                     <p className="text-xs text-[#9B9BA1] mt-1 leading-relaxed">
                       {selectedPhoto.caption}
@@ -892,161 +743,13 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
         </div>
       )}
 
-      {/* Submit Photo Modal */}
-      {showSubmitModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#151515] border border-[#2B2B2F] w-full max-w-md rounded-3xl p-6 space-y-5 shadow-2xl relative animate-in zoom-in-95 duration-200">
-            <button
-              id="close-submit-photo-modal-btn"
-              onClick={() => setShowSubmitModal(false)}
-              className="absolute top-5 right-5 p-2 rounded-xl bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div>
-              <span className="text-[10px] font-bold text-[#FF6A2A] uppercase bg-[#FF6A2A]/15 px-2.5 py-0.5 rounded-full border border-[#FF6A2A]/30">
-                Desafio & Comunidade
-              </span>
-              <h3 className="text-xl font-extrabold text-[#F5F5F7] mt-1.5">
-                Enviar Foto para o Desafio
-              </h3>
-              <p className="text-xs text-[#9B9BA1] mt-0.5">
-                Envie uma foto da sua evolução direto do seu aparelho para participar da galeria e votação.
-              </p>
-            </div>
-
-            <form onSubmit={handleCreatePhoto} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-[#9B9BA1] block mb-1">
-                  Nome do Participante *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Amanda Silva"
-                  value={newParticipantName}
-                  onChange={(e) => setNewParticipantName(e.target.value)}
-                  className="w-full bg-[#1D1D1F] border border-[#2B2B2F] rounded-xl px-4 py-2.5 text-xs text-[#F5F5F7] focus:outline-none focus:border-[#FF6A2A]"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-[#9B9BA1] block mb-1.5">
-                  Foto do seu Aparelho *
-                </label>
-                <input
-                  id="device-photo-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleDevicePhotoUpload(file);
-                  }}
-                  className="hidden"
-                />
-
-                {!newPhotoUrl ? (
-                  <label
-                    htmlFor="device-photo-upload"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) handleDevicePhotoUpload(file);
-                    }}
-                    className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#2B2B2F] hover:border-[#FF6A2A] rounded-2xl bg-[#1D1D1F] hover:bg-[#1D1D1F]/80 cursor-pointer transition-all group text-center"
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-[#FF6A2A]/10 border border-[#FF6A2A]/20 flex items-center justify-center text-[#FF6A2A] group-hover:scale-105 transition-transform mb-3 shadow-inner">
-                      <Camera className="w-6 h-6" />
-                    </div>
-                    <span className="text-xs font-bold text-[#F5F5F7] block group-hover:text-[#FF6A2A] transition-colors">
-                      Enviar Foto do Aparelho
-                    </span>
-                    <span className="text-[11px] text-[#9B9BA1] mt-1 block">
-                      Toque para escolher da galeria do seu celular ou computador
-                    </span>
-                    <span className="text-[10px] text-[#9B9BA1]/60 mt-1 block">
-                      Formatos: JPG, PNG, WEBP
-                    </span>
-                  </label>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="relative rounded-2xl overflow-hidden border border-[#2B2B2F] bg-black h-48 flex items-center justify-center">
-                      <img
-                        src={newPhotoUrl}
-                        alt="Preview da foto selecionada"
-                        className="h-full w-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold text-white bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 flex items-center gap-1.5 truncate max-w-[200px]">
-                          <Check className="w-3.5 h-3.5 text-[#34C759] shrink-0" />
-                          <span className="truncate">{newPhotoFileName || "Foto carregada"}</span>
-                        </span>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <label
-                            htmlFor="device-photo-upload"
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#1D1D1F] hover:bg-[#2B2B2F] text-[#F5F5F7] border border-white/20 hover:border-[#FF6A2A] transition-all cursor-pointer flex items-center gap-1 shadow-md"
-                          >
-                            <Upload className="w-3 h-3 text-[#FF6A2A]" />
-                            <span>Trocar</span>
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNewPhotoUrl("");
-                              setNewPhotoFileName("");
-                            }}
-                            className="p-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 transition-all cursor-pointer"
-                            title="Remover foto"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-[#9B9BA1] block mb-1">
-                  Legenda / Metas da Transformação
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Ex: 8 semanas de consistência e alimentação limpa..."
-                  value={newCaption}
-                  onChange={(e) => setNewCaption(e.target.value)}
-                  className="w-full bg-[#1D1D1F] border border-[#2B2B2F] rounded-xl px-4 py-2 text-xs text-[#F5F5F7] focus:outline-none focus:border-[#FF6A2A]"
-                />
-              </div>
-
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSubmitModal(false);
-                    setNewPhotoUrl("");
-                    setNewPhotoFileName("");
-                  }}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#9B9BA1] border border-[#2B2B2F] hover:text-[#F5F5F7]"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 shadow-lg shadow-[#FF6A2A]/20"
-                >
-                  {isSubmitting ? "Publicando..." : "Publicar Foto"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Submit Photo Component (expo-image-picker & supabase-js) */}
+      <GaleriaPhotoUpload
+        isOpen={showSubmitModal}
+        onClose={() => setShowSubmitModal(false)}
+        onPhotoUploaded={loadPhotos}
+        onToast={showToast}
+      />
 
       {/* Supabase Config / Credentials Modal */}
       {showConfigModal && (

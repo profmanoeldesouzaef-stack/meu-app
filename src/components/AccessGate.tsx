@@ -37,7 +37,8 @@ export const AccessGate: React.FC<AccessGateProps> = ({
     setSubscription({
       active: true,
       planId: "shape",
-      billingCycle: "quarterly",
+      cycle: "quarter",
+      billingCycle: "quarter",
       expiresAt: "2026-12-31",
     });
   };

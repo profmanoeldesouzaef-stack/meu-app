@@ -80,6 +80,9 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+android/
+ios/
+.expo/
 .env
 .env.*
 *.env

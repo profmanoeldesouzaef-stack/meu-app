@@ -1,4 +1,4 @@
-export type Persona = "student" | "coach" | "moderator";
+export type Persona = "student" | "coach" | "moderator" | "aluno";
 export type Lang = "pt" | "en";
 export type Theme = "dark" | "light";
 
@@ -40,6 +40,8 @@ export interface UserProfile {
   nickname: string;
   email: string;
   avatar_url?: string;
+  plan?: string;
+  active_protocol?: string;
   height_cm?: number;
   weight_kg?: number;
   waist_cm?: number;
@@ -57,6 +59,12 @@ export interface UserProfile {
   creatine_times: string[];
   creatine_taken_today?: Record<string, boolean>;
   logged_in: boolean;
+  is_veteran?: boolean;
+  veteran_since?: string;
+  consecutive_months?: number;
+  monthly_fee_paid?: boolean;
+  patente_level?: number;
+  vip_chat_unlocked?: boolean;
 }
 
 export interface Student {
@@ -75,6 +83,9 @@ export interface Student {
   adherence_pct?: number;
   diet?: Diet;
   workout?: Workout;
+  water_ml?: number;
+  creatine_dose_g?: number;
+  vip_chat_unlocked?: boolean;
 }
 
 export type BillingCycle = "month" | "quarter" | "semester" | "year" | "single";
@@ -108,6 +119,7 @@ export interface Exercise {
   rest: string;
   muscle: string;
   video_url: string;
+  gif_url?: string;
   coach_tip: string;
   coach_message?: string;
   substitute_exercise?: string;
@@ -127,6 +139,29 @@ export interface Workout {
   is_template?: boolean;
 }
 
+export interface MealIngredient {
+  name: string;
+  quantity: string;
+  grams?: number;
+  kcal?: number;
+  p?: number;
+  c?: number;
+  f?: number;
+}
+
+export interface IngredientRecipeOption {
+  nome_receita: string;
+  tipo_refeicao?: string;
+  tempo_preparo: string;
+  calorias: number;
+  proteinas: number;
+  carboidratos: number;
+  gorduras: number;
+  ingredientes: Array<{ name: string; quantity: string }>;
+  modo_preparo: string[];
+  dica_chef?: string;
+}
+
 export interface FoodItem {
   id: string;
   name: string;
@@ -137,11 +172,17 @@ export interface FoodItem {
   f: number;
   meal: "breakfast" | "lunch" | "snack" | "dinner" | "supper";
   options?: string[];
+  ingredients?: MealIngredient[];
+  recipe_instructions?: string[];
 }
 
 export interface Diet {
   id: string;
   kcal: number;
+  target_kcal?: number;
+  target_protein_g?: number;
+  target_carbs_g?: number;
+  target_fats_g?: number;
   protein_pct: number;
   carbs_pct: number;
   fats_pct: number;
@@ -184,10 +225,12 @@ export interface ChallengePhoto {
   participant_name: string;
   caption?: string;
   photo_url: string;
-  category: "shape" | "force" | "reset12" | string;
+  category?: "shape" | "force" | "reset12" | string;
   votes_count: number;
   created_at: string;
   has_voted?: boolean;
+  is_veteran?: boolean;
+  patente_level?: number;
 }
 
 export interface PhotoVote {
@@ -215,6 +258,8 @@ export interface Challenge {
   vote_url?: string;
   has_voted?: boolean;
   created_at?: string;
+  is_veteran?: boolean;
+  patente_level?: number;
 }
 
 export interface HallEntry {
@@ -233,7 +278,14 @@ export interface ChatMessage {
   text: string;
   image?: string | null;
   likes: number;
+  liked_by?: string[];
+  has_liked?: boolean;
   timestamp: string;
+  is_veteran?: boolean;
+  patente_level?: number;
+  consecutive_months?: number;
+  name_color?: string;
+  text_color?: string;
 }
 
 export interface KPI {
@@ -256,12 +308,17 @@ export interface Coupon {
   code: string;
   pct: number;
   active: boolean;
+  is_veteran?: boolean;
+  title?: string;
 }
 
 export interface Partner {
   id: string;
   email: string;
+  name?: string;
   active: boolean;
+  is_veteran?: boolean;
+  created_at?: string;
 }
 
 export interface Coach {
@@ -272,7 +329,10 @@ export interface Coach {
 
 export interface Broadcast {
   id: string;
-  text: string;
+  title?: string;
+  message?: string;
+  target_plan?: string;
+  text?: string;
   author: string;
   date: string;
 }
@@ -281,4 +341,31 @@ export interface Subscription {
   active: boolean;
   planId?: string;
   cycle?: BillingCycle;
+  billingCycle?: BillingCycle | string;
+  expiresAt?: string;
+  couponCode?: string;
+  isVeteran?: boolean;
+  consecutiveMonths?: number;
+  monthlyFeePaid?: boolean;
+  startedAt?: string;
+  lastPaymentDate?: string;
+}
+
+export interface ExerciseSetLog {
+  set_num: number;
+  weight_kg: number | string;
+  reps: number | string;
+  completed: boolean;
+}
+
+export interface ExerciseLog {
+  id: string;
+  user_email?: string;
+  workout_id: string;
+  exercise_id: string;
+  exercise_name?: string;
+  date: string;
+  sets: ExerciseSetLog[];
+  notes?: string;
+  updated_at: string;
 }

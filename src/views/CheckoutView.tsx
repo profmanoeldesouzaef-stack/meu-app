@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { BillingCycle } from "../types";
+import { VeteranBadge } from "../lib/patents";
 import {
   ShieldCheck,
   Tag,
@@ -25,10 +26,12 @@ export const CheckoutView: React.FC = () => {
     setSubscription,
     fmtPrice,
     currencySymbol,
+    setIsVeteran,
   } = useApp();
 
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscountPct, setCouponDiscountPct] = useState<number>(0);
+  const [isVeteranCouponApplied, setIsVeteranCouponApplied] = useState<boolean>(false);
   const [couponMessage, setCouponMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [checkingCoupon, setCheckingCoupon] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -87,24 +90,33 @@ export const CheckoutView: React.FC = () => {
 
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!couponCode.trim()) return;
+    const cleanCode = couponCode.trim().toUpperCase();
+    if (!cleanCode) return;
 
     setCheckingCoupon(true);
     setCouponMessage(null);
     try {
-      const res = await api.checkCoupon(couponCode.trim().toUpperCase(), subtotal);
+      const res = await api.checkCoupon(cleanCode, subtotal);
       if (res.valid) {
         setCouponDiscountPct(res.percent);
+        const isVet = res.is_veteran || cleanCode === "VETERANO";
+        setIsVeteranCouponApplied(Boolean(isVet));
+        if (isVet) {
+          setIsVeteran(true);
+          api.redeemCoupon("VETERANO").catch(() => {});
+        }
         setCouponMessage({
-          text: `${t("checkout.applied")} (-${res.percent}%)`,
+          text: res.message || `${t("checkout.applied")} (-${res.percent}%)`,
           ok: true,
         });
       } else {
         setCouponDiscountPct(0);
+        setIsVeteranCouponApplied(false);
         setCouponMessage({ text: t("checkout.invalid"), ok: false });
       }
     } catch {
       setCouponDiscountPct(0);
+      setIsVeteranCouponApplied(false);
       setCouponMessage({ text: t("checkout.invalid"), ok: false });
     } finally {
       setCheckingCoupon(false);
@@ -113,6 +125,9 @@ export const CheckoutView: React.FC = () => {
 
   const handleConfirmPurchase = () => {
     setProcessing(true);
+    if (isVeteranCouponApplied) {
+      setIsVeteran(true);
+    }
     setTimeout(() => {
       setSubscription({
         active: true,
@@ -272,13 +287,28 @@ export const CheckoutView: React.FC = () => {
           </form>
 
           {couponMessage && (
-            <p
-              className={`text-xs font-semibold mt-2 ${
-                couponMessage.ok ? "text-[#34C759]" : "text-[#FF453A]"
-              }`}
-            >
-              {couponMessage.text}
-            </p>
+            <div className="mt-2.5 space-y-2">
+              <p
+                className={`text-xs font-semibold ${
+                  couponMessage.ok ? "text-[#34C759]" : "text-[#FF453A]"
+                }`}
+              >
+                {couponMessage.text}
+              </p>
+              {isVeteranCouponApplied && (
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-[#FF6A2A]/15 via-[#D8B46A]/15 to-transparent border border-[#FF9A62]/40 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <VeteranBadge size="sm" />
+                    <span className="text-[11px] font-bold text-[#FFD580]">
+                      Selo de Veterano concedido e vinculado à sua conta!
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-[#9B9BA1] uppercase font-bold shrink-0">
+                    Exclusivo
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

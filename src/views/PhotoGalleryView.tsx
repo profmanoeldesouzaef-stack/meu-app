@@ -298,8 +298,8 @@ export async function togglePhotoVote(
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getCategoryBadge = (cat: string) => {
-    const c = cat.toLowerCase();
+  const getCategoryBadge = (cat?: string) => {
+    const c = (cat || "").toLowerCase();
     if (c === "destaque" || c === "geral") {
       return (
         <span className="bg-[#FF6A2A]/20 text-[#FF6A2A] border border-[#FF6A2A]/30 text-[10px] font-black uppercase px-2 py-0.5 rounded-md">
@@ -374,16 +374,6 @@ export async function togglePhotoVote(
         {/* Action Buttons */}
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
-            id="btn-open-supabase-code"
-            onClick={() => setShowCodeModal(true)}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#D8B46A] border border-[#D8B46A]/40 hover:bg-[#D8B46A]/10 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-            title="Ver código SQL do Supabase e função TypeScript"
-          >
-            <Code2 className="w-4 h-4" />
-            <span>SQL Supabase & TS</span>
-          </button>
-
-          <button
             id="btn-submit-challenge-photo"
             onClick={() => setShowSubmitModal(true)}
             className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:opacity-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-[#FF6A2A]/20"
@@ -453,7 +443,7 @@ export async function togglePhotoVote(
 
             <div className="mt-2 relative rounded-2xl overflow-hidden aspect-square border border-[#D8B46A]/40 group">
               <img
-                src={photos[0].photo_url}
+                src={photos[0].photo_url || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=800&auto=format&fit=crop&q=80"}
                 alt={photos[0].participant_name}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
@@ -512,7 +502,7 @@ export async function togglePhotoVote(
 
             <div className="mt-2 relative rounded-2xl overflow-hidden aspect-square border border-[#2B2B2F] group">
               <img
-                src={photos[1].photo_url}
+                src={photos[1].photo_url || "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&auto=format&fit=crop&q=80"}
                 alt={photos[1].participant_name}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
@@ -570,7 +560,7 @@ export async function togglePhotoVote(
 
             <div className="mt-2 relative rounded-2xl overflow-hidden aspect-square border border-[#2B2B2F] group">
               <img
-                src={photos[2].photo_url}
+                src={photos[2].photo_url || "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&auto=format&fit=crop&q=80"}
                 alt={photos[2].participant_name}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
@@ -672,7 +662,7 @@ export async function togglePhotoVote(
                   {/* Photo Container */}
                   <div className="relative aspect-[4/3] bg-[#0A0A0A] overflow-hidden">
                     <img
-                      src={photo.photo_url}
+                      src={photo.photo_url || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=500&auto=format&fit=crop&q=80"}
                       alt={photo.participant_name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
@@ -795,7 +785,7 @@ export async function togglePhotoVote(
             <div className="p-4 sm:p-6 flex flex-col items-center">
               <div className="rounded-2xl overflow-hidden max-h-[55vh] border border-[#2B2B2F] shadow-xl">
                 <img
-                  src={selectedPhoto.photo_url}
+                  src={selectedPhoto.photo_url || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=800&auto=format&fit=crop&q=80"}
                   alt={selectedPhoto.participant_name}
                   className="w-full h-full object-contain max-h-[55vh]"
                 />

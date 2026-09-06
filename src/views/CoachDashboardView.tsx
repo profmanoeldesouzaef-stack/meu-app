@@ -49,17 +49,39 @@ import {
   Copy,
   Layers,
   Filter,
+  Link2,
+  MessageCircle,
+  ExternalLink,
+  Share2,
+  Droplets,
+  Palette,
 } from "lucide-react";
 import { SubstituteExerciseModal } from "../components/SubstituteExerciseModal";
 import { BulkSendWorkoutModal } from "../components/BulkSendWorkoutModal";
 import { CoachWorkoutLibrary } from "../components/CoachWorkoutLibrary";
 import { CoachDietFoodPresets } from "../components/CoachDietFoodPresets";
+import { VeteranBadge } from "../lib/patents";
 
 export const CoachDashboardView: React.FC = () => {
-  const { t, lang } = useApp();
+  const { t, lang, currentUserEmail, setInviteData, setActiveView, setVipChatUnlocked } = useApp();
   const [activeTab, setActiveTab] = useState<
-    "overview" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
+    "overview" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
   >("overview");
+
+  // Protocol state (Hydration & Creatine for student)
+  const [studentWaterTarget, setStudentWaterTarget] = useState<number>(2500);
+  const [studentCreatineDose, setStudentCreatineDose] = useState<number>(5.0);
+  const [savingProtocol, setSavingProtocol] = useState<boolean>(false);
+
+  // Consultant Invite Link state
+  const [coachInviteName, setCoachInviteName] = useState("Mariana Ferreira");
+  const [coachInviteSpecialty, setCoachInviteSpecialty] = useState(
+    "Periodização Científica & Protocolo de 12 Semanas"
+  );
+  const [coachInviteMessage, setCoachInviteMessage] = useState(
+    "Vou planejar seus treinos personalizados, ajustar sua dieta flexível e avaliar sua evolução física e fotos a cada 20 dias."
+  );
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [radar, setRadar] = useState<RadarAlert[]>([]);
@@ -90,6 +112,7 @@ export const CoachDashboardView: React.FC = () => {
   const [newCouponCode, setNewCouponCode] = useState("");
   const [newCouponPct, setNewCouponPct] = useState(15);
   const [newPartnerEmail, setNewPartnerEmail] = useState("");
+  const [newPartnerName, setNewPartnerName] = useState("");
   const [broadcastText, setBroadcastText] = useState("");
   const [broadcastAuthor, setBroadcastAuthor] = useState("Coach Mari");
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -104,6 +127,9 @@ export const CoachDashboardView: React.FC = () => {
   const [aiWorkoutFocusNotes, setAiWorkoutFocusNotes] = useState(
     "Ênfase em retração escapular e controle excêntrico de 3 segundos."
   );
+  const [aiWorkoutDate, setAiWorkoutDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [aiWorkoutMode, setAiWorkoutMode] = useState<"single_day" | "weekly_split" | "multi_week_periodization">("single_day");
+  const [aiWorkoutWeeks, setAiWorkoutWeeks] = useState(4);
 
   // AI Diet Generator Modal & State
   const [showAiDietModal, setShowAiDietModal] = useState(false);
@@ -122,6 +148,28 @@ export const CoachDashboardView: React.FC = () => {
   const [newFoodMeal, setNewFoodMeal] = useState<"breakfast" | "lunch" | "snack" | "dinner" | "supper">("lunch");
   const [showAddFoodForm, setShowAddFoodForm] = useState(false);
 
+  // Food Option (Substitution) Modal State
+  const [addFoodOptionModalFoodId, setAddFoodOptionModalFoodId] = useState<string | null>(null);
+  const [addFoodOptionText, setAddFoodOptionText] = useState("");
+
+  // Coach AI Methodology & Guidelines Chat State
+  const [coachAiMessages, setCoachAiMessages] = useState<Array<{ sender: "coach" | "ai"; text: string; time: string }>>([
+    {
+      sender: "ai",
+      text: "Olá, Coach! Sou a sua IA técnica e biomecânica. Diga-me tudo o que você prefere ou veta na prescrição de treinos e dietas dos seus alunos (ex: 'Priorizar exercícios livres com halteres', 'Evitar açúcares simples e ultraprocessados', 'Prescrever cadência excêntrica de 3s', 'Para mulheres priorizar glúteos e posteriores'). Atualizarei suas diretrizes ativas e as aplicarei em cada novo plano gerado!",
+      time: "Agora",
+    },
+  ]);
+  const [coachAiInput, setCoachAiInput] = useState("");
+  const [coachAiSending, setCoachAiSending] = useState(false);
+  const [activeGuidelines, setActiveGuidelines] = useState<string[]>([
+    "Priorizar exercícios multiarticulares e cadência excêntrica controlada (3s).",
+    "Nas divisões femininas, priorizar volume para glúteos e posterior de coxa.",
+    "Evitar alimentos ultraprocessados; prescrever fontes limpas de carboidrato (arroz, batata, aveia).",
+    "Sempre incluir opções de substituição equivalentes em macronutrientes para cada refeição.",
+  ]);
+  const [newCustomGuideline, setNewCustomGuideline] = useState("");
+
   // Challenge Event state & form
   const [challengeEvent, setChallengeEvent] = useState<ChallengeEvent | null>(null);
   const [challengeSubmissions, setChallengeSubmissions] = useState<Challenge[]>([]);
@@ -129,6 +177,7 @@ export const CoachDashboardView: React.FC = () => {
   const [evtSubtitle, setEvtSubtitle] = useState("");
   const [evtRules, setEvtRules] = useState("");
   const [evtPrize, setEvtPrize] = useState("");
+  const [evtStartDate, setEvtStartDate] = useState("");
   const [evtEndDate, setEvtEndDate] = useState("");
   const [evtStatus, setEvtStatus] = useState<"active" | "loading" | "closed">("active");
   const [savingChallenge, setSavingChallenge] = useState(false);
@@ -146,7 +195,8 @@ export const CoachDashboardView: React.FC = () => {
       api.getChallengeEvent().catch(() => null),
       api.getChallenges().catch(() => []),
       api.getWorkoutLibrary().catch(() => []),
-    ]).then(([kp, rd, cp, pt, wk, dt, stds, chEvt, chItems, wLib]) => {
+      api.getCoachGuidelines().catch(() => []),
+    ]).then(([kp, rd, cp, pt, wk, dt, stds, chEvt, chItems, wLib, cGuidelines]) => {
       setKpis(kp);
       setRadar(rd);
       setCoupons(cp);
@@ -154,12 +204,14 @@ export const CoachDashboardView: React.FC = () => {
       if (wLib) setWorkoutLibrary(wLib);
       if (wk) setWorkout(wk);
       if (dt) setDiet(dt);
+      if (cGuidelines && cGuidelines.length > 0) setActiveGuidelines(cGuidelines);
       if (chEvt) {
         setChallengeEvent(chEvt);
         setEvtTitle(chEvt.title || "");
         setEvtSubtitle(chEvt.subtitle || "");
         setEvtRules(chEvt.rules || "");
         setEvtPrize(chEvt.prize || "");
+        setEvtStartDate(chEvt.start_date ? chEvt.start_date.split("T")[0] : "");
         setEvtEndDate(chEvt.end_date ? chEvt.end_date.split("T")[0] : "");
         setEvtStatus(chEvt.status || "active");
       }
@@ -178,6 +230,14 @@ export const CoachDashboardView: React.FC = () => {
 
   const selectedStudent = students.find((s) => s.id === selectedStudentId) || students[0] || null;
 
+  // Sync hydration & creatine when selected student changes
+  useEffect(() => {
+    if (selectedStudent) {
+      setStudentWaterTarget(selectedStudent.water_ml ? Number(selectedStudent.water_ml) : 2500);
+      setStudentCreatineDose(selectedStudent.creatine_dose_g ? Number(selectedStudent.creatine_dose_g) : 5.0);
+    }
+  }, [selectedStudentId, selectedStudent?.id, selectedStudent?.water_ml, selectedStudent?.creatine_dose_g]);
+
   // Handle selecting a student
   const handleSelectStudent = (student: Student) => {
     setSelectedStudentId(student.id);
@@ -187,6 +247,8 @@ export const CoachDashboardView: React.FC = () => {
     if (student.workout) {
       setWorkout(student.workout);
     }
+    setStudentWaterTarget(student.water_ml ? Number(student.water_ml) : 2500);
+    setStudentCreatineDose(student.creatine_dose_g ? Number(student.creatine_dose_g) : 5.0);
     // Pre-fill AI modals with student info
     setAiDietGoal(student.goal || "Hipertrofia Muscular");
     setAiDietRestrictions(student.restrictions || "Nenhuma");
@@ -194,6 +256,55 @@ export const CoachDashboardView: React.FC = () => {
       student.weight_kg * 32 + (student.goal.toLowerCase().includes("hipertrofia") ? 400 : -350)
     );
     setAiDietKcal(estimatedKcal > 1400 ? estimatedKcal : 2200);
+  };
+
+  const handleToggleStudentVipChat = async (studentId: string) => {
+    const target = students.find((s) => s.id === studentId);
+    if (!target) return;
+    const newVipStatus = !target.vip_chat_unlocked;
+    try {
+      await api.toggleStudentVipChat(studentId, newVipStatus);
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, vip_chat_unlocked: newVipStatus } : s))
+      );
+      if (studentId === "std-1") {
+        setVipChatUnlocked(newVipStatus);
+      }
+      showNotification(
+        newVipStatus
+          ? `Benefício VIP de Cores do Chat CONCEDIDO para ${target.name}!`
+          : `Benefício VIP de Cores do Chat REVOGADO de ${target.name}.`
+      );
+    } catch (e) {
+      console.error("Error toggling VIP chat:", e);
+      showNotification("Erro ao atualizar benefício VIP do aluno.");
+    }
+  };
+
+  const handleSaveStudentProtocol = async () => {
+    if (!selectedStudent) return;
+    setSavingProtocol(true);
+    try {
+      const updated = await api.updateStudentProtocol(selectedStudent.id, {
+        water_ml: studentWaterTarget,
+        creatine_dose_g: studentCreatineDose,
+      });
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.id === selectedStudent.id
+            ? { ...s, water_ml: updated.water_ml, creatine_dose_g: updated.creatine_dose_g }
+            : s
+        )
+      );
+      showNotification(
+        `Prescrição salva: ${updated.water_ml}ml de água e ${updated.creatine_dose_g}g de creatina para ${selectedStudent.name}!`
+      );
+    } catch (e) {
+      console.error("Error saving student protocol:", e);
+      showNotification("Erro ao salvar prescrição de hidratação e creatina.");
+    } finally {
+      setSavingProtocol(false);
+    }
   };
 
   const showNotification = (msg: string) => {
@@ -231,10 +342,11 @@ export const CoachDashboardView: React.FC = () => {
     e.preventDefault();
     if (!newPartnerEmail.trim()) return;
     try {
-      const created = await api.createPartner(newPartnerEmail.trim());
-      setPartners((prev) => [created, ...prev]);
+      const created = await api.createPartner(newPartnerEmail.trim(), newPartnerName.trim() || undefined);
+      setPartners((prev) => [{ ...created, is_veteran: true }, ...prev]);
       setNewPartnerEmail("");
-      showNotification("Parceiro adicionado com sucesso!");
+      setNewPartnerName("");
+      showNotification("Parceiro adicionado com sucesso! Selo de Veterano concedido.");
     } catch (e) {
       console.error("Error creating partner:", e);
     }
@@ -321,20 +433,26 @@ export const CoachDashboardView: React.FC = () => {
   };
 
   // Diet food option (substitutions) handlers
-  const handleAddFoodOption = (foodId: string) => {
-    const opt = prompt("Digite uma opção de substituição (ex: 150g de Tilápia Grelhada):");
-    if (!opt || !opt.trim() || !diet) return;
+  const handleOpenAddFoodOptionModal = (foodId: string) => {
+    setAddFoodOptionModalFoodId(foodId);
+    setAddFoodOptionText("");
+  };
+
+  const handleConfirmAddFoodOption = () => {
+    if (!addFoodOptionModalFoodId || !addFoodOptionText.trim() || !diet) return;
     const updatedFoods = diet.foods.map((f) => {
-      if (f.id === foodId) {
+      if (f.id === addFoodOptionModalFoodId) {
         return {
           ...f,
-          options: [...(f.options || []), opt.trim()],
+          options: [...(f.options || []), addFoodOptionText.trim()],
         };
       }
       return f;
     });
     setDiet({ ...diet, foods: updatedFoods });
-    showNotification("Opção de substituição adicionada.");
+    setAddFoodOptionModalFoodId(null);
+    setAddFoodOptionText("");
+    showNotification("Opção de substituição adicionada com sucesso.");
   };
 
   const handleRemoveFoodOption = (foodId: string, optIndex: number) => {
@@ -436,6 +554,7 @@ export const CoachDashboardView: React.FC = () => {
         subtitle: evtSubtitle,
         rules: evtRules,
         prize: evtPrize,
+        start_date: evtStartDate ? new Date(evtStartDate).toISOString() : new Date().toISOString(),
         end_date: evtEndDate ? new Date(evtEndDate).toISOString() : new Date().toISOString(),
         status: evtStatus,
         is_active: evtStatus !== "loading",
@@ -471,6 +590,69 @@ export const CoachDashboardView: React.FC = () => {
     }
   };
 
+  // Coach AI Methodology & Guidelines Chat Handlers
+  const handleSendMessageToAi = async (textToSend?: string) => {
+    const msg = (textToSend || coachAiInput).trim();
+    if (!msg || coachAiSending) return;
+    const now = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    setCoachAiMessages((prev) => [...prev, { sender: "coach", text: msg, time: now }]);
+    setCoachAiInput("");
+    setCoachAiSending(true);
+
+    try {
+      const res = await api.coachAiChat(msg, activeGuidelines);
+      const aiTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      setCoachAiMessages((prev) => [
+        ...prev,
+        {
+          sender: "ai",
+          text: res.reply || "Instruções registradas com sucesso! Aplicarei aos treinos e dietas.",
+          time: aiTime,
+        },
+      ]);
+      if (res.updated_guidelines && res.updated_guidelines.length > 0) {
+        setActiveGuidelines(res.updated_guidelines);
+        showNotification("Diretrizes da sua metodologia atualizadas!");
+      }
+    } catch (err) {
+      console.error("Erro no chat com IA:", err);
+      setCoachAiMessages((prev) => [
+        ...prev,
+        {
+          sender: "ai",
+          text: "Recebi suas diretrizes, Coach! As preferências da sua metodologia estão ativas para as próximas prescrições de treinos e dietas.",
+          time: now,
+        },
+      ]);
+    } finally {
+      setCoachAiSending(false);
+    }
+  };
+
+  const handleAddCustomGuideline = async () => {
+    if (!newCustomGuideline.trim()) return;
+    const updated = [...activeGuidelines, newCustomGuideline.trim()];
+    setActiveGuidelines(updated);
+    setNewCustomGuideline("");
+    try {
+      await api.updateCoachGuidelines(updated);
+      showNotification("Nova diretriz salva na sua metodologia!");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveGuideline = async (index: number) => {
+    const updated = activeGuidelines.filter((_, i) => i !== index);
+    setActiveGuidelines(updated);
+    try {
+      await api.updateCoachGuidelines(updated);
+      showNotification("Diretriz removida.");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // AI Workout Generation
   const handleGenerateAiWorkout = async () => {
     setAiWorkoutLoading(true);
@@ -483,6 +665,9 @@ export const CoachDashboardView: React.FC = () => {
         duration_min: Number(aiWorkoutDuration),
         focus_notes: aiWorkoutFocusNotes,
         lang,
+        workout_date: aiWorkoutDate || new Date().toISOString().split("T")[0],
+        generation_mode: aiWorkoutMode,
+        period_weeks: Number(aiWorkoutWeeks),
       });
 
       if (generated) {
@@ -574,6 +759,8 @@ export const CoachDashboardView: React.FC = () => {
 
   const tabs = [
     { id: "overview", label: t("coach.overview"), icon: TrendingUp },
+    { id: "ai_chat", label: "Conversar com IA (Metodologia)", icon: Sparkles },
+    { id: "invite", label: "Convidar Alunos (Link VIP)", icon: Link2 },
     { id: "challenges", label: "Desafios & Votação", icon: Trophy },
     { id: "workouts", label: t("coach.workouts"), icon: Dumbbell },
     { id: "library", label: "Biblioteca de Treinos", icon: BookOpen },
@@ -707,6 +894,593 @@ export const CoachDashboardView: React.FC = () => {
               ))}
             </div>
           </div>
+
+          {/* Banner: Convidar Alunos para Consultoria */}
+          <div className="p-6 rounded-3xl bg-gradient-to-r from-[#D8B46A]/20 via-[#1D1D1F] to-[#151515] border border-[#D8B46A]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#D8B46A] bg-[#D8B46A]/20 px-2.5 py-0.5 rounded-full border border-[#D8B46A]/40 inline-flex items-center gap-1">
+                <Link2 className="w-3 h-3" />
+                <span>LINK DE CONSULTORIA</span>
+              </span>
+              <h3 className="text-base font-extrabold text-[#F5F5F7]">
+                Convide novos alunos para a sua consultoria
+              </h3>
+              <p className="text-xs text-[#9B9BA1] max-w-xl">
+                Gere um link exclusivo de convite. Quando a pessoa acessar, ela ingressará diretamente vinculada à sua consultoria, com cupom VIP e anamnese direcionada para você.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setActiveTab("invite")}
+              className="px-5 py-3 rounded-2xl text-xs font-extrabold bg-[#D8B46A] hover:bg-[#E2C382] text-[#0A0A0A] shrink-0 flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#D8B46A]/20"
+            >
+              <Link2 className="w-4 h-4" />
+              <span>Gerar e Copiar Link</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Conversar com a IA (Metodologia do Coach) */}
+      {activeTab === "ai_chat" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Header Card */}
+          <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#1A1A1E] via-[#151515] to-[#121214] border border-[#D8B46A]/30 space-y-4 relative overflow-hidden shadow-2xl">
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#D8B46A]/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-widest text-[#D8B46A] bg-[#D8B46A]/15 px-3 py-1 rounded-full border border-[#D8B46A]/30 inline-flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 fill-current" />
+                  <span>ASSISTENTE TÉCNICO & BIOMECÂNICO</span>
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
+                  Conversar com a IA do Coach
+                </h2>
+                <p className="text-xs sm:text-sm text-[#9B9BA1] max-w-2xl leading-relaxed">
+                  Defina a sua filosofia de treinamento, cadências, exercícios proibidos ou prioritários e regras alimentares.
+                  A IA absorverá suas orientações e as aplicará automaticamente em todos os treinos e dietas gerados para seus alunos.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#1D1D1F] border border-[#34C759]/40 text-[#34C759] text-xs font-black shrink-0">
+                <span className="w-2 h-2 rounded-full bg-[#34C759] animate-ping" />
+                <span>IA Sincronizada com sua Metodologia</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column: Interactive Chat Console (7 cols) */}
+            <div className="lg:col-span-7 space-y-4 flex flex-col">
+              <div className="p-5 rounded-3xl bg-[#151515] border border-[#2B2B2F] flex-1 flex flex-col space-y-4 shadow-xl">
+                <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#D8B46A] to-[#FFD580] flex items-center justify-center text-[#0A0A0A] font-black">
+                      <Sparkles className="w-4 h-4 fill-current" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-[#F5F5F7]">Canal de Metodologia & Instruções</h4>
+                      <p className="text-[10px] text-[#9B9BA1]">Diga o que a IA deve ou não prescrever</p>
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] font-bold text-[#D8B46A] bg-[#D8B46A]/10 px-2.5 py-1 rounded-lg border border-[#D8B46A]/20">
+                    Gemini Biomechanics
+                  </span>
+                </div>
+
+                {/* Conversation List */}
+                <div className="space-y-3.5 max-h-[440px] overflow-y-auto pr-1">
+                  {coachAiMessages.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex gap-3 ${
+                        msg.sender === "coach" ? "flex-row-reverse" : "flex-row"
+                      }`}
+                    >
+                      <div
+                        className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 text-xs font-black ${
+                          msg.sender === "coach"
+                            ? "bg-[#D8B46A] text-[#0A0A0A]"
+                            : "bg-[#1D1D1F] border border-[#2B2B2F] text-[#D8B46A]"
+                        }`}
+                      >
+                        {msg.sender === "coach" ? "C" : <Sparkles className="w-3.5 h-3.5 fill-current" />}
+                      </div>
+
+                      <div
+                        className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed space-y-1 ${
+                          msg.sender === "coach"
+                            ? "bg-[#D8B46A] text-[#0A0A0A] font-semibold rounded-tr-none"
+                            : "bg-[#1D1D1F] border border-[#2B2B2F] text-[#E5E5EA] rounded-tl-none"
+                        }`}
+                      >
+                        <p className="whitespace-pre-line">{msg.text}</p>
+                        <span
+                          className={`text-[9px] block text-right font-medium ${
+                            msg.sender === "coach" ? "text-[#0A0A0A]/70" : "text-[#6E6E73]"
+                          }`}
+                        >
+                          {msg.time}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {coachAiSending && (
+                    <div className="flex gap-3">
+                      <div className="w-7 h-7 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-center shrink-0 text-[#D8B46A]">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#9B9BA1] flex items-center gap-2">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#D8B46A] animate-bounce" />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#D8B46A] animate-bounce delay-100" />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#D8B46A] animate-bounce delay-200" />
+                        <span>Absorvendo diretrizes e atualizando regras biomecânicas...</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Suggestion Chips */}
+                <div className="space-y-1.5 pt-2 border-t border-[#2B2B2F]/60">
+                  <span className="text-[10px] font-bold text-[#9B9BA1] block">
+                    Sugestões rápidas de diretriz:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      "Foco no Agora: Treino exclusivo para hoje, sem semana inteira",
+                      "Variabilidade de Estímulos: Variar pegadas, ângulos e métodos de intensidade",
+                      "Formatação Direta & Motivacional: Listar apenas o que executar na sessão",
+                      "Priorizar exercícios multiarticulares e cadência excêntrica de 3s",
+                      "Sempre incluir opções de substituição equivalentes de alimentos",
+                    ].map((sug, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSendMessageToAi(sug)}
+                        disabled={coachAiSending}
+                        className="text-[10px] font-semibold bg-[#1D1D1F] border border-[#2B2B2F] hover:border-[#D8B46A] text-[#9B9BA1] hover:text-[#F5F5F7] px-2.5 py-1 rounded-lg transition-all text-left cursor-pointer"
+                      >
+                        + {sug}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Input Bar */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendMessageToAi();
+                  }}
+                  className="flex gap-2 pt-2"
+                >
+                  <input
+                    type="text"
+                    value={coachAiInput}
+                    onChange={(e) => setCoachAiInput(e.target.value)}
+                    placeholder="Ex: 'Não quero agachamento livre com barra para iniciantes, prefira goblet squat ou hack...'"
+                    className="flex-1 px-4 py-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#6E6E73] focus:outline-none focus:border-[#D8B46A]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={coachAiSending || !coachAiInput.trim()}
+                    className="px-5 py-3 rounded-2xl bg-[#D8B46A] hover:bg-[#E2C382] text-[#0A0A0A] font-extrabold text-xs flex items-center gap-2 disabled:opacity-50 transition-all cursor-pointer shrink-0 shadow-lg shadow-[#D8B46A]/20"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Enviar</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Right Column: Active Methodology Guidelines & Rules (5 cols) */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+                <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-[#D8B46A]" />
+                    <h3 className="text-xs font-black text-[#F5F5F7] uppercase tracking-wider">
+                      Diretrizes Ativas da Sua Metodologia
+                    </h3>
+                  </div>
+                  <span className="text-[10px] font-bold bg-[#D8B46A]/15 text-[#D8B46A] px-2.5 py-0.5 rounded-full border border-[#D8B46A]/30">
+                    {activeGuidelines.length} regras ativas
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-[#9B9BA1] leading-relaxed">
+                  Estas regras são injetadas diretamente nos algoritmos de IA de prescrição da VYRA toda vez que você gerar treinos ou dietas para seus alunos.
+                </p>
+
+                {/* Guidelines List */}
+                <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                  {activeGuidelines.map((g, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] hover:border-[#D8B46A]/40 flex items-start justify-between gap-3 transition-all group"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 rounded-lg bg-[#D8B46A]/15 text-[#D8B46A] text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5 border border-[#D8B46A]/30">
+                          {idx + 1}
+                        </span>
+                        <p className="text-xs text-[#F5F5F7] leading-relaxed">{g}</p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveGuideline(idx)}
+                        title="Remover diretriz"
+                        className="text-[#9B9BA1] hover:text-[#FF453A] p-1 rounded-lg hover:bg-[#151515] transition-all shrink-0 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Custom Guideline Field */}
+                <div className="pt-3 border-t border-[#2B2B2F]/60 space-y-2">
+                  <label className="text-[10px] font-bold text-[#9B9BA1] block uppercase">
+                    + Adicionar Nova Regra Manualmente
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newCustomGuideline}
+                      onChange={(e) => setNewCustomGuideline(e.target.value)}
+                      placeholder="ex: 'Sempre prescrever 10 min de cardio pós-treino'"
+                      className="flex-1 px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#6E6E73] focus:outline-none focus:border-[#D8B46A]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomGuideline}
+                      disabled={!newCustomGuideline.trim()}
+                      className="px-3.5 py-2 rounded-xl bg-[#2B2B2F] hover:bg-[#D8B46A] hover:text-[#0A0A0A] text-xs font-bold text-[#F5F5F7] transition-all disabled:opacity-50 cursor-pointer"
+                    >
+                      Adicionar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Test Shortcut */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#D8B46A]/15 to-[#1D1D1F] border border-[#D8B46A]/30 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-black text-[#D8B46A] block uppercase">
+                      Testar na Prática
+                    </span>
+                    <p className="text-[11px] text-[#9B9BA1]">
+                      Gere um treino para um aluno usando as regras acima.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setActiveTab("workouts");
+                      setShowAiWorkoutModal(true);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#D8B46A] text-[#0A0A0A] font-black text-xs hover:brightness-110 flex items-center gap-1.5 shrink-0 shadow-md shadow-[#D8B46A]/20 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 fill-current" />
+                    <span>Gerar Treino</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Convidar Alunos (Consultoria) */}
+      {activeTab === "invite" && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#1A1A1E] via-[#151515] to-[#121214] border border-[#D8B46A]/30 space-y-4 relative overflow-hidden shadow-2xl">
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#D8B46A]/10 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-widest text-[#D8B46A] bg-[#D8B46A]/15 px-3 py-1 rounded-full border border-[#D8B46A]/30 inline-flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span>CONSULTORIA EXCLUSIVA & CAPTAÇÃO</span>
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
+                  Link de Convite para sua Consultoria
+                </h2>
+                <p className="text-xs sm:text-sm text-[#9B9BA1] max-w-2xl leading-relaxed">
+                  Envie este link para as pessoas que você deseja que se tornem seus alunos. Ao entrarem por ele, elas serão automaticamente vinculadas ao seu painel para você prescrever treinos, dietas e acompanhar o progresso a cada 20 dias.
+                </p>
+              </div>
+
+              {/* KPI Mini Badges */}
+              <div className="flex gap-2 sm:flex-col shrink-0">
+                <div className="px-3.5 py-2 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+                  <span className="text-[10px] text-[#9B9BA1] font-bold block uppercase">Alunos Vinculados</span>
+                  <span className="text-lg font-black text-[#D8B46A]">{students.length} Ativos</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Generated Official Link Box */}
+            <div className="p-4 rounded-2xl bg-[#0F0F11] border border-[#D8B46A]/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#F5F5F7] flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-[#D8B46A]" />
+                  <span>Seu Link Oficial de Convite de Alunos</span>
+                </span>
+                <span className="text-[10px] text-[#34C759] font-bold bg-[#34C759]/15 px-2 py-0.5 rounded-full border border-[#34C759]/30">
+                  Pronto para Enviar
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1 px-4 py-2.5 rounded-xl bg-[#18181B] border border-[#2B2B2F] text-xs font-mono text-[#D8B46A] truncate flex items-center">
+                  {`${typeof window !== "undefined" ? window.location.origin : "https://vyra.club"}/?invite=consultoria&coach=${encodeURIComponent(
+                    coachInviteName
+                  )}`}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const url = `${typeof window !== "undefined" ? window.location.origin : "https://vyra.club"}/?invite=consultoria&coach=${encodeURIComponent(
+                        coachInviteName
+                      )}`;
+                      navigator.clipboard.writeText(url);
+                      setInviteCopied(true);
+                      showNotification("Link copiado para a área de transferência!");
+                      setTimeout(() => setInviteCopied(false), 2500);
+                    }}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md ${
+                      inviteCopied
+                        ? "bg-[#34C759] text-black shadow-[#34C759]/20"
+                        : "bg-[#D8B46A] hover:bg-[#E2C382] text-[#0A0A0A] shadow-[#D8B46A]/20"
+                    }`}
+                  >
+                    {inviteCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{inviteCopied ? "Link Copiado!" : "Copiar Link"}</span>
+                  </button>
+
+                  <a
+                    href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                      `🔥 Olá! Quero te convidar para a minha Consultoria de Treino no Vyra Club!\n\n` +
+                      `Vou montar sua periodização completa com execução em vídeo e acompanhar suas fotos e medidas a cada 20 dias.\n\n` +
+                      `Acesse meu link exclusivo para iniciar:\n` +
+                      `${typeof window !== "undefined" ? window.location.origin : "https://vyra.club"}/?invite=consultoria&coach=${encodeURIComponent(
+                        coachInviteName
+                      )}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#25D366] hover:bg-[#22bf5b] text-white flex items-center justify-center gap-1.5 transition-all shadow-md shadow-[#25D366]/20"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-current" />
+                    <span>WhatsApp</span>
+                  </a>
+
+                  <button
+                    onClick={() => {
+                      setInviteData({
+                        active: true,
+                        coachName: coachInviteName,
+                        coachRole: "",
+                        specialty: coachInviteSpecialty,
+                        couponCode: "",
+                      });
+                      setActiveView("anamnesis");
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-[#1D1D1F] hover:bg-[#2B2B2F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] flex items-center gap-1.5 transition-colors"
+                    title="Ver como o aluno verá a anamnese"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-[#6D9BFF]" />
+                    <span className="hidden sm:inline">Testar Fluxo</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Grid: Customization Form & Live Preview */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Customizer */}
+            <div className="lg:col-span-7 p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-[#D8B46A]" />
+                <h3 className="text-sm font-bold text-[#F5F5F7]">
+                  Personalizar Informações do seu Convite
+                </h3>
+              </div>
+              <p className="text-xs text-[#9B9BA1]">
+                Estas informações aparecem no topo da página quando o futuro aluno clica no seu link.
+              </p>
+
+              <div className="space-y-3.5 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#9B9BA1] mb-1">
+                    Seu Nome de Apresentação
+                  </label>
+                  <input
+                    type="text"
+                    value={coachInviteName}
+                    onChange={(e) => setCoachInviteName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs focus:outline-none focus:border-[#D8B46A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#9B9BA1] mb-1">
+                    Especialidade Principal da Consultoria
+                  </label>
+                  <input
+                    type="text"
+                    value={coachInviteSpecialty}
+                    onChange={(e) => setCoachInviteSpecialty(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs focus:outline-none focus:border-[#D8B46A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-[#9B9BA1] mb-1">
+                    Mensagem de Boas-Vindas aos Novos Alunos
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={coachInviteMessage}
+                    onChange={(e) => setCoachInviteMessage(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs focus:outline-none focus:border-[#D8B46A] resize-none"
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => showNotification("Configurações do convite salvas!")}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] hover:bg-[#252528] border border-[#2B2B2F] text-[#F5F5F7] transition-colors"
+                  >
+                    Salvar Padrão
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Visual Preview of what Student sees */}
+            <div className="lg:col-span-5 p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#9B9BA1]">
+                    Pré-visualização do Aluno
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/30">
+                    Modo Recepção VIP
+                  </span>
+                </div>
+
+                {/* Simulated Invite Landing Card */}
+                <div className="p-5 rounded-2xl bg-[#111113] border border-[#D8B46A]/30 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center font-bold text-lg border border-[#D8B46A]/40">
+                      {coachInviteName.charAt(0)}
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-[#D8B46A] uppercase block">
+                        Convite de Consultoria
+                      </span>
+                      <h4 className="text-sm font-extrabold text-[#F5F5F7]">{coachInviteName}</h4>
+                      {coachInviteSpecialty && (
+                        <p className="text-[11px] text-[#9B9BA1]">{coachInviteSpecialty}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-[#E5E5EA] bg-[#1A1A1E] p-3 rounded-xl border border-[#2B2B2F] italic">
+                    "{coachInviteMessage}"
+                  </p>
+
+                  <div className="space-y-2 pt-1 text-[11px]">
+                    <div className="flex items-center gap-2 text-[#9B9BA1]">
+                      <Check className="w-3.5 h-3.5 text-[#34C759]" />
+                      <span>Periodização completa de treinos com execução em vídeo</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[#9B9BA1]">
+                      <Check className="w-3.5 h-3.5 text-[#34C759]" />
+                      <span>Acompanhamento físico e fotos a cada 20 dias</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[#9B9BA1]">
+                      <Check className="w-3.5 h-3.5 text-[#34C759]" />
+                      <span>Comunicação e suporte direto pelo aplicativo</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#2B2B2F]">
+                <p className="text-[11px] text-[#9B9BA1] text-center">
+                  Ao clicar no seu link, o aluno é direcionado para a Anamnese inicial e já fica listado na sua aba de Alunos.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Students enrolled through your consulting */}
+          <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-[#F5F5F7] flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#D8B46A]" />
+                  <span>Alunos Atuais da sua Consultoria ({students.length})</span>
+                </h3>
+                <p className="text-xs text-[#9B9BA1]">
+                  Todos os atletas vinculados que você acompanha e prescreve.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setActiveTab("workouts")}
+                className="text-xs font-bold text-[#D8B46A] hover:underline flex items-center gap-1"
+              >
+                <span>Prescrever Treinos</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {students.map((std) => (
+                <div
+                  key={std.id}
+                  className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={std.avatar_url || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80"}
+                      alt={std.name}
+                      className="w-10 h-10 rounded-xl object-cover border border-[#2B2B2F]"
+                    />
+                    <div>
+                      <h4 className="text-xs font-bold text-[#F5F5F7]">{std.name}</h4>
+                      <p className="text-[10px] text-[#9B9BA1]">{std.goal}</p>
+                      <span className="text-[9px] font-bold text-[#D8B46A]">{std.plan}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={() => {
+                        handleSelectStudent(std);
+                        setActiveTab("workouts");
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#D8B46A]/15 text-[#D8B46A] hover:bg-[#D8B46A]/25 transition-colors text-center"
+                    >
+                      Treino
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleSelectStudent(std);
+                        setActiveTab("diet");
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#151515] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F] transition-colors text-center"
+                    >
+                      Dieta
+                    </button>
+                    <button
+                      type="button"
+                      id={`invite-vip-toggle-${std.id}`}
+                      onClick={() => handleToggleStudentVipChat(std.id)}
+                      title={std.vip_chat_unlocked ? "Benefício VIP de Cores do Chat ativo. Clique para revogar." : "Conceder Benefício VIP de Cores do Chat"}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
+                        std.vip_chat_unlocked
+                          ? "bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/40"
+                          : "bg-[#151515] text-[#9B9BA1] hover:text-[#FFD700] border border-[#2B2B2F]"
+                      }`}
+                    >
+                      <Palette className="w-3 h-3" />
+                      <span>{std.vip_chat_unlocked ? "VIP Chat" : "+ VIP"}</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -768,21 +1542,40 @@ export const CoachDashboardView: React.FC = () => {
 
           {/* Exempt Partners */}
           <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
-            <h3 className="text-sm font-bold text-[#F5F5F7]">Parceiros & Atletas Isentos</h3>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-[#F5F5F7]">Parceiros & Atletas Isentos</h3>
+                <span className="px-2 py-0.5 rounded-full bg-[#FF6A2A]/15 text-[#FF9A62] border border-[#FF6A2A]/30 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                  SELO VETERANO GARANTIDO
+                </span>
+              </div>
+              <p className="text-xs text-[#9B9BA1]">
+                Todos os parceiros cadastrados recebem Acesso VIP e o <strong>Selo de Veterano</strong> (laranja e dourado) ativo no perfil, no chat e na galeria.
+              </p>
+            </div>
 
-            <form onSubmit={handleCreatePartner} className="flex gap-2">
+            <form onSubmit={handleCreatePartner} className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                placeholder="Nome da marca ou atleta (ex: NutriFit)"
+                value={newPartnerName}
+                onChange={(e) => setNewPartnerName(e.target.value)}
+                className="w-full sm:w-1/3 px-3.5 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs focus:outline-none focus:border-[#D8B46A]"
+              />
               <input
                 type="email"
-                placeholder="email@atleta.com"
+                required
+                placeholder="email@parceiro.com"
                 value={newPartnerEmail}
                 onChange={(e) => setNewPartnerEmail(e.target.value)}
                 className="flex-1 px-3.5 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs focus:outline-none focus:border-[#D8B46A]"
               />
               <button
                 type="submit"
-                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shrink-0 cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Adicionar
+                <Plus className="w-3.5 h-3.5" />
+                <span>Adicionar</span>
               </button>
             </form>
 
@@ -790,19 +1583,33 @@ export const CoachDashboardView: React.FC = () => {
               {partners.map((pt) => (
                 <div
                   key={pt.id}
-                  className="p-3 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-between"
+                  className="p-3.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
                 >
-                  <span className="text-xs text-[#F5F5F7] truncate max-w-[200px]">{pt.email}</span>
-                  <button
-                    onClick={() => handleTogglePartner(pt.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer ${
-                      pt.active
-                        ? "bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/30"
-                        : "bg-[#FF453A]/15 text-[#FF453A] border border-[#FF453A]/30"
-                    }`}
-                  >
-                    {pt.active ? "Acesso VIP" : "Revogado"}
-                  </button>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-[#F5F5F7] truncate">
+                          {pt.name || pt.email.split("@")[0]}
+                        </span>
+                        {/* Todos os parceiros têm o selo de veterano garantido */}
+                        <VeteranBadge size="xs" />
+                      </div>
+                      <span className="text-[11px] text-[#9B9BA1] truncate block">{pt.email}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      onClick={() => handleTogglePartner(pt.id)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
+                        pt.active
+                          ? "bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/30"
+                          : "bg-[#FF453A]/15 text-[#FF453A] border border-[#FF453A]/30"
+                      }`}
+                    >
+                      {pt.active ? "Acesso VIP Ativo" : "Revogado"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1304,6 +2111,186 @@ export const CoachDashboardView: React.FC = () => {
             </div>
           )}
 
+          {/* Hydration, Creatine Protocol & VIP Chat Colors for Selected Student */}
+          {selectedStudent && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Prescrição de Hidratação & Creatina */}
+              <div className="p-5 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-[#2B2B2F]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-[#6D9BFF]/20 text-[#6D9BFF] flex items-center justify-center">
+                      <Droplets className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-[#F5F5F7]">
+                        Prescrição de Hidratação & Creatina
+                      </h4>
+                      <p className="text-[10px] text-[#9B9BA1]">
+                        Para {selectedStudent.name} (exibido na tela Início do aluno)
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    id="save-protocol-btn"
+                    onClick={handleSaveStudentProtocol}
+                    disabled={savingProtocol}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#6D9BFF] text-black hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#6D9BFF]/20"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{savingProtocol ? "Salvando..." : "Salvar Prescrição"}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Water Target */}
+                  <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#6D9BFF] flex items-center gap-1">
+                        <Droplets className="w-3.5 h-3.5" />
+                        <span>Meta de Água Diária</span>
+                      </label>
+                      <span className="text-xs font-black text-[#F5F5F7]">
+                        {studentWaterTarget} ml
+                      </span>
+                    </div>
+
+                    <input
+                      id="coach-water-target-input"
+                      type="number"
+                      step="100"
+                      min="1000"
+                      max="6000"
+                      value={studentWaterTarget}
+                      onChange={(e) => setStudentWaterTarget(parseInt(e.target.value) || 2500)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-xs font-bold text-[#F5F5F7] focus:outline-none focus:border-[#6D9BFF]"
+                    />
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {[2000, 2500, 3000, 3500, 4000].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setStudentWaterTarget(preset)}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                            studentWaterTarget === preset
+                              ? "bg-[#6D9BFF] text-black"
+                              : "bg-[#121214] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+                          }`}
+                        >
+                          {preset}ml
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Creatine Dose */}
+                  <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#D8B46A] flex items-center gap-1">
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>Dose de Creatina</span>
+                      </label>
+                      <span className="text-xs font-black text-[#F5F5F7]">
+                        {studentCreatineDose}g / dose
+                      </span>
+                    </div>
+
+                    <input
+                      id="coach-creatine-dose-input"
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      max="20"
+                      value={studentCreatineDose}
+                      onChange={(e) => setStudentCreatineDose(parseFloat(e.target.value) || 5)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-xs font-bold text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
+                    />
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {[3, 5, 7, 10].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setStudentCreatineDose(preset)}
+                          className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                            studentCreatineDose === preset
+                              ? "bg-[#D8B46A] text-black"
+                              : "bg-[#121214] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+                          }`}
+                        >
+                          {preset}g
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-[#9B9BA1] bg-[#1D1D1F] p-2.5 rounded-xl border border-[#2B2B2F] flex items-center gap-2">
+                  <span className="text-[#D8B46A] font-bold">ℹ Regra Padrão:</span>
+                  <span>Caso você não altere, o aluno tem meta automática de <strong>2500 ml</strong> de água e <strong>5g</strong> de creatina.</span>
+                </p>
+              </div>
+
+              {/* Concessão de Benefício VIP de Cores do Chat Global */}
+              <div className="p-5 rounded-3xl bg-gradient-to-br from-[#1C1808] via-[#151515] to-[#121214] border border-[#FFD700]/40 space-y-3 flex flex-col justify-between shadow-lg shadow-[#FFD700]/5">
+                <div>
+                  <div className="flex items-center justify-between pb-2 border-b border-[#2B2B2F]">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-[#FFD700]/20 text-[#FFD700] flex items-center justify-center">
+                        <Palette className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-[#F5F5F7]">
+                          Personalização VIP de Cores do Chat
+                        </h4>
+                        <span className="text-[9px] text-[#FFD700] font-black uppercase tracking-wider">
+                          Benefício Exclusivo do Aluno
+                        </span>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+                        selectedStudent.vip_chat_unlocked
+                          ? "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/30"
+                          : "bg-[#9B9BA1]/10 text-[#9B9BA1] border-[#2B2B2F]"
+                      }`}
+                    >
+                      {selectedStudent.vip_chat_unlocked ? "VIP ATIVO" : "BLOQUEADO"}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-[#9B9BA1] mt-3 leading-relaxed">
+                    Permite que <strong className="text-[#F5F5F7]">{selectedStudent.name}</strong> personalize a cor do nome e do texto das mensagens no Chat da Comunidade Global. Você como Coach pode conceder esse benefício especial a qualquer momento.
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    id={`toggle-vip-chat-btn-${selectedStudent.id}`}
+                    type="button"
+                    onClick={() => handleToggleStudentVipChat(selectedStudent.id)}
+                    className={`w-full py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md ${
+                      selectedStudent.vip_chat_unlocked
+                        ? "bg-[#FF453A]/15 text-[#FF453A] border border-[#FF453A]/30 hover:bg-[#FF453A]/25"
+                        : "bg-gradient-to-r from-[#FFD700] to-[#FFA000] text-black hover:brightness-110 shadow-[#FFD700]/20 active:scale-95"
+                    }`}
+                  >
+                    <Palette className="w-4 h-4" />
+                    <span>
+                      {selectedStudent.vip_chat_unlocked
+                        ? `Revogar Benefício VIP de ${selectedStudent.name}`
+                        : `Conceder Benefício VIP de Cores para ${selectedStudent.name}`}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Diet Macronutrients and Meals Table */}
           {diet && (
             <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-6">
@@ -1540,7 +2527,7 @@ export const CoachDashboardView: React.FC = () => {
                           </span>
                           <button
                             type="button"
-                            onClick={() => handleAddFoodOption(food.id)}
+                            onClick={() => handleOpenAddFoodOptionModal(food.id)}
                             className="text-[10px] text-[#9B9BA1] hover:text-[#D8B46A] flex items-center gap-1 cursor-pointer font-semibold"
                           >
                             <Plus className="w-3 h-3" />
@@ -1760,7 +2747,7 @@ export const CoachDashboardView: React.FC = () => {
           {challengeEvent?.champion && (
             <div className="p-5 rounded-3xl bg-gradient-to-r from-[#D8B46A]/20 via-[#151515] to-[#151515] border border-[#D8B46A] flex flex-col sm:flex-row items-center gap-4 shadow-2xl animate-in zoom-in-95">
               <img
-                src={challengeEvent.champion.photo}
+                src={challengeEvent.champion.photo || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80"}
                 alt={challengeEvent.champion.name}
                 className="w-20 h-20 rounded-2xl object-cover border-2 border-[#D8B46A] shadow-md shadow-[#D8B46A]/20 shrink-0"
               />
@@ -1820,7 +2807,7 @@ export const CoachDashboardView: React.FC = () => {
               Edição Dinâmica do Desafio (Textos, Títulos e Regras)
             </h4>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-[#9B9BA1] mb-1">
                   Título do Desafio *
@@ -1832,6 +2819,19 @@ export const CoachDashboardView: React.FC = () => {
                   onChange={(e) => setEvtTitle(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs font-semibold text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
                   placeholder="Ex: DESAFIO CORPO & MENTE VYRA - 12 SEMANAS"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#9B9BA1] mb-1">
+                  Data de Início do Desafio *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={evtStartDate}
+                  onChange={(e) => setEvtStartDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs font-semibold text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
                 />
               </div>
 
@@ -1942,7 +2942,7 @@ export const CoachDashboardView: React.FC = () => {
                         </span>
                         <div className="flex items-center gap-2">
                           <img
-                            src={sub.after_image}
+                            src={sub.after_image || "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=400&auto=format&fit=crop&q=80"}
                             alt={sub.author}
                             className="w-12 h-12 rounded-xl object-cover border border-[#2B2B2F]"
                           />
@@ -2026,6 +3026,45 @@ export const CoachDashboardView: React.FC = () => {
                   <option value="Full Body Metcon (Condicionamento & Força)">Full Body Metcon (Condicionamento & Força)</option>
                 </select>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-[#9B9BA1] mb-1">Data de Início / Referência</label>
+                  <input
+                    type="date"
+                    value={aiWorkoutDate}
+                    onChange={(e) => setAiWorkoutDate(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] font-semibold focus:outline-none focus:border-[#D8B46A]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#9B9BA1] mb-1">Modo de Prescrição</label>
+                  <select
+                    value={aiWorkoutMode}
+                    onChange={(e) => setAiWorkoutMode(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] font-semibold focus:outline-none focus:border-[#D8B46A]"
+                  >
+                    <option value="single_day">Treino Diário Único</option>
+                    <option value="weekly_split">Semana Completa (Split Variado)</option>
+                    <option value="multi_week_periodization">Periodização por Semanas</option>
+                  </select>
+                </div>
+              </div>
+
+              {aiWorkoutMode === "multi_week_periodization" && (
+                <div>
+                  <label className="block font-bold text-[#9B9BA1] mb-1">Duração do Ciclo (Semanas)</label>
+                  <select
+                    value={aiWorkoutWeeks}
+                    onChange={(e) => setAiWorkoutWeeks(Number(e.target.value))}
+                    className="w-full p-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] font-semibold focus:outline-none focus:border-[#D8B46A]"
+                  >
+                    <option value={4}>4 Semanas (Mesociclo de Choque / Acumulação)</option>
+                    <option value={8}>8 Semanas (Progressão Ondulatória)</option>
+                    <option value={12}>12 Semanas (Periodização Completa Vyra)</option>
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2209,6 +3248,7 @@ export const CoachDashboardView: React.FC = () => {
       {/* Bulk Send Workout Modal */}
       {showSendWorkoutModal && workoutToBulkSend && (
         <BulkSendWorkoutModal
+          isOpen={showSendWorkoutModal}
           workout={workoutToBulkSend}
           students={students}
           onClose={() => {
@@ -2216,7 +3256,8 @@ export const CoachDashboardView: React.FC = () => {
             setWorkoutToBulkSend(null);
           }}
           onSuccess={(count, studentNames) => {
-            showNotification(`Treino atribuído com sucesso para ${count} aluno(s): ${studentNames.join(", ")}!`);
+            const namesDisplay = typeof studentNames === "string" ? studentNames : (Array.isArray(studentNames) ? (studentNames as string[]).join(", ") : "");
+            showNotification(`Treino atribuído com sucesso para ${count} aluno(s): ${namesDisplay}!`);
             // Refresh student list from server
             api.getStudents().then(setStudents).catch(() => {});
           }}
@@ -2226,10 +3267,109 @@ export const CoachDashboardView: React.FC = () => {
       {/* Substitute Exercise Modal */}
       {substituteModalIdx !== null && workout && workout.exercises && workout.exercises[substituteModalIdx] && (
         <SubstituteExerciseModal
+          isOpen={substituteModalIdx !== null}
           currentExercise={workout.exercises[substituteModalIdx]}
+          exerciseName={workout.exercises[substituteModalIdx].name}
+          muscle={workout.exercises[substituteModalIdx].muscle}
           onSelectSubstitute={handleSelectSubstitute}
           onClose={() => setSubstituteModalIdx(null)}
         />
+      )}
+
+      {/* Food Option (Substitution) Modal */}
+      {addFoodOptionModalFoodId !== null && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#151515] border border-[#2B2B2F] rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+              <div className="flex items-center gap-2">
+                <UtensilsCrossed className="w-5 h-5 text-[#D8B46A]" />
+                <h3 className="text-sm font-black text-[#F5F5F7]">Adicionar Opção de Troca</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddFoodOptionModalFoodId(null);
+                  setAddFoodOptionText("");
+                }}
+                className="p-1 rounded-lg text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#9B9BA1] leading-relaxed">
+              O aluno poderá alternar para esta opção no aplicativo se não quiser consumir o prato principal prescrito.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-[#9B9BA1] mb-1">
+                  Nome e Porção da Substituição *
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={addFoodOptionText}
+                  onChange={(e) => setAddFoodOptionText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleConfirmAddFoodOption();
+                    }
+                  }}
+                  placeholder="Ex: 150g de Tilápia Grelhada com Lemon Pepper"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs font-semibold text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
+                />
+              </div>
+
+              {/* Quick Suggestion Chips */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-[#9B9BA1] block">Sugestões rápidas:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    "150g de Tilápia Grelhada",
+                    "140g de Patinho Moído",
+                    "4 Ovos Cozidos inteiros",
+                    "150g de Tofu Grelhado",
+                    "1 scoop de Whey com 30g de Aveia",
+                    "150g de Batata Doce Cozida",
+                    "150g de Arroz Integral",
+                  ].map((sug, sIdx) => (
+                    <button
+                      key={sIdx}
+                      type="button"
+                      onClick={() => setAddFoodOptionText(sug)}
+                      className="text-[10px] bg-[#1D1D1F] border border-[#2B2B2F] hover:border-[#D8B46A] text-[#9B9BA1] hover:text-[#F5F5F7] px-2 py-1 rounded-lg transition-all text-left cursor-pointer"
+                    >
+                      + {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#2B2B2F]">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddFoodOptionModalFoodId(null);
+                  setAddFoodOptionText("");
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-[#9B9BA1] hover:bg-[#1D1D1F] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAddFoodOption}
+                disabled={!addFoodOptionText.trim()}
+                className="px-5 py-2 rounded-xl text-xs font-black bg-[#D8B46A] hover:bg-[#E2C382] text-[#0A0A0A] disabled:opacity-50 cursor-pointer shadow-md shadow-[#D8B46A]/20"
+              >
+                Adicionar Opção
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { supabase } from "@/src/lib/supabase"; // A IMPORTAÇÃO NOVA FICA AQUI NO TOPO
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}/api${path}`, {
@@ -11,7 +12,47 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export const api = {
   plans: () => req<any[]>("/plans"),
-  todayWorkout: () => req<any>("/workout/today"),
+  
+  // A ROTA DO TREINO FOI SUBSTITUÍDA AQUI:
+  todayWorkout: async () => {
+    const { data: workout, error: wError } = await supabase
+      .from('workouts')
+      .select('*')
+      .eq('is_today', true)
+      .single();
+
+    if (wError) throw wError;
+
+    const { data: exercises, error: eError } = await supabase
+      .from('workout_exercises')
+      .select(`
+        id, sets, reps, rest, coach_tip,
+        exercises ( name, muscle, video_url )
+      `)
+      .eq('workout_id', workout.id)
+      .order('order_index', { ascending: true });
+
+    if (eError) throw eError;
+
+    return {
+      title: workout.title,
+      focus: workout.focus,
+      duration_min: workout.duration_min,
+      coach_note: workout.coach_note,
+      exercises: exercises.map((e: any) => ({
+        id: e.id,
+        name: e.exercises.name,
+        muscle: e.exercises.muscle,
+        sets: e.sets,
+        reps: e.reps,
+        rest: e.rest,
+        coach_tip: e.coach_tip,
+        video_url: e.exercises.video_url
+      }))
+    };
+  },
+  
+  // O restante do arquivo continua igual:
   updateWorkout: (body: any) => req<any>("/workout/today", { method: "PUT", body: JSON.stringify(body) }),
   diet: () => req<any>("/diet"),
   updateDiet: (body: any) => req<any>("/diet", { method: "PUT", body: JSON.stringify(body) }),

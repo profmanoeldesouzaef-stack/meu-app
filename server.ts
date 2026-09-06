@@ -4,7 +4,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { createClient as createSupabaseClient, SupabaseClient } from "@supabase/supabase-js";
-import { getDietAssistantRecommendations } from "./lib/diet-assistant";
+import { getDietAssistantRecommendations, getRecipesByIngredients } from "./lib/diet-assistant";
 
 const app = express();
 const PORT = 3000;
@@ -150,6 +150,14 @@ const db = {
 
   ip_votes: {} as Record<string, string[]>,
 
+  coach_guidelines: [
+    "Foco no Agora: Gere o treino EXCLUSIVAMENTE para o dia de hoje. Não crie ou mostre a semana inteira.",
+    "Variabilidade de Estímulos: O treino de hoje deve ser único e dinâmico. Nunca repita a exata mesma rotina dos dias anteriores. Varie os exercícios, as pegadas, as angulações ou os métodos de intensidade (como drop-set, rest-pause, bi-set, isometria) para gerar novos desafios.",
+    "Formatação: Entregue o treino de forma direta e motivacional, listando apenas o que deve ser executado nesta sessão.",
+    "Priorizar exercícios multiarticulares e cadência excêntrica controlada (3s).",
+    "Sempre incluir opções de substituição equivalentes em macronutrientes para cada refeição.",
+  ] as string[],
+
   workout: {
     id: "wk-today",
     day_label: "Dia 3 · Push",
@@ -230,11 +238,111 @@ const db = {
     carbs_pct: 40,
     fats_pct: 25,
     foods: [
-      { id: "f1", name: "Omelete com aveia", grams: 250, kcal: 480, p: 35, c: 42, f: 18, meal: "breakfast" },
-      { id: "f2", name: "Frango grelhado com arroz", grams: 350, kcal: 620, p: 55, c: 65, f: 12, meal: "lunch" },
-      { id: "f3", name: "Whey isolado + banana", grams: 300, kcal: 320, p: 30, c: 40, f: 4, meal: "snack" },
-      { id: "f4", name: "Salmão com batata doce", grams: 320, kcal: 580, p: 42, c: 48, f: 22, meal: "dinner" },
-      { id: "f5", name: "Iogurte grego + castanhas", grams: 200, kcal: 340, p: 22, c: 18, f: 20, meal: "supper" },
+      {
+        id: "f1",
+        name: "Omelete com aveia",
+        grams: 250,
+        kcal: 480,
+        p: 35,
+        c: 42,
+        f: 18,
+        meal: "breakfast",
+        ingredients: [
+          { name: "Ovos médios caipiras", quantity: "3 unidades (150g)", grams: 150, kcal: 215, p: 19, c: 1, f: 15 },
+          { name: "Aveia em flocos finos", quantity: "45g (3 colheres)", grams: 45, kcal: 165, p: 6, c: 27, f: 3 },
+          { name: "Queijo minas frescal light", quantity: "40g picado", grams: 40, kcal: 75, p: 9, c: 1, f: 3 },
+          { name: "Tomate em cubinhos e orégano", quantity: "15g", grams: 15, kcal: 25, p: 1, c: 3, f: 0 },
+        ],
+        recipe_instructions: [
+          "1. Quebre os ovos em uma tigela e bata bem com garfo.",
+          "2. Incorpore a aveia, o tomate, o queijo picado e as ervas.",
+          "3. Despeje em frigideira antiaderente levemente untada com azeite em fogo médio-baixo.",
+          "4. Tampe por 3 minutos, vire e doure por mais 1 minuto.",
+        ],
+      },
+      {
+        id: "f2",
+        name: "Frango grelhado com arroz e legumes",
+        grams: 350,
+        kcal: 620,
+        p: 55,
+        c: 65,
+        f: 12,
+        meal: "lunch",
+        ingredients: [
+          { name: "Filé de peito de frango grelhado", quantity: "170g", grams: 170, kcal: 280, p: 50, c: 0, f: 5 },
+          { name: "Arroz cozido (integral ou branco)", quantity: "140g", grams: 140, kcal: 220, p: 4, c: 48, f: 1 },
+          { name: "Mix de brócolis e cenoura no vapor", quantity: "35g", grams: 35, kcal: 45, p: 2, c: 8, f: 0 },
+          { name: "Azeite extravirgem de oliva", quantity: "5ml (1 colher de chá)", grams: 5, kcal: 45, p: 0, c: 0, f: 5 },
+        ],
+        recipe_instructions: [
+          "1. Tempere o frango com alho, limão, sal e pimenta.",
+          "2. Grelhe em frigideira quente por 4 a 5 minutos de cada lado até ficar dourado e suculento.",
+          "3. Cozinhe os legumes no vapor até ficarem 'al dente'.",
+          "4. Monte com o arroz aquecido e regue com o azeite.",
+        ],
+      },
+      {
+        id: "f3",
+        name: "Whey isolado + banana",
+        grams: 300,
+        kcal: 320,
+        p: 30,
+        c: 40,
+        f: 4,
+        meal: "snack",
+        ingredients: [
+          { name: "Whey protein isolado (1 dosador)", quantity: "30g", grams: 30, kcal: 120, p: 26, c: 2, f: 1 },
+          { name: "Banana prata fatiada", quantity: "1 unidade média (100g)", grams: 100, kcal: 95, p: 1, c: 23, f: 0 },
+          { name: "Bebida vegetal ou leite desnatado", quantity: "170ml", grams: 170, kcal: 70, p: 5, c: 8, f: 1 },
+        ],
+        recipe_instructions: [
+          "1. Adicione a bebida vegetal ou leite gelado em uma coqueteleira.",
+          "2. Adicione o scoop de Whey e agite vigorosamente.",
+          "3. Sirva em copo alto acompanhado da banana fatiada com canela.",
+        ],
+      },
+      {
+        id: "f4",
+        name: "Salmão com batata doce",
+        grams: 320,
+        kcal: 580,
+        p: 42,
+        c: 48,
+        f: 22,
+        meal: "dinner",
+        ingredients: [
+          { name: "Filé de salmão fresco selado", quantity: "160g", grams: 160, kcal: 320, p: 38, c: 0, f: 18 },
+          { name: "Batata doce assada com alecrim", quantity: "140g", grams: 140, kcal: 180, p: 3, c: 42, f: 0 },
+          { name: "Salada verde com azeite", quantity: "20g", grams: 20, kcal: 45, p: 1, c: 2, f: 4 },
+        ],
+        recipe_instructions: [
+          "1. Tempere o salmão com sal marinho, raspas de limão siciliano e pimenta.",
+          "2. Sele na frigideira bem quente com a pele para baixo por 4 minutos, vire e deixe mais 2 minutos.",
+          "3. Asse a batata doce em rodelas na airfryer com alecrim até dourar.",
+          "4. Sirva o filé ao lado da batata doce crocante.",
+        ],
+      },
+      {
+        id: "f5",
+        name: "Iogurte grego + castanhas",
+        grams: 200,
+        kcal: 340,
+        p: 22,
+        c: 18,
+        f: 20,
+        meal: "supper",
+        ingredients: [
+          { name: "Iogurte grego natural desnatado", quantity: "160g", grams: 160, kcal: 130, p: 16, c: 9, f: 1 },
+          { name: "Mix de castanhas-do-pará e nozes picadas", quantity: "25g", grams: 25, kcal: 160, p: 4, c: 3, f: 15 },
+          { name: "Sementes de chia e fio leve de mel", quantity: "15g", grams: 15, kcal: 50, p: 2, c: 6, f: 2 },
+        ],
+        recipe_instructions: [
+          "1. Coloque o iogurte grego em uma taça gelada.",
+          "2. Polvilhe as sementes de chia e as castanhas picadas por cima.",
+          "3. Finalize com um fiozinho de mel e consuma antes de dormir.",
+        ],
+      },
     ],
   },
 
@@ -324,6 +432,7 @@ const db = {
       timestamp: new Date(Date.now() - 3600000 * 3).toISOString(),
       likes: 12,
       image: null,
+      is_veteran: false,
     },
     {
       id: "m2",
@@ -333,6 +442,8 @@ const db = {
       timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
       likes: 5,
       image: null,
+      is_veteran: true,
+      patente_level: 2,
     },
     {
       id: "m3",
@@ -342,6 +453,19 @@ const db = {
       timestamp: new Date(Date.now() - 3600000 * 1).toISOString(),
       likes: 2,
       image: null,
+      is_veteran: true,
+      patente_level: 4,
+    },
+    {
+      id: "m4",
+      author: "NutriFit Suplementos",
+      persona: "partner",
+      text: "Novos lotes de Whey Isolado e Creatina Creapure já liberados com desconto VIP pro time Vyra! ⚡",
+      timestamp: new Date(Date.now() - 3600000 * 0.5).toISOString(),
+      likes: 9,
+      image: null,
+      is_veteran: true,
+      patente_level: 6,
     },
   ],
 
@@ -362,10 +486,20 @@ const db = {
   coupons: [
     { id: "cp1", code: "VYRA10", pct: 10, active: true },
     { id: "cp2", code: "RESET25", pct: 25, active: true },
+    {
+      id: "cp-vet",
+      code: "VETERANO",
+      pct: 20,
+      active: true,
+      is_veteran: true,
+      title: "Cupom Veterano Oficial (Desbloqueia Selo de Veterano)",
+    },
   ],
 
   partners: [
-    { id: "pt1", email: "parceiro@empresa.com", active: true },
+    { id: "pt1", email: "parceiro@empresa.com", name: "Parceiro Oficial Vyra", active: true, is_veteran: true },
+    { id: "pt2", email: "growth@nutrifit.com.br", name: "NutriFit Suplementos", active: true, is_veteran: true },
+    { id: "pt3", email: "contato@crosslab.com", name: "CrossLab Wear", active: true, is_veteran: true },
   ],
 
   coaches: [
@@ -391,6 +525,8 @@ const db = {
       category: "shape",
       votes_count: 428,
       created_at: "2026-08-15T10:00:00Z",
+      is_veteran: true,
+      patente_level: 4,
     },
     {
       id: "photo-2",
@@ -401,6 +537,8 @@ const db = {
       category: "force",
       votes_count: 382,
       created_at: "2026-08-18T14:30:00Z",
+      is_veteran: true,
+      patente_level: 3,
     },
     {
       id: "photo-3",
@@ -411,6 +549,8 @@ const db = {
       category: "reset12",
       votes_count: 315,
       created_at: "2026-08-20T09:15:00Z",
+      is_veteran: false,
+      patente_level: 2,
     },
     {
       id: "photo-4",
@@ -421,6 +561,8 @@ const db = {
       category: "shape",
       votes_count: 290,
       created_at: "2026-08-22T16:00:00Z",
+      is_veteran: true,
+      patente_level: 1,
     },
     {
       id: "photo-5",
@@ -431,6 +573,8 @@ const db = {
       category: "force",
       votes_count: 244,
       created_at: "2026-08-25T11:45:00Z",
+      is_veteran: true,
+      patente_level: 2,
     },
     {
       id: "photo-6",
@@ -441,6 +585,8 @@ const db = {
       category: "reset12",
       votes_count: 198,
       created_at: "2026-08-28T08:20:00Z",
+      is_veteran: false,
+      patente_level: 1,
     },
   ],
 
@@ -472,6 +618,12 @@ const db = {
     creatine_dose_g: 5.0,
     creatine_times: ["08:00", "20:00"],
     logged_in: false,
+    is_veteran: true,
+    veteran_since: "2026-08-01T00:00:00Z",
+    consecutive_months: 6,
+    monthly_fee_paid: true,
+    patente_level: 2,
+    vip_chat_unlocked: false,
   },
 
   students: [
@@ -919,6 +1071,39 @@ const db = {
       ],
     },
   ],
+
+  exercise_logs: [
+    {
+      id: "log-init-1",
+      user_email: "rafael@vyra.club",
+      workout_id: "wk-today",
+      exercise_id: "e1",
+      exercise_name: "Supino Reto com Barra",
+      date: new Date().toISOString().split("T")[0],
+      sets: [
+        { set_num: 1, weight_kg: 60, reps: "10", completed: true },
+        { set_num: 2, weight_kg: 70, reps: "10", completed: true },
+        { set_num: 3, weight_kg: 75, reps: "8", completed: true },
+        { set_num: 4, weight_kg: 80, reps: "6", completed: true },
+      ],
+      updated_at: new Date().toISOString(),
+    },
+  ] as Array<{
+    id: string;
+    user_email?: string;
+    workout_id: string;
+    exercise_id: string;
+    exercise_name?: string;
+    date: string;
+    sets: Array<{
+      set_num: number;
+      weight_kg: number | string;
+      reps: number | string;
+      completed: boolean;
+    }>;
+    notes?: string;
+    updated_at: string;
+  }>,
 };
 
 // ============ API Routes ============
@@ -926,6 +1111,101 @@ const api = express.Router();
 
 api.get("/", (req, res) => {
   res.json({ app: "Vyra Training & Performance", status: "ok" });
+});
+
+// Coach Methodology Guidelines & AI Conversational Setup
+api.get("/coach/guidelines", (req, res) => {
+  if (!db.coach_guidelines) {
+    db.coach_guidelines = [
+      "Foco no Agora: Gere o treino EXCLUSIVAMENTE para o dia de hoje. Não crie ou mostre a semana inteira.",
+      "Variabilidade de Estímulos: O treino de hoje deve ser único e dinâmico. Nunca repita a exata mesma rotina dos dias anteriores. Varie os exercícios, as pegadas, as angulações ou os métodos de intensidade (como drop-set, rest-pause, bi-set, isometria) para gerar novos desafios.",
+      "Formatação: Entregue o treino de forma direta e motivacional, listando apenas o que deve ser executado nesta sessão.",
+      "Priorizar exercícios multiarticulares e cadência excêntrica controlada (3s).",
+      "Sempre incluir opções de substituição equivalentes em macronutrientes para cada refeição.",
+    ];
+  }
+  res.json(db.coach_guidelines);
+});
+
+api.put("/coach/guidelines", (req, res) => {
+  const { guidelines } = req.body;
+  if (Array.isArray(guidelines)) {
+    db.coach_guidelines = guidelines;
+  }
+  res.json(db.coach_guidelines || []);
+});
+
+api.post("/coach/ai-chat", async (req, res) => {
+  const { message, active_guidelines = [] } = req.body;
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ error: "message is required" });
+  }
+
+  if (!db.coach_guidelines || db.coach_guidelines.length === 0) {
+    db.coach_guidelines = active_guidelines.length > 0 ? active_guidelines : [
+      "Foco no Agora: Gere o treino EXCLUSIVAMENTE para o dia de hoje. Não crie ou mostre a semana inteira.",
+      "Variabilidade de Estímulos: O treino de hoje deve ser único e dinâmico. Nunca repita a exata mesma rotina dos dias anteriores. Varie os exercícios, as pegadas, as angulações ou os métodos de intensidade (como drop-set, rest-pause, bi-set, isometria) para gerar novos desafios.",
+      "Formatação: Entregue o treino de forma direta e motivacional, listando apenas o que deve ser executado nesta sessão.",
+      "Priorizar exercícios multiarticulares e cadência excêntrica controlada (3s).",
+      "Sempre incluir opções de substituição equivalentes em macronutrientes para cada refeição.",
+    ];
+  }
+
+  const currentGuidelines = db.coach_guidelines;
+  const guidelinesContext = `Diretrizes ativas já salvas pelo Coach:\n- ${currentGuidelines.join("\n- ")}`;
+
+  const prompt = `Você é um Treinador de Alto Rendimento de elite da plataforma VYRA.
+O usuário / Coach solicitará o seu planejamento diário ou instruirá sua metodologia.
+
+SUAS REGRAS ESTRITAS DE CONDUTA SÃO:
+- Foco no Agora: Gere o treino EXCLUSIVAMENTE para o dia de hoje. Não crie ou mostre a semana inteira.
+- Variabilidade de Estímulos: O treino de hoje deve ser único e dinâmico. Nunca repita a exata mesma rotina dos dias anteriores. Varie os exercícios, as pegadas, as angulações ou os métodos de intensidade (como drop-set, rest-pause, bi-set, isometria) para gerar novos desafios.
+- Formatação: Entregue o treino de forma direta e motivacional, listando apenas o que deve ser executado nesta sessão.
+
+${guidelinesContext}
+
+Mensagem do Coach:
+"${message}"
+
+Suas tarefas:
+1. Responda como um verdadeiro Treinador de Alto Rendimento, de forma direta, técnica e motivacional, confirmando a assimilação de cada regra.
+2. Consolide e mantenha a lista de diretrizes ativas da metodologia (incluindo as regras estritas acima mais quaisquer orientações específicas adicionadas pelo Coach).
+3. No final da resposta, SEMPRE adicione o bloco estruturado com as diretrizes consolidadas:
+<<<GUIDELINES: ["diretriz 1", "diretriz 2", ...]>>>`;
+
+  try {
+    const aiResponse = await generateGeminiContentWithFailover(prompt);
+    if (!aiResponse) {
+      return res.json({
+        reply: "Entendido, Coach! Registrei todas as suas instruções de metodologia e aplicarei essas diretrizes em todas as próximas prescrições de treinos e planos alimentares dos seus alunos.",
+        updated_guidelines: currentGuidelines,
+      });
+    }
+
+    let reply = aiResponse;
+    let updated_guidelines = currentGuidelines;
+
+    const match = aiResponse.match(/<<<GUIDELINES:\s*(\[[\s\S]*?\])\s*>>>/);
+    if (match && match[1]) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          updated_guidelines = parsed;
+          db.coach_guidelines = parsed;
+        }
+      } catch (err) {
+        console.warn("Failed to parse guidelines JSON from AI reply:", err);
+      }
+      reply = aiResponse.replace(/<<<GUIDELINES:[\s\S]*?>>>/, "").trim();
+    }
+
+    return res.json({ reply, updated_guidelines });
+  } catch (e) {
+    return res.json({
+      reply: "Instruções do Coach salvas com sucesso no ecossistema de prescrição!",
+      updated_guidelines: currentGuidelines,
+    });
+  }
 });
 
 // Students
@@ -969,6 +1249,36 @@ api.put("/students/:id/workout", (req, res) => {
   res.json(std.workout);
 });
 
+api.put("/students/:id/vip-chat", (req, res) => {
+  const std = db.students.find((s) => s.id === req.params.id);
+  if (!std) return res.status(404).json({ error: "Aluno não encontrado" });
+  const isVip = Boolean(req.body.vip_chat_unlocked);
+  (std as any).vip_chat_unlocked = isVip;
+  if (std.id === "std-1" || std.email === db.profile.email) {
+    (db.profile as any).vip_chat_unlocked = isVip;
+  }
+  res.json(std);
+});
+
+api.put("/students/:id/protocol", (req, res) => {
+  const std = db.students.find((s) => s.id === req.params.id);
+  if (!std) return res.status(404).json({ error: "Aluno não encontrado" });
+  const { water_ml, creatine_dose_g, vip_chat_unlocked } = req.body;
+  if (water_ml !== undefined) (std as any).water_ml = Number(water_ml) || 2500;
+  if (creatine_dose_g !== undefined) (std as any).creatine_dose_g = Number(creatine_dose_g) || 5.0;
+  if (vip_chat_unlocked !== undefined) (std as any).vip_chat_unlocked = Boolean(vip_chat_unlocked);
+
+  if (std.id === "std-1" || std.email === db.profile.email) {
+    if (water_ml !== undefined) db.profile.water_ml = Number(water_ml) || 2500;
+    if (creatine_dose_g !== undefined) {
+      db.profile.creatine_dose_g = Number(creatine_dose_g) || 5.0;
+      db.profile.creatine_g = Number(creatine_dose_g) || 5.0;
+    }
+    if (vip_chat_unlocked !== undefined) (db.profile as any).vip_chat_unlocked = Boolean(vip_chat_unlocked);
+  }
+  res.json(std);
+});
+
 api.post("/coach/assign-workout-bulk", (req, res) => {
   const { student_ids, workout } = req.body;
   if (!Array.isArray(student_ids) || student_ids.length === 0) {
@@ -987,10 +1297,9 @@ api.post("/coach/assign-workout-bulk", (req, res) => {
   }
   db.broadcasts.unshift({
     id: `bcast-${Date.now()}`,
-    title: "Novo Treino Prescrito pelo Coach",
-    message: `Treino "${workout.title || "Prescrito"}" liberado na sua aba de Treino! Siga as orientações e cadência prescritas.`,
+    text: `Novo Treino Prescrito pelo Coach: Treino "${workout.title || "Prescrito"}" liberado na sua aba de Treino! Siga as orientações e cadência prescritas.`,
+    author: "Mari — Head Coach",
     date: new Date().toLocaleDateString("pt-BR"),
-    target_plan: "all",
   });
   res.json({ ok: true, count, message: `Treino enviado com sucesso para ${count} aluno(s)!` });
 });
@@ -1029,6 +1338,237 @@ api.get("/workout/today", (req, res) => {
 api.put("/workout/today", (req, res) => {
   db.workout = { ...db.workout, ...req.body };
   res.json(db.workout);
+});
+
+// Exercise Logs (Weights, Reps and Sets Persistence)
+api.get("/workout/logs", async (req, res) => {
+  const workoutId = (req.query.workout_id as string) || "";
+  const userEmail = (req.query.user_email as string) || "";
+  const exerciseId = (req.query.exercise_id as string) || "";
+
+  // 1. Try fetching from Supabase if configured
+  try {
+    const supabase = getSupabaseServer();
+    let query = supabase.from("exercise_logs").select("*");
+    if (workoutId) query = query.eq("workout_id", workoutId);
+    if (userEmail) query = query.eq("user_email", userEmail);
+    if (exerciseId) query = query.eq("exercise_id", exerciseId);
+
+    const { data: remoteData, error } = await query;
+    if (!error && remoteData && remoteData.length > 0) {
+      // Merge remote data into db.exercise_logs
+      for (const item of remoteData) {
+        const existingIdx = db.exercise_logs.findIndex(
+          (l) =>
+            l.workout_id === item.workout_id &&
+            l.exercise_id === item.exercise_id &&
+            (!item.user_email || l.user_email === item.user_email)
+        );
+        if (existingIdx !== -1) {
+          db.exercise_logs[existingIdx] = { ...db.exercise_logs[existingIdx], ...item };
+        } else {
+          db.exercise_logs.push(item);
+        }
+      }
+    }
+  } catch (err) {
+    // Non-blocking fallback to in-memory db
+  }
+
+  let filtered = [...db.exercise_logs];
+  if (workoutId) {
+    filtered = filtered.filter((l) => l.workout_id === workoutId);
+  }
+  if (exerciseId) {
+    filtered = filtered.filter((l) => l.exercise_id === exerciseId);
+  }
+  if (userEmail) {
+    filtered = filtered.filter((l) => !l.user_email || l.user_email === userEmail);
+  }
+
+  res.json(filtered);
+});
+
+api.post("/workout/logs", async (req, res) => {
+  const { workout_id, exercise_id, exercise_name, sets, notes, user_email } = req.body;
+
+  if (!workout_id || !exercise_id || !Array.isArray(sets)) {
+    return res.status(400).json({ error: "workout_id, exercise_id and sets array are required" });
+  }
+
+  const existingIdx = db.exercise_logs.findIndex(
+    (l) =>
+      l.workout_id === workout_id &&
+      l.exercise_id === exercise_id &&
+      (!user_email || l.user_email === user_email)
+  );
+
+  const entry = {
+    id:
+      existingIdx !== -1
+        ? db.exercise_logs[existingIdx].id
+        : `elog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    user_email: user_email || "rafael@vyra.club",
+    workout_id,
+    exercise_id,
+    exercise_name: exercise_name || "",
+    date: new Date().toISOString().split("T")[0],
+    sets: sets.map((s: any, idx: number) => ({
+      set_num: s.set_num || s.setNum || idx + 1,
+      weight_kg: s.weight_kg !== undefined ? s.weight_kg : s.weight || "",
+      reps: s.reps !== undefined ? s.reps : "",
+      completed: Boolean(s.completed),
+    })),
+    notes: notes || "",
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existingIdx !== -1) {
+    db.exercise_logs[existingIdx] = entry;
+  } else {
+    db.exercise_logs.push(entry);
+  }
+
+  // Attempt async sync to Supabase
+  try {
+    const supabase = getSupabaseServer();
+    await supabase.from("exercise_logs").upsert(
+      {
+        id: entry.id,
+        user_email: entry.user_email,
+        workout_id: entry.workout_id,
+        exercise_id: entry.exercise_id,
+        exercise_name: entry.exercise_name,
+        date: entry.date,
+        sets: entry.sets,
+        notes: entry.notes,
+        updated_at: entry.updated_at,
+      },
+      { onConflict: "id" }
+    );
+  } catch (err) {
+    // Silent failover to in-memory store
+  }
+
+  res.json({ ok: true, entry });
+});
+
+api.post("/workout/batch-logs", async (req, res) => {
+  const { workout_id, logs, user_email } = req.body;
+
+  if (!workout_id || !logs || typeof logs !== "object") {
+    return res.status(400).json({ error: "workout_id and logs object are required" });
+  }
+
+  let count = 0;
+  const entries: any[] = [];
+
+  for (const [exercise_id, setsList] of Object.entries(logs)) {
+    if (!Array.isArray(setsList)) continue;
+
+    const existingIdx = db.exercise_logs.findIndex(
+      (l) =>
+        l.workout_id === workout_id &&
+        l.exercise_id === exercise_id &&
+        (!user_email || l.user_email === user_email)
+    );
+
+    const entry = {
+      id:
+        existingIdx !== -1
+          ? db.exercise_logs[existingIdx].id
+          : `elog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      user_email: user_email || "rafael@vyra.club",
+      workout_id,
+      exercise_id,
+      exercise_name: "",
+      date: new Date().toISOString().split("T")[0],
+      sets: (setsList as any[]).map((s: any, idx: number) => ({
+        set_num: s.set_num || s.setNum || idx + 1,
+        weight_kg: s.weight_kg !== undefined ? s.weight_kg : s.weight || "",
+        reps: s.reps !== undefined ? s.reps : "",
+        completed: Boolean(s.completed),
+      })),
+      notes: "",
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingIdx !== -1) {
+      db.exercise_logs[existingIdx] = entry;
+    } else {
+      db.exercise_logs.push(entry);
+    }
+
+    entries.push(entry);
+    count++;
+  }
+
+  // Attempt async sync to Supabase
+  try {
+    const supabase = getSupabaseServer();
+    if (entries.length > 0) {
+      await supabase.from("exercise_logs").upsert(
+        entries.map((e) => ({
+          id: e.id,
+          user_email: e.user_email,
+          workout_id: e.workout_id,
+          exercise_id: e.exercise_id,
+          date: e.date,
+          sets: e.sets,
+          updated_at: e.updated_at,
+        })),
+        { onConflict: "id" }
+      );
+    }
+  } catch (err) {
+    // Non-blocking
+  }
+
+  res.json({ ok: true, saved_count: count });
+});
+
+api.get("/workout/exercise-history/:exerciseId", (req, res) => {
+  const { exerciseId } = req.params;
+  const userEmail = (req.query.user_email as string) || "";
+
+  const matchingLogs = db.exercise_logs.filter(
+    (l) => l.exercise_id === exerciseId && (!userEmail || l.user_email === userEmail)
+  );
+
+  let maxWeight = 0;
+  let lastWeight: string | number = 0;
+  let lastReps: string | number = "";
+  let lastDate = "";
+
+  if (matchingLogs.length > 0) {
+    const sorted = [...matchingLogs].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+    const latest = sorted[0];
+    lastDate = latest.date;
+
+    for (const log of matchingLogs) {
+      for (const s of log.sets) {
+        const w = Number(s.weight_kg);
+        if (!isNaN(w) && w > maxWeight) maxWeight = w;
+      }
+    }
+
+    const lastCompletedSet = latest.sets.find((s) => s.weight_kg);
+    if (lastCompletedSet) {
+      lastWeight = lastCompletedSet.weight_kg;
+      lastReps = lastCompletedSet.reps;
+    }
+  }
+
+  res.json({
+    exercise_id: exerciseId,
+    max_weight_kg: maxWeight,
+    last_weight_kg: lastWeight,
+    last_reps: lastReps,
+    last_date: lastDate,
+    history: matchingLogs,
+  });
 });
 
 // Diet
@@ -1448,64 +1988,90 @@ api.post("/challenge-photos/:id/toggle-vote", async (req, res) => {
     (req.body.user_id as string) ||
     (req.headers["x-user-id"] as string) ||
     "b97113b7-65a4-4eda-aca3-1baff1f6c3b6";
+  const participantName = req.body.participant_name || "Participante do Desafio";
 
   // 1. Tenta atualizar diretamente no Supabase
   try {
     const supabase = getSupabaseServer();
-    const { data: existingVote } = await supabase
-      .from("photo_votes")
-      .select("id")
-      .eq("photo_id", photoId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    let hasVoted = false;
-    let action: "added" | "removed" = "added";
-
-    if (existingVote) {
-      await supabase
+    if (supabase) {
+      const { data: existingVote, error: checkError } = await supabase
         .from("photo_votes")
-        .delete()
+        .select("id")
         .eq("photo_id", photoId)
-        .eq("user_id", userId);
-      hasVoted = false;
-      action = "removed";
-    } else {
-      await supabase.from("photo_votes").insert([
-        { photo_id: photoId, user_id: userId }
-      ]);
-      hasVoted = true;
-      action = "added";
-    }
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    // Busca valor atualizado do trigger do Supabase
-    const { data: photoRow } = await supabase
-      .from("challenge_photos")
-      .select("*")
-      .eq("id", photoId)
-      .maybeSingle();
+      if (!checkError) {
+        let hasVoted = false;
+        let action: "added" | "removed" = "added";
+        let voteOpSuccess = false;
 
-    if (photoRow) {
-      return res.json({
-        ok: true,
-        photoId,
-        hasVoted,
-        newVoteCount: Number(photoRow.votes_count) || 0,
-        action,
-        photo: {
-          ...photoRow,
-          has_voted: hasVoted,
-        },
-      });
+        if (existingVote) {
+          const { error: delError } = await supabase
+            .from("photo_votes")
+            .delete()
+            .eq("photo_id", photoId)
+            .eq("user_id", userId);
+          if (!delError) {
+            hasVoted = false;
+            action = "removed";
+            voteOpSuccess = true;
+          }
+        } else {
+          const { error: insError } = await supabase.from("photo_votes").insert([
+            { photo_id: photoId, user_id: userId }
+          ]);
+          if (!insError) {
+            hasVoted = true;
+            action = "added";
+            voteOpSuccess = true;
+          }
+        }
+
+        if (voteOpSuccess) {
+          const { data: photoRow } = await supabase
+            .from("challenge_photos")
+            .select("*")
+            .eq("id", photoId)
+            .maybeSingle();
+
+          if (photoRow) {
+            return res.json({
+              ok: true,
+              photoId,
+              hasVoted,
+              newVoteCount: Number(photoRow.votes_count) || 0,
+              action,
+              photo: {
+                ...photoRow,
+                has_voted: hasVoted,
+              },
+            });
+          }
+        }
+      }
     }
   } catch (err) {
     console.warn("Supabase toggle-vote failed, falling back to in-memory:", err);
   }
 
-  // 2. Fallback em memória
-  const photo = db.challenge_photos?.find((p) => p.id === photoId);
+  // 2. Fallback em memória (super-resiliente, nunca falha ou dá erro 404)
+  if (!db.challenge_photos) db.challenge_photos = [];
+  let photo = db.challenge_photos.find((p) => p.id === photoId);
   if (!photo) {
-    return res.status(404).json({ error: "Foto do desafio não encontrada" });
+    photo = {
+      id: photoId,
+      user_id: userId,
+      participant_name: participantName || "Atleta Vyra",
+      photo_url: req.body.photo_url || "https://images.unsplash.com/photo-1594381898411-846e7d193883?auto=format&fit=crop&w=800&q=80",
+      caption: "Transformação Vyra",
+      category: "shape",
+      votes_count: 0,
+      created_at: new Date().toISOString(),
+      is_veteran: req.body.is_veteran ?? false,
+      patente_level: req.body.patente_level ?? 0,
+    };
+    db.challenge_photos.push(photo);
   }
 
   if (!db.photo_votes) {
@@ -1550,7 +2116,7 @@ api.post("/challenge-photos/:id/toggle-vote", async (req, res) => {
 });
 
 api.post("/challenge-photos", (req, res) => {
-  const { participant_name, caption, photo_url, category } = req.body;
+  const { participant_name, caption, photo_url, category, is_veteran, patente_level } = req.body;
   if (!participant_name || !photo_url) {
     return res.status(400).json({ error: "Nome do participante e URL da foto são obrigatórios." });
   }
@@ -1565,6 +2131,8 @@ api.post("/challenge-photos", (req, res) => {
     votes_count: 0,
     created_at: new Date().toISOString(),
     has_voted: false,
+    is_veteran: Boolean(is_veteran),
+    patente_level: Number(patente_level) || 0,
   };
 
   if (!db.challenge_photos) db.challenge_photos = [];
@@ -1575,34 +2143,97 @@ api.post("/challenge-photos", (req, res) => {
 
 // Chat
 api.get("/chat", (req, res) => {
-  res.json(db.chat);
+  const userId =
+    (req.query.user_id as string) ||
+    (req.headers["x-user-id"] as string) ||
+    (req.headers["x-user-email"] as string) ||
+    "user-default";
+
+  const enriched = db.chat.map((m: any) => ({
+    ...m,
+    liked_by: m.liked_by || [],
+    has_liked: Boolean(m.liked_by && m.liked_by.includes(userId)),
+  }));
+  res.json(enriched);
 });
 
 api.post("/chat", (req, res) => {
-  const { author, persona, text, image } = req.body;
+  const { author, persona, text, image, is_veteran, patente_level, consecutive_months, name_color, text_color } = req.body;
   if (!text || text.length > 200) {
     return res.status(400).json({ error: "text invalid or too long (max 200 chars)" });
   }
+
+  // Remove any reference to "Parceiro Oficial" from author
+  const cleanedAuthor = (author || "Aluno").replace(/—\s*Parceiro Oficial/gi, "").replace(/Parceiro Oficial/gi, "").trim();
+
+  // Se for parceiro ou aluno com status veterano, atribui o selo
+  const isStudent = persona === "student";
+  const isPartner = persona === "partner" || (author && author.toLowerCase().includes("parceiro"));
+  const veteranStatus =
+    is_veteran !== undefined
+      ? Boolean(is_veteran)
+      : (isStudent || isPartner)
+      ? true
+      : false;
+
+  const resolvedPatentLevel =
+    patente_level !== undefined
+      ? Number(patente_level)
+      : isStudent
+      ? Number((db.profile as any).patente_level || 2)
+      : undefined;
+
   const msg = {
     id: `m${Date.now()}`,
-    author: author || "Aluno",
+    author: cleanedAuthor || "Aluno",
     persona: persona || "student",
     text,
     image: image || null,
     likes: 0,
+    liked_by: [] as string[],
     timestamp: new Date().toISOString(),
+    is_veteran: veteranStatus,
+    patente_level: resolvedPatentLevel,
+    consecutive_months: consecutive_months !== undefined ? Number(consecutive_months) : undefined,
+    name_color: name_color || null,
+    text_color: text_color || null,
   };
   db.chat.push(msg);
-  res.json(msg);
+  res.json({ ...msg, has_liked: false });
 });
 
 api.post("/chat/:mid/like", (req, res) => {
-  const msg = db.chat.find((m) => m.id === req.params.mid);
-  if (msg) {
-    msg.likes += 1;
-    return res.json(msg);
+  const userId =
+    req.body.user_id ||
+    (req.headers["x-user-id"] as string) ||
+    (req.headers["x-user-email"] as string) ||
+    "user-default";
+
+  const msg: any = db.chat.find((m: any) => m.id === req.params.mid);
+  if (!msg) {
+    return res.status(404).json({ error: "Mensagem não encontrada" });
   }
-  res.status(404).json({ error: "not found" });
+
+  msg.liked_by = msg.liked_by || [];
+  const alreadyLikedIndex = msg.liked_by.indexOf(userId);
+
+  let has_liked = false;
+  if (alreadyLikedIndex > -1) {
+    // Unlike (remove like from this user)
+    msg.liked_by.splice(alreadyLikedIndex, 1);
+    msg.likes = Math.max(0, (msg.likes || 1) - 1);
+    has_liked = false;
+  } else {
+    // Like (add like from this user)
+    msg.liked_by.push(userId);
+    msg.likes = (msg.likes || 0) + 1;
+    has_liked = true;
+  }
+
+  return res.json({
+    ...msg,
+    has_liked,
+  });
 });
 
 // Coupons
@@ -1633,27 +2264,105 @@ api.post("/coupons/:cid/toggle", (req, res) => {
 
 api.post("/coupon/check", (req, res) => {
   const { code, subtotal } = req.body;
-  const doc = db.coupons.find((c) => c.code === (code || "").toUpperCase() && c.active);
-  if (!doc) {
-    return res.json({ valid: false, discount: 0, total: subtotal, percent: 0 });
+  const upper = (code || "").trim().toUpperCase();
+
+  // Tratamento especial para o cupom VETERANO
+  if (upper === "VETERANO") {
+    const pct = 20;
+    const discount = Math.round(((subtotal * pct) / 100) * 100) / 100;
+    return res.json({
+      valid: true,
+      discount,
+      total: Math.max(0, Math.round((subtotal - discount) * 100) / 100),
+      percent: pct,
+      is_veteran: true,
+      message: "Cupom Veterano aplicado! Selo de Veterano (laranja e dourado) concedido.",
+    });
   }
+
+  const doc = db.coupons.find((c) => c.code === upper && c.active);
+  if (!doc) {
+    return res.json({ valid: false, discount: 0, total: subtotal, percent: 0, is_veteran: false });
+  }
+
   const discount = Math.round(((subtotal * doc.pct) / 100) * 100) / 100;
+  const is_veteran = (doc as any).is_veteran || upper === "VETERANO";
   return res.json({
     valid: true,
     discount,
     total: Math.max(0, Math.round((subtotal - discount) * 100) / 100),
     percent: doc.pct,
+    is_veteran,
+    message: is_veteran
+      ? "Cupom Veterano aplicado! Selo de Veterano concedido."
+      : `Cupom ${doc.code} aplicado (-${doc.pct}%).`,
   });
 });
 
-// Partners
+api.post("/profile/redeem-coupon", (req, res) => {
+  const { code } = req.body;
+  const upper = (code || "").trim().toUpperCase();
+
+  if (!upper) {
+    return res.status(400).json({ success: false, message: "Insira um código de cupom válido." });
+  }
+
+  if (upper === "VETERANO") {
+    (db.profile as any).is_veteran = true;
+    (db.profile as any).veteran_since = new Date().toISOString();
+    return res.json({
+      success: true,
+      is_veteran: true,
+      message: "Selo de Veterano desbloqueado com sucesso! Visível agora no Perfil, Chat e Desafios.",
+      profile: db.profile,
+    });
+  }
+
+  const doc = db.coupons.find((c) => c.code === upper && c.active);
+  if (!doc) {
+    return res.status(400).json({ success: false, message: "Cupom inválido ou expirado." });
+  }
+
+  const is_veteran = (doc as any).is_veteran || upper === "VETERANO";
+  if (is_veteran) {
+    (db.profile as any).is_veteran = true;
+    (db.profile as any).veteran_since = new Date().toISOString();
+  }
+
+  return res.json({
+    success: true,
+    is_veteran,
+    message: is_veteran
+      ? "Selo de Veterano desbloqueado com sucesso!"
+      : `Cupom ${doc.code} validado com sucesso (-${doc.pct}%).`,
+    profile: db.profile,
+  });
+});
+
+// Partners (Todos os parceiros têm o Selo de Veterano garantido)
 api.get("/partners", (req, res) => {
-  res.json(db.partners);
+  const enriched = (db.partners || []).map((p) => ({
+    ...p,
+    is_veteran: true,
+  }));
+  res.json(enriched);
 });
 
 api.post("/partners", (req, res) => {
-  const doc = { id: `pt${Date.now()}`, email: req.body.email, active: true };
-  db.partners.push(doc);
+  const { email, name } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "E-mail do parceiro é obrigatório" });
+  }
+  const cleanEmail = email.trim().toLowerCase();
+  const doc = {
+    id: `pt${Date.now()}`,
+    email: cleanEmail,
+    name: name?.trim() || cleanEmail.split("@")[0],
+    active: true,
+    is_veteran: true, // Todos os parceiros têm selo de veterano
+  };
+  if (!db.partners) db.partners = [];
+  db.partners.unshift(doc);
   res.json(doc);
 });
 
@@ -1661,7 +2370,7 @@ api.post("/partners/:pid/toggle", (req, res) => {
   const doc = db.partners.find((p) => p.id === req.params.pid);
   if (doc) {
     doc.active = !doc.active;
-    return res.json(doc);
+    return res.json({ ...doc, is_veteran: true });
   }
   res.status(404).json({ error: "not found" });
 });
@@ -1697,6 +2406,14 @@ api.get("/radar", (req, res) => {
 
 // Profile & Anamnesis
 api.get("/profile", (req, res) => {
+  const userEmail = (req.headers["x-user-email"] as string) || (req.query.email as string) || db.profile.email;
+  const isPartner = (db.partners || []).some(
+    (p) => p.email.toLowerCase() === userEmail.toLowerCase() && p.active
+  );
+  if (isPartner) {
+    (db.profile as any).is_veteran = true;
+    (db.profile as any).is_partner = true;
+  }
   res.json(db.profile);
 });
 
@@ -1741,6 +2458,59 @@ async function generateGeminiContentWithFailover(prompt: string): Promise<string
         const response = await ai.models.generateContent({
           model,
           contents: prompt,
+        });
+        const text = response.text || "";
+        if (text.trim()) {
+          return text;
+        }
+      } catch (err: any) {
+        const isUnavailable =
+          err?.status === 503 ||
+          err?.code === 503 ||
+          err?.message?.includes("503") ||
+          err?.message?.includes("high demand") ||
+          err?.message?.includes("UNAVAILABLE");
+
+        if (isUnavailable && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+      }
+    }
+  }
+  return "";
+}
+
+async function generateGeminiVisionWithFailover(prompt: string, imageBase64?: string): Promise<string> {
+  const ai = getAI();
+  if (!ai) return "";
+
+  let contents: any = prompt;
+  if (imageBase64 && typeof imageBase64 === "string" && imageBase64.includes("base64,")) {
+    const parts = imageBase64.split("base64,");
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    const data = parts[1];
+    contents = [
+      {
+        text: prompt,
+      },
+      {
+        inlineData: {
+          mimeType,
+          data,
+        },
+      },
+    ];
+  }
+
+  const models = ["gemini-2.5-flash", "gemini-3.7-flash"];
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents,
         });
         const text = response.text || "";
         if (text.trim()) {
@@ -1829,6 +2599,29 @@ api.post("/ai/diet-assistant", async (req, res) => {
   }
 });
 
+// AI Recipes by Ingredients: Gera pelo menos 5 opções de cardápio completas com modo de preparo
+api.post("/ai/recipes-by-ingredients", async (req, res) => {
+  const {
+    ingredientes = [],
+    tipo_refeicao = "Qualquer refeição",
+    calorias_alvo = 500,
+    restricoes = [],
+  } = req.body;
+
+  try {
+    const recipes = await getRecipesByIngredients({
+      ingredientes: Array.isArray(ingredientes) ? ingredientes : [ingredientes],
+      tipo_refeicao,
+      calorias_alvo: Number(calorias_alvo) || 500,
+      restricoes,
+    });
+    return res.json(recipes);
+  } catch (err) {
+    console.error("Erro ao gerar receitas por ingredientes:", err);
+    return res.status(500).json({ error: "Falha ao gerar receitas com ingredientes" });
+  }
+});
+
 api.post("/ai/diet-suggest", async (req, res) => {
   const { meal, current_food, lang = "pt" } = req.body;
   const isPt = lang === "pt";
@@ -1884,35 +2677,156 @@ Return ONLY a valid JSON object without code fences:
 });
 
 api.post("/ai/plate-analyze", async (req, res) => {
-  const { lang = "pt" } = req.body;
+  const { lang = "pt", image_base64 } = req.body;
   const isPt = lang === "pt";
 
   const fallback = {
-    name: isPt ? "Frango grelhado com arroz integral e legumes" : "Grilled chicken, brown rice & steamed veggies",
-    kcal: 580,
-    p: 48,
-    c: 54,
-    f: 14,
-    grams: 340,
+    name: isPt ? "Frango grelhado com arroz branco, feijão e brócolis" : "Grilled chicken with rice, beans & steamed broccoli",
+    assessment: isPt
+      ? "Excelente equilíbrio calórico e protéico, ideal para hipertrofia e manutenção de massa magra."
+      : "Well-balanced meal rich in lean proteins with high biological value and complex carbs.",
+    foods: [
+      {
+        id: "item_1",
+        name: isPt ? "Peito de Frango Grelhado" : "Grilled Chicken Breast",
+        grams: 150,
+        kcal: 240,
+        p: 46.5,
+        c: 0.0,
+        f: 5.4,
+        per_100g: { kcal: 160, p: 31.0, c: 0.0, f: 3.6 },
+      },
+      {
+        id: "item_2",
+        name: isPt ? "Arroz Branco Cozido" : "Cooked White Rice",
+        grams: 130,
+        kcal: 169,
+        p: 3.3,
+        c: 36.4,
+        f: 0.3,
+        per_100g: { kcal: 130, p: 2.5, c: 28.0, f: 0.2 },
+      },
+      {
+        id: "item_3",
+        name: isPt ? "Feijão Carioca Cozido" : "Cooked Pinto Beans",
+        grams: 100,
+        kcal: 76,
+        p: 4.8,
+        c: 13.6,
+        f: 0.5,
+        per_100g: { kcal: 76, p: 4.8, c: 13.6, f: 0.5 },
+      },
+      {
+        id: "item_4",
+        name: isPt ? "Brócolis no Vapor" : "Steamed Broccoli",
+        grams: 80,
+        kcal: 28,
+        p: 2.2,
+        c: 5.6,
+        f: 0.3,
+        per_100g: { kcal: 35, p: 2.8, c: 7.0, f: 0.4 },
+      },
+    ],
+    total_grams: 460,
+    kcal: 513,
+    p: 56.8,
+    c: 55.6,
+    f: 6.5,
   };
 
   try {
-    const prompt = `You are a sports nutritionist analyzing a meal plate photo.
-Return ONLY a valid JSON object without code fences estimating nutritional content:
+    const prompt = `You are a sports nutritionist and computer vision nutrition expert analyzing a meal plate photo.
+Identify each individual food item visible on the plate, estimate its exact quantity in grams, and calculate its nutritional breakdown.
+Language: ${isPt ? "Brazilian Portuguese" : "English"}.
+Return ONLY a valid JSON object without code fences or markdown matching this structure:
 {
-  "name": "${isPt ? 'Nome descritivo do prato em português' : 'Descriptive name in English'}",
-  "kcal": 550,
-  "p": 45,
-  "c": 50,
-  "f": 15,
-  "grams": 350
+  "name": "${isPt ? "Nome descritivo e apetitoso do prato" : "Descriptive meal name"}",
+  "assessment": "${isPt ? "Avaliação nutricional esportiva concisa sobre o equilíbrio do prato" : "Concise sports nutrition assessment"}",
+  "foods": [
+    {
+      "id": "item_1",
+      "name": "Nome do alimento (ex: Peito de Frango Grelhado)",
+      "grams": 150,
+      "kcal": 240,
+      "p": 46.5,
+      "c": 0.0,
+      "f": 5.4,
+      "per_100g": {
+        "kcal": 160,
+        "p": 31.0,
+        "c": 0.0,
+        "f": 3.6
+      }
+    }
+  ],
+  "total_grams": 460,
+  "kcal": 513,
+  "p": 56.8,
+  "c": 55.6,
+  "f": 6.5
 }`;
-    const text = await generateGeminiContentWithFailover(prompt);
+
+    let text = "";
+    if (image_base64 && typeof image_base64 === "string") {
+      text = await generateGeminiVisionWithFailover(prompt, image_base64);
+    } else {
+      text = await generateGeminiContentWithFailover(prompt);
+    }
+
     if (!text) return res.json(fallback);
     const clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
     const data = JSON.parse(clean);
-    return res.json(data);
+
+    if (!Array.isArray(data.foods) || data.foods.length === 0) {
+      return res.json({ ...fallback, ...data });
+    }
+
+    // Normaliza os alimentos com id e per_100g se faltar
+    const normalizedFoods = data.foods.map((food: any, idx: number) => {
+      const grams = Math.max(1, Number(food.grams) || 100);
+      const kcal = Number(food.kcal) || 100;
+      const p = Number(food.p) || 5;
+      const c = Number(food.c) || 10;
+      const f = Number(food.f) || 2;
+      const ratio = grams / 100;
+
+      const per_100g = food.per_100g || {
+        kcal: Math.round(kcal / ratio),
+        p: Number((p / ratio).toFixed(1)),
+        c: Number((c / ratio).toFixed(1)),
+        f: Number((f / ratio).toFixed(1)),
+      };
+
+      return {
+        id: food.id || `item_${idx + 1}_${Date.now()}`,
+        name: food.name || `Alimento ${idx + 1}`,
+        grams,
+        kcal,
+        p,
+        c,
+        f,
+        per_100g,
+      };
+    });
+
+    const total_grams = normalizedFoods.reduce((acc: number, item: any) => acc + item.grams, 0);
+    const total_kcal = normalizedFoods.reduce((acc: number, item: any) => acc + item.kcal, 0);
+    const total_p = Number(normalizedFoods.reduce((acc: number, item: any) => acc + item.p, 0).toFixed(1));
+    const total_c = Number(normalizedFoods.reduce((acc: number, item: any) => acc + item.c, 0).toFixed(1));
+    const total_f = Number(normalizedFoods.reduce((acc: number, item: any) => acc + item.f, 0).toFixed(1));
+
+    return res.json({
+      name: data.name || fallback.name,
+      assessment: data.assessment || fallback.assessment,
+      foods: normalizedFoods,
+      total_grams,
+      kcal: total_kcal,
+      p: total_p,
+      c: total_c,
+      f: total_f,
+    });
   } catch (err) {
+    console.error("Plate analysis error:", err);
     return res.json(fallback);
   }
 });
@@ -1927,17 +2841,49 @@ api.post("/ai/coach-generate-workout", async (req, res) => {
     duration_min = 55,
     focus_notes = "",
     lang = "pt",
+    workout_date = "",
+    generation_mode = "single_day",
+    period_weeks = 1,
   } = req.body;
 
   const isPt = lang === "pt";
 
+  // Calculate formatted date context
+  let dateContext = "";
+  if (workout_date) {
+    try {
+      const parsedDate = new Date(`${workout_date}T12:00:00Z`);
+      if (!isNaN(parsedDate.getTime())) {
+        const weekday = parsedDate.toLocaleDateString("pt-BR", { weekday: "long", timeZone: "UTC" });
+        const dayMonth = parsedDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+        dateContext = `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} (${dayMonth})`;
+      }
+    } catch {}
+  }
+
+  const activeGuidelines = db.coach_guidelines || [];
+  const guidelinesPrompt = activeGuidelines.length > 0
+    ? `\nCRITICAL COACH METHODOLOGY GUIDELINES TO ENFORCE:\n- ${activeGuidelines.join("\n- ")}`
+    : "";
+
+  let modeInstruction = "Generate a single high-performance session.";
+  if (generation_mode === "weekly_split") {
+    modeInstruction = `Generate a comprehensive week workout protocol starting from ${dateContext || workout_date || "this week"}, distributing exercises and sets strategically across muscle groups.`;
+  } else if (generation_mode === "multi_week_periodization") {
+    modeInstruction = `Generate a multi-week periodization (${period_weeks} weeks mesocycle) starting on ${dateContext || workout_date || "today"}. Emphasize progressive mechanical tension and structured volume variation.`;
+  }
+
+  const fallbackDayLabel = dateContext
+    ? `${dateContext} · ${split.split("(")[0].trim()}`
+    : `Dia de Foco · ${split.split("(")[0].trim()}`;
+
   const fallback = {
-    day_label: `Dia de Foco · ${split.split("(")[0].trim()}`,
+    day_label: fallbackDayLabel,
     title: `${split.split("(")[0].trim()} · Protocolo Alta Performance`,
     focus: `${goal} · Tensão Mecânica`,
     duration_min: Number(duration_min) || 55,
     intensity: level === "Avançado" ? "Extrema" : "Alta",
-    coach_note: `Prescrição personalizada para ${student_name}. Priorize cadência 3-0-1 (3s excêntrica, 0s transição, 1s explosiva). ${focus_notes ? `Obs: ${focus_notes}` : ""}`.trim(),
+    coach_note: `Prescrição para ${student_name} (${dateContext || "Semana Atual"}). Priorize cadência excêntrica 3s. ${focus_notes ? `Obs: ${focus_notes}` : ""}`.trim(),
     hero_image: "https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=1200&auto=format&fit=crop&q=80",
     exercises: [
       {
@@ -1994,33 +2940,41 @@ api.post("/ai/coach-generate-workout", async (req, res) => {
   };
 
   try {
-    const prompt = `You are the Head Coach and Biomechanics Specialist of VYRA (elite training club).
-Create a complete, highly professional workout protocol for the athlete:
-- Student Name: "${student_name}"
-- Primary Goal: "${goal}"
-- Training Split / Muscle Group: "${split}"
-- Athlete Level: "${level}"
-- Target Session Duration: ${duration_min} minutes
-- Coach Notes / Focus: "${focus_notes || 'Maximum biomechanical efficiency and progressive overload'}"
-- Language: ${isPt ? "Brazilian Portuguese" : "English"}
+    const prompt = `Você é um Treinador de Alto Rendimento de elite da plataforma VYRA.
+O usuário ou treinador solicita o planejamento diário de treino.
 
-Return ONLY a valid JSON object without markdown code fences:
+SUAS REGRAS ESTRITAS SÃO:
+1. FOCO NO AGORA: Gere o treino EXCLUSIVAMENTE para o dia de hoje. Não crie ou mostre a semana inteira.
+2. VARIABILIDADE DE ESTÍMULOS: O treino de hoje deve ser único e dinâmico. Nunca repita a exata mesma rotina dos dias anteriores. Varie os exercícios, as pegadas, as angulações ou os métodos de intensidade (como drop-set, rest-pause, bi-set, isometria) para gerar novos desafios.
+3. FORMATAÇÃO: Entregue o treino de forma direta e motivacional, listando apenas o que deve ser executado nesta sessão.
+
+PARÂMETROS DA SESSÃO:
+- Aluno: "${student_name}"
+- Objetivo: "${goal}"
+- Agrupamento Muscular / Divisão: "${split}"
+- Nível do Atleta: "${level}"
+- Duração Alvo: ${duration_min} minutos
+- Observações Específicas / Foco: "${focus_notes || 'Variabilidade biomecânica e estímulos inéditos'}"
+- Data de Referência: "${dateContext || workout_date || 'Hoje'}"
+${guidelinesPrompt}
+
+Retorne EXCLUSIVAMENTE um objeto JSON válido sem blocos markdown:
 {
-  "day_label": "e.g. Dia 2 · Push Força",
-  "title": "e.g. Peito, Deltóide & Tríceps",
-  "focus": "e.g. Hipertrofia & Densidade Muscular",
+  "day_label": "${dateContext ? `${dateContext} · ${split.split("(")[0].trim()}` : "Treino de Hoje · " + split.split("(")[0].trim()}",
+  "title": "Título direto e motivacional do treino",
+  "focus": "Foco específico da sessão",
   "duration_min": ${Number(duration_min) || 55},
   "intensity": "Alta",
-  "coach_note": "Specific tactical coaching note explaining tempo and focus for the athlete",
+  "coach_note": "Nota direta, motivacional e técnica orientando cadência e métodos de intensidade desta sessão",
   "exercises": [
     {
-      "name": "Exercise Name",
+      "name": "Nome do Exercício",
       "sets": 4,
       "reps": "8-10",
       "rest": "90s",
-      "muscle": "Target Muscle Group",
-      "video_url": "https://www.youtube.com/watch?v=rT7DgCr-3pg",
-      "coach_tip": "Precise biomechanical cue"
+      "muscle": "Grupamento Específico",
+      "video_url": "https://www.youtube.com/watch?v=8iPEnn-ltC8",
+      "coach_tip": "Dica biomecânica e método de intensidade (drop-set, rest-pause, bi-set, isometria)"
     }
   ]
 }`;
@@ -2118,6 +3072,11 @@ api.post("/ai/coach-generate-diet", async (req, res) => {
   };
 
   try {
+    const activeGuidelines = db.coach_guidelines || [];
+    const guidelinesPrompt = activeGuidelines.length > 0
+      ? `\nCRITICAL COACH METHODOLOGY GUIDELINES TO ENFORCE:\n- ${activeGuidelines.join("\n- ")}`
+      : "";
+
     const prompt = `You are the Chief Sports Nutritionist at VYRA.
 Calculate the macro proportions and prescribe 5 structured daily meals for this athlete:
 - Student Name: "${student_name}"
@@ -2126,6 +3085,7 @@ Calculate the macro proportions and prescribe 5 structured daily meals for this 
 - Height: ${height_cm} cm
 - Dietary Restrictions: "${restrictions || 'None'}"
 - Daily Calorie Target: ${baseKcal} kcal
+${guidelinesPrompt}
 - Language: ${isPt ? "Brazilian Portuguese" : "English"}
 
 Return ONLY a valid JSON object without markdown code fences:

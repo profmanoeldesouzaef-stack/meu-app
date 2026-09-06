@@ -17,6 +17,8 @@ import {
   Anamnesis,
   Student,
   ChallengePhoto,
+  ExerciseLog,
+  ExerciseSetLog,
 } from "../types";
 
 const BASE_URL = "/api";
@@ -36,11 +38,80 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export interface PlateFoodItem {
+  id: string;
+  name: string;
+  grams: number;
+  kcal: number;
+  p: number;
+  c: number;
+  f: number;
+  per_100g: {
+    kcal: number;
+    p: number;
+    c: number;
+    f: number;
+  };
+}
+
+export interface PlateAnalysisResult {
+  name: string;
+  assessment?: string;
+  foods: PlateFoodItem[];
+  total_grams: number;
+  kcal: number;
+  p: number;
+  c: number;
+  f: number;
+}
+
 export const api = {
   getPlans: () => request<Plan[]>("/plans"),
   getTodayWorkout: () => request<Workout>("/workout/today"),
   updateWorkout: (data: Partial<Workout>) =>
     request<Workout>("/workout/today", { method: "PUT", body: JSON.stringify(data) }),
+  getWorkoutLogs: (workoutId?: string, userEmail?: string, exerciseId?: string) => {
+    const params = new URLSearchParams();
+    if (workoutId) params.append("workout_id", workoutId);
+    if (userEmail) params.append("user_email", userEmail);
+    if (exerciseId) params.append("exercise_id", exerciseId);
+    const qs = params.toString();
+    return request<ExerciseLog[]>(`/workout/logs${qs ? `?${qs}` : ""}`);
+  },
+  saveExerciseLog: (data: {
+    workout_id: string;
+    exercise_id: string;
+    exercise_name?: string;
+    sets: Array<{ set_num?: number; setNum?: number; weight_kg?: number | string; weight?: string; reps: number | string; completed: boolean }>;
+    notes?: string;
+    user_email?: string;
+  }) =>
+    request<{ ok: boolean; entry: ExerciseLog }>("/workout/logs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  saveBatchWorkoutLogs: (data: {
+    workout_id: string;
+    logs: Record<string, any[]>;
+    user_email?: string;
+  }) =>
+    request<{ ok: boolean; saved_count: number }>("/workout/batch-logs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getExerciseHistory: (exerciseId: string, userEmail?: string) => {
+    const params = new URLSearchParams();
+    if (userEmail) params.append("user_email", userEmail);
+    const qs = params.toString();
+    return request<{
+      exercise_id: string;
+      max_weight_kg: number;
+      last_weight_kg: number | string;
+      last_reps: number | string;
+      last_date: string;
+      history: ExerciseLog[];
+    }>(`/workout/exercise-history/${exerciseId}${qs ? `?${qs}` : ""}`);
+  },
   getDiet: () => request<Diet>("/diet"),
   updateDiet: (data: Partial<Diet>) =>
     request<Diet>("/diet", { method: "PUT", body: JSON.stringify(data) }),
@@ -78,23 +149,45 @@ export const api = {
       method: "POST",
     }),
   getHall: () => request<HallEntry[]>("/hall"),
-  getChat: () => request<ChatMessage[]>("/chat"),
-  postChat: (data: { author: string; persona: string; text: string; image?: string | null }) =>
-    request<ChatMessage>("/chat", { method: "POST", body: JSON.stringify(data) }),
-  likeChat: (id: string) => request<ChatMessage>(`/chat/${id}/like`, { method: "POST" }),
+  hall: () => request<HallEntry[]>("/hall"),
+  getChat: (userId?: string) => {
+    const qs = userId ? `?user_id=${encodeURIComponent(userId)}` : "";
+    return request<ChatMessage[]>(`/chat${qs}`);
+  },
+  postChat: (data: {
+    author: string;
+    persona: string;
+    text: string;
+    image?: string | null;
+    is_veteran?: boolean;
+    patente_level?: number;
+    consecutive_months?: number;
+    name_color?: string;
+    text_color?: string;
+  }) => request<ChatMessage>("/chat", { method: "POST", body: JSON.stringify(data) }),
+  likeChat: (id: string, userId?: string) =>
+    request<ChatMessage>(`/chat/${id}/like`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    }),
   getCoupons: () => request<Coupon[]>("/coupons"),
   createCoupon: (data: { code: string; pct: number }) =>
     request<Coupon>("/coupons", { method: "POST", body: JSON.stringify(data) }),
   toggleCoupon: (id: string) =>
     request<Coupon>(`/coupons/${id}/toggle`, { method: "POST" }),
   checkCoupon: (code: string, subtotal: number) =>
-    request<{ valid: boolean; discount: number; total: number; percent: number }>("/coupon/check", {
+    request<{ valid: boolean; discount: number; total: number; percent: number; is_veteran?: boolean; message?: string }>("/coupon/check", {
       method: "POST",
       body: JSON.stringify({ code, subtotal }),
     }),
+  redeemCoupon: (code: string) =>
+    request<{ success: boolean; is_veteran?: boolean; message: string; profile?: UserProfile }>("/profile/redeem-coupon", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
   getPartners: () => request<Partner[]>("/partners"),
-  createPartner: (email: string) =>
-    request<Partner>("/partners", { method: "POST", body: JSON.stringify({ email }) }),
+  createPartner: (email: string, name?: string) =>
+    request<Partner>("/partners", { method: "POST", body: JSON.stringify({ email, name }) }),
   togglePartner: (id: string) =>
     request<Partner>(`/partners/${id}/toggle`, { method: "POST" }),
   getCoaches: () => request<Coach[]>("/coaches"),
@@ -134,7 +227,7 @@ export const api = {
       body: JSON.stringify({ meal, current_food, lang }),
     }),
   plateAnalyze: (lang: string, image_base64?: string) =>
-    request<{ name: string; kcal: number; p: number; c: number; f: number; grams: number }>(
+    request<PlateAnalysisResult>(
       "/ai/plate-analyze",
       {
         method: "POST",
@@ -155,6 +248,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ objetivo, calorias_alvo, restricoes }),
     }),
+  recipesByIngredients: (params: {
+    ingredientes: string[];
+    tipo_refeicao?: string;
+    calorias_alvo?: number;
+    restricoes?: string[];
+  }) =>
+    request<
+      Array<{
+        nome_receita: string;
+        tipo_refeicao: string;
+        tempo_preparo: string;
+        calorias: number;
+        proteinas: number;
+        carboidratos: number;
+        gorduras: number;
+        ingredientes: Array<{ name: string; quantity: string }>;
+        modo_preparo: string[];
+        dica_chef: string;
+      }>
+    >("/ai/recipes-by-ingredients", {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
   getStudents: (search?: string) =>
     request<Student[]>(`/students${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   getStudent: (id: string) => request<Student>(`/students/${id}`),
@@ -162,6 +278,19 @@ export const api = {
     request<Diet>(`/students/${id}/diet`, { method: "PUT", body: JSON.stringify(data) }),
   updateStudentWorkout: (id: string, data: Partial<Workout>) =>
     request<Workout>(`/students/${id}/workout`, { method: "PUT", body: JSON.stringify(data) }),
+  toggleStudentVipChat: (id: string, vip_chat_unlocked: boolean) =>
+    request<Student>(`/students/${id}/vip-chat`, {
+      method: "PUT",
+      body: JSON.stringify({ vip_chat_unlocked }),
+    }),
+  updateStudentProtocol: (
+    id: string,
+    data: { water_ml?: number; creatine_dose_g?: number; vip_chat_unlocked?: boolean }
+  ) =>
+    request<Student>(`/students/${id}/protocol`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
   coachGenerateWorkout: (params: {
     student_name?: string;
     goal?: string;
@@ -170,10 +299,24 @@ export const api = {
     duration_min?: number;
     focus_notes?: string;
     lang?: string;
+    workout_date?: string;
+    generation_mode?: "single_day" | "weekly_split" | "multi_week_periodization";
+    period_weeks?: number;
   }) =>
     request<Workout>("/ai/coach-generate-workout", {
       method: "POST",
       body: JSON.stringify(params),
+    }),
+  getCoachGuidelines: () => request<string[]>("/coach/guidelines"),
+  updateCoachGuidelines: (guidelines: string[]) =>
+    request<string[]>("/coach/guidelines", {
+      method: "PUT",
+      body: JSON.stringify({ guidelines }),
+    }),
+  coachAiChat: (message: string, active_guidelines?: string[]) =>
+    request<{ reply: string; updated_guidelines?: string[] }>("/coach/ai-chat", {
+      method: "POST",
+      body: JSON.stringify({ message, active_guidelines }),
     }),
   coachGenerateDiet: (params: {
     student_name?: string;
@@ -208,7 +351,7 @@ export const api = {
     const qs = q.toString() ? `?${q.toString()}` : "";
     return request<ChallengePhoto[]>(`/challenge-photos${qs}`);
   },
-  togglePhotoVote: (photoId: string, userId?: string) =>
+  togglePhotoVote: (photoId: string, userId?: string, participantName?: string) =>
     request<{
       ok: boolean;
       photoId: string;
@@ -218,7 +361,7 @@ export const api = {
       photo: ChallengePhoto;
     }>(`/challenge-photos/${photoId}/toggle-vote`, {
       method: "POST",
-      body: JSON.stringify({ user_id: userId }),
+      body: JSON.stringify({ user_id: userId, participant_name: participantName }),
     }),
   submitChallengePhoto: (data: {
     participant_name: string;

@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { Persona, Lang, Theme, Subscription, Plan, BillingCycle } from "../types";
+import { supabase } from "../lib/supabase";
+import { api } from "../api/client";
+import { MilestoneCelebrationData } from "../components/MilestoneCelebrationModal";
 
 export type ActiveView =
   | "home"
@@ -16,15 +19,27 @@ export type ActiveView =
   | "coach"
   | "moderator"
   | "form-checker"
-  | "photo-gallery";
+  | "photo-gallery"
+  | "workout-completion";
 
-interface AppNotification {
+export interface AppNotification {
   id: string;
   title: string;
   message: string;
   type: "coach" | "water" | "creatine" | "assessment" | "general";
   timestamp: string;
   read: boolean;
+}
+
+export interface CoachInviteInfo {
+  coachName: string;
+  coachId?: string;
+  code?: string;
+  active?: boolean;
+  coachRole?: string;
+  specialty?: string;
+  couponCode?: string;
+  customMessage?: string;
 }
 
 interface AppContextType {
@@ -41,18 +56,57 @@ interface AppContextType {
   clearUnreadCommunity: () => void;
   systemNotifications: AppNotification[];
   dismissNotification: (id: string) => void;
+  markNotificationAsRead: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
   sendNotification: (title: string, message: string, type?: AppNotification["type"]) => void;
   requestPushPermission: () => Promise<boolean>;
   pushPermissionState: NotificationPermission | "default";
   creatineChecks: Record<string, boolean>;
   toggleCreatineCheck: (timeKey: string) => void;
+  currentUserEmail: string;
+  setCurrentUserEmail: (email: string) => void;
+  registeredModerators: string[];
+  registeredCoaches: string[];
+  registeredPartners: string[];
+  isModeratorEmail: (email: string) => boolean;
+  isCoachEmail: (email: string) => boolean;
+  isPartnerEmail: (email: string) => boolean;
+  isPartner: boolean;
+  addCoachEmail: (email: string) => Promise<{ success: boolean; message: string }>;
+  toggleCoachStatus: (idOrEmail: string) => Promise<void>;
+  addModeratorEmail: (email: string) => { success: boolean; message: string };
+  loginWithEmail: (email: string) => { success: boolean; role: Persona; message: string };
+  inviteData: CoachInviteInfo | null;
+  setInviteData: (data: CoachInviteInfo | null) => void;
+  dismissInviteBanner: () => void;
   setPersona: (p: Persona) => void;
+  definirPerfil: (usuario: any) => void;
   setLang: (l: Lang) => void;
   setTheme: (t: Theme) => void;
   setLoggedIn: (v: boolean) => void;
+  logout: () => Promise<void>;
   setAnamnesisDone: (v: boolean) => void;
   setPhotosDone: (v: boolean) => void;
   setSubscription: (s: Subscription) => void;
+  trackWeightsEnabled: boolean;
+  setTrackWeightsEnabled: (enabled: boolean) => void;
+  isVeteran: boolean;
+  setIsVeteran: (v: boolean) => void;
+  consecutiveMonths: number;
+  setConsecutiveMonths: (m: number) => void;
+  monthlyFeePaid: boolean;
+  setMonthlyFeePaid: (paid: boolean) => void;
+  updateRecurrence: (months: number, isPaid: boolean) => void;
+  applyVeteranCoupon: (code: string) => { success: boolean; message: string };
+  chatNameColor: string;
+  chatTextColor: string;
+  setChatColors: (nameColor: string, textColor: string) => void;
+  vipChatUnlocked: boolean;
+  setVipChatUnlocked: (unlocked: boolean) => void;
+  hasVipChatColors: boolean;
+  milestoneCelebration: MilestoneCelebrationData | null;
+  triggerMilestoneCelebration: (data: MilestoneCelebrationData) => void;
+  dismissMilestoneCelebration: () => void;
   setActiveView: (view: ActiveView) => void;
   setSelectedPlan: (p: { plan: Plan; cycle: BillingCycle } | null) => void;
   fmtPrice: (brl: number, usd: number) => string;
@@ -443,16 +497,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Community unread badge state (when clicked, disappears)
   const [unreadCommunityCount, setUnreadCommunityCount] = useState<number>(3);
 
-  // System notifications state (Coach message, Water, Creatine, Assessment)
-  const [systemNotifications, setSystemNotifications] = useState<AppNotification[]>([
-    {
-      id: "notif-coach-1",
-      title: "Mensagem do Coach Manoel",
-      message: "Seu treino de hoje foi ajustado com foco em progressive overload! Beba 3L de água.",
-      type: "coach",
-      timestamp: "Agora",
-      read: false,
-    },
+  const DEFAULT_STUDENT_NOTIFICATIONS: AppNotification[] = [
     {
       id: "notif-water-1",
       title: "Lembrete de Hidratação",
@@ -469,7 +514,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: "Programado",
       read: false,
     },
-  ]);
+    {
+      id: "notif-assessment-1",
+      title: "Ciclo de 20 Dias: Fotos & Perimetria",
+      message: "Atualize seu shape e medidas para calibração do protocolo pelo Coach.",
+      type: "assessment",
+      timestamp: "Programado",
+      read: false,
+    },
+  ];
+
+  const DEFAULT_COACH_NOTIFICATIONS: AppNotification[] = [
+    {
+      id: "coach-notif-1",
+      title: "Ajuste de Treino Pendente",
+      message: "Lucas Andrade completou 4 semanas do bloco Push/Pull/Legs e aguarda nova periodização.",
+      type: "coach",
+      timestamp: "Há 15 min",
+      read: false,
+    },
+    {
+      id: "coach-notif-2",
+      title: "Fotos de Evolução Recebidas",
+      message: "Marina Costa enviou as fotos do ciclo de 20 dias para sua avaliação postural e perímetros.",
+      type: "assessment",
+      timestamp: "Há 1h",
+      read: false,
+    },
+    {
+      id: "coach-notif-3",
+      title: "Alerta de Frequência no Radar",
+      message: "Rodrigo Silva não treina há 4 dias consecutivos. Envie um incentivo no chat.",
+      type: "coach",
+      timestamp: "Hoje",
+      read: false,
+    },
+    {
+      id: "coach-notif-4",
+      title: "Aluna Atingiu Nova Patente!",
+      message: "Juliana Lima completou 5 meses e desbloqueou a 1ª Estrela Evoluída.",
+      type: "coach",
+      timestamp: "Ontem",
+      read: false,
+    },
+    {
+      id: "coach-notif-5",
+      title: "Revisão Nutricional Solicitada",
+      message: "Pedro Santos atingiu a meta de 78kg e solicita atualização de macros e calorias.",
+      type: "coach",
+      timestamp: "Ontem",
+      read: false,
+    },
+  ];
+
+  // System notifications state for Students
+  const [studentNotifications, setStudentNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_system_notifications");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return DEFAULT_STUDENT_NOTIFICATIONS;
+  });
+
+  // System notifications state for Coach (Related to students)
+  const [coachNotifications, setCoachNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_coach_notifications");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return DEFAULT_COACH_NOTIFICATIONS;
+  });
+
+  // Active notifications list based on persona (Coach receives student-related reminders, not water/creatine)
+  const systemNotifications = useMemo(() => {
+    return persona === "coach" ? coachNotifications : studentNotifications;
+  }, [persona, coachNotifications, studentNotifications]);
 
   const [pushPermissionState, setPushPermissionState] = useState<NotificationPermission | "default">(
     typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default"
@@ -477,6 +602,110 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Creatine checks for the day
   const [creatineChecks, setCreatineChecks] = useState<Record<string, boolean>>({});
+
+  // Student preference: track weights/load for exercises
+  const [trackWeightsEnabled, setTrackWeightsEnabledState] = useState<boolean>(true);
+
+  // VIP Chat Customization Colors (unlocked at 5th star / 5+ months)
+  const [chatNameColor, setChatNameColorState] = useState<string>(() => {
+    try {
+      return localStorage.getItem("vyra_chat_name_color") || "#D8B46A";
+    } catch {
+      return "#D8B46A";
+    }
+  });
+
+  const [chatTextColor, setChatTextColorState] = useState<string>(() => {
+    try {
+      return localStorage.getItem("vyra_chat_text_color") || "#F5F5F7";
+    } catch {
+      return "#F5F5F7";
+    }
+  });
+
+  const setChatColors = useCallback((nameColor: string, textColor: string) => {
+    setChatNameColorState(nameColor);
+    setChatTextColorState(textColor);
+    try {
+      localStorage.setItem("vyra_chat_name_color", nameColor);
+      localStorage.setItem("vyra_chat_text_color", textColor);
+    } catch {}
+  }, []);
+
+  // Milestone Celebration Overlay Modal
+  const [milestoneCelebration, setMilestoneCelebration] = useState<MilestoneCelebrationData | null>(null);
+
+  const triggerMilestoneCelebration = useCallback((data: MilestoneCelebrationData) => {
+    setMilestoneCelebration(data);
+  }, []);
+
+  const dismissMilestoneCelebration = useCallback(() => {
+    setMilestoneCelebration(null);
+  }, []);
+
+  // Gamification: Veteran Badge and Recurrence Patents
+  const [isVeteran, setIsVeteranState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_is_veteran");
+      if (saved !== null) return saved === "true";
+    } catch {}
+    return true; // Default demonstration state for Rafael
+  });
+
+  const [consecutiveMonths, setConsecutiveMonthsState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_consecutive_months");
+      if (saved !== null) return parseInt(saved, 10) || 0;
+    } catch {}
+    return 6; // 6 months -> Patente II
+  });
+
+  const [monthlyFeePaid, setMonthlyFeePaidState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_monthly_fee_paid");
+      if (saved !== null) return saved === "true";
+    } catch {}
+    return true;
+  });
+
+  // VIP Chat Benefit (Unlocked by 5+ consecutive months OR granted directly by Coach)
+  const [vipChatUnlocked, setVipChatUnlockedState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_vip_chat_unlocked");
+      if (saved !== null) return saved === "true";
+    } catch {}
+    return false;
+  });
+
+  const setVipChatUnlocked = useCallback((unlocked: boolean) => {
+    setVipChatUnlockedState(unlocked);
+    try {
+      localStorage.setItem("vyra_vip_chat_unlocked", unlocked ? "true" : "false");
+    } catch {}
+  }, []);
+
+  const hasVipChatColors = consecutiveMonths >= 5 || vipChatUnlocked;
+
+  // User email & registered roles state
+  const [currentUserEmail, setCurrentUserEmailState] = useState<string>("cubocao@gmail.com");
+  const [registeredModerators, setRegisteredModerators] = useState<string[]>([
+    "suporte@vyratraining.com",
+    "cubocao@gmail.com",
+    "moderador@vyra.app",
+    "admin@vyra.club",
+  ]);
+  const [registeredCoaches, setRegisteredCoaches] = useState<string[]>([
+    "mari@vyra.club",
+    "coach.mari@vyra.club",
+  ]);
+  const [registeredPartners, setRegisteredPartners] = useState<string[]>([
+    "parceiro@empresa.com",
+    "growth@nutrifit.com.br",
+    "contato@crosslab.com",
+  ]);
+
+  // Invite data state (when an athlete enters via coach's invite link)
+  const [inviteData, setInviteData] = useState<CoachInviteInfo | null>(null);
 
   // Initialize from local storage if available
   useEffect(() => {
@@ -490,8 +719,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const s = localStorage.getItem("vyra_sub");
       const unread = localStorage.getItem("vyra_unread_community");
       const savedCreatine = localStorage.getItem("vyra_creatine_checks");
+      const savedEmail = localStorage.getItem("vyra_user_email");
+      const savedMods = localStorage.getItem("vyra_registered_moderators");
+      const savedCoaches = localStorage.getItem("vyra_registered_coaches");
 
-      if (p) setPersonaState(p as Persona);
+      if (savedEmail) setCurrentUserEmailState(savedEmail);
+      if (savedMods) {
+        const parsed = JSON.parse(savedMods);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Always ensure cubocao@gmail.com is included
+          const merged = Array.from(new Set(["cubocao@gmail.com", ...parsed]));
+          setRegisteredModerators(merged);
+        }
+      }
+      if (savedCoaches) {
+        const parsed = JSON.parse(savedCoaches);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRegisteredCoaches(parsed);
+        }
+      }
+
+      if (p) {
+        const activeEmail = (savedEmail || "cubocao@gmail.com").trim().toLowerCase();
+        const modsList: string[] = savedMods
+          ? JSON.parse(savedMods)
+          : ["cubocao@gmail.com", "moderador@vyra.app", "admin@vyra.club"];
+        const coachesList: string[] = savedCoaches
+          ? JSON.parse(savedCoaches)
+          : ["mari@vyra.club", "coach.mari@vyra.club"];
+        const isMod = modsList.some((m) => m.toLowerCase() === activeEmail);
+        const isCoach = coachesList.some((c) => c.toLowerCase() === activeEmail);
+
+        if (p === "moderator" && isMod) {
+          setPersonaState("moderator");
+        } else if (p === "coach" && isCoach) {
+          setPersonaState("coach");
+        } else {
+          setPersonaState("student");
+          localStorage.setItem("vyra_persona", "student");
+        }
+      }
       if (l) setLangState(l as Lang);
       if (t) setThemeState(t as Theme);
       if (li !== null) setLoggedInState(li === "true");
@@ -500,6 +767,317 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (s) setSubscriptionState(JSON.parse(s));
       if (unread !== null) setUnreadCommunityCount(parseInt(unread, 10) || 0);
       if (savedCreatine) setCreatineChecks(JSON.parse(savedCreatine));
+
+      const savedTrackWeights = localStorage.getItem("vyra_track_weights_enabled");
+      if (savedTrackWeights !== null) {
+        setTrackWeightsEnabledState(savedTrackWeights === "true");
+      }
+
+      // Check URL query parameters for coach invitation link
+      if (typeof window !== "undefined" && window.location.search) {
+        const params = new URLSearchParams(window.location.search);
+        const isInvite = params.get("invite");
+        const coachName = params.get("coach");
+        const coachId = params.get("coach_id");
+        const code = params.get("code");
+
+        if (isInvite || coachName || code) {
+          const info: CoachInviteInfo = {
+            coachName: coachName ? decodeURIComponent(coachName) : "Coach Vyra",
+            coachId: coachId || "coach-mari",
+            code: code || "VYRA-VIP",
+          };
+          setInviteData(info);
+          localStorage.setItem("vyra_invite_coach", JSON.stringify(info));
+        }
+      } else {
+        const savedInvite = localStorage.getItem("vyra_invite_coach");
+        if (savedInvite) {
+          try {
+            setInviteData(JSON.parse(savedInvite));
+          } catch {
+            // Ignore
+          }
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  }, []);
+
+  // Fetch registered coaches from backend
+  useEffect(() => {
+    fetch("/api/coaches")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const emails = data.map((c: any) => c.email?.toLowerCase()).filter(Boolean);
+          if (emails.length > 0) {
+            setRegisteredCoaches((prev) => Array.from(new Set([...prev, ...emails])));
+          }
+        }
+      })
+      .catch(() => {
+        // Backend fallback
+      });
+  }, []);
+
+  const setCurrentUserEmail = useCallback((email: string) => {
+    const clean = email.trim().toLowerCase();
+    setCurrentUserEmailState(clean);
+    localStorage.setItem("vyra_user_email", clean);
+  }, []);
+
+  const isModeratorEmail = useCallback(
+    (email: string) => {
+      const clean = email.trim().toLowerCase();
+      return registeredModerators.some((m) => m.toLowerCase() === clean);
+    },
+    [registeredModerators]
+  );
+
+  const isCoachEmail = useCallback(
+    (email: string) => {
+      const clean = email.trim().toLowerCase();
+      return registeredCoaches.some((c) => c.toLowerCase() === clean);
+    },
+    [registeredCoaches]
+  );
+
+  const isPartnerEmail = useCallback(
+    (email: string) => {
+      const clean = email.trim().toLowerCase();
+      return registeredPartners.some((p) => p.toLowerCase() === clean);
+    },
+    [registeredPartners]
+  );
+
+  const isPartner = useMemo(() => {
+    return isPartnerEmail(currentUserEmail);
+  }, [currentUserEmail, isPartnerEmail]);
+
+  // Sincronização inicial de parceiros da API
+  useEffect(() => {
+    api
+      .getPartners()
+      .then((pts) => {
+        if (pts && pts.length > 0) {
+          const emails = pts.filter((p) => p.active).map((p) => p.email.toLowerCase());
+          setRegisteredPartners((prev) => Array.from(new Set([...prev, ...emails])));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Assim que o Supabase confirmar o login, você faz esta verificação:
+  const definirPerfil = useCallback(
+    (usuario: any) => {
+      if (!usuario) return;
+      const userEmail = (usuario.email || "").trim().toLowerCase();
+
+      if (
+        userEmail === "suporte@vyratraining.com" ||
+        userEmail === "cubocao@gmail.com" ||
+        usuario.user_metadata?.role === "moderator" ||
+        usuario.app_metadata?.role === "moderator" ||
+        usuario.app_metadata?.role === "admin" ||
+        registeredModerators.some((m) => m.toLowerCase() === userEmail)
+      ) {
+        setPersonaState("moderator"); // Libera tudo, incluindo o painel de admin
+        localStorage.setItem("vyra_persona", "moderator");
+      } else if (
+        usuario.user_metadata?.is_coach === true ||
+        usuario.app_metadata?.is_coach === true ||
+        usuario.user_metadata?.role === "coach" ||
+        usuario.app_metadata?.role === "coach" ||
+        registeredCoaches.some((c) => c.toLowerCase() === userEmail)
+      ) {
+        setPersonaState("coach"); // Libera a gestão de alunos (ajuste conforme seu banco de dados)
+        localStorage.setItem("vyra_persona", "coach");
+      } else {
+        setPersonaState("student"); // Visão padrão
+        localStorage.setItem("vyra_persona", "student");
+      }
+    },
+    [registeredModerators, registeredCoaches]
+  );
+
+  // Sincronização e verificação de permissões do usuário logado no Supabase
+  useEffect(() => {
+    // 1. Checa sessão ativa no Supabase
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          if (session.user.email) {
+            const userEmail = session.user.email.trim().toLowerCase();
+            setCurrentUserEmailState(userEmail);
+            setLoggedInState(true);
+          }
+          definirPerfil(session.user);
+        }
+      })
+      .catch(() => {
+        // Fallback seguro caso Supabase offline ou em dev
+      });
+
+    // 2. Ouve alterações de autenticação no Supabase
+    const {
+      data: { subscription: authListener },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        if (session.user.email) {
+          const userEmail = session.user.email.trim().toLowerCase();
+          setCurrentUserEmailState(userEmail);
+          setLoggedInState(true);
+        }
+        definirPerfil(session.user);
+      }
+    });
+
+    return () => {
+      authListener?.unsubscribe();
+    };
+  }, [definirPerfil]);
+
+  const addCoachEmail = useCallback(
+    async (email: string): Promise<{ success: boolean; message: string }> => {
+      const clean = email.trim().toLowerCase();
+      if (!clean || !clean.includes("@")) {
+        return { success: false, message: "E-mail inválido." };
+      }
+
+      if (registeredCoaches.some((c) => c.toLowerCase() === clean)) {
+        return { success: false, message: "Este e-mail já está cadastrado como Coach." };
+      }
+
+      try {
+        await fetch("/api/coaches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: clean }),
+        });
+      } catch (err) {
+        console.error("Erro ao salvar coach na API:", err);
+      }
+
+      const updated = [clean, ...registeredCoaches];
+      setRegisteredCoaches(updated);
+      try {
+        localStorage.setItem("vyra_registered_coaches", JSON.stringify(updated));
+      } catch {
+        // Fallback
+      }
+
+      return {
+        success: true,
+        message: `Coach com e-mail "${clean}" credenciado com sucesso! O acesso já está liberado.`,
+      };
+    },
+    [registeredCoaches]
+  );
+
+  const toggleCoachStatus = useCallback(
+    async (idOrEmail: string) => {
+      try {
+        await fetch(`/api/coaches/${idOrEmail}/toggle`, { method: "POST" });
+      } catch {
+        // Fallback
+      }
+    },
+    []
+  );
+
+  const addModeratorEmail = useCallback(
+    (email: string): { success: boolean; message: string } => {
+      const clean = email.trim().toLowerCase();
+      if (!clean || !clean.includes("@")) {
+        return { success: false, message: "E-mail de moderador inválido." };
+      }
+
+      if (registeredModerators.some((m) => m.toLowerCase() === clean)) {
+        return { success: false, message: "Este e-mail já é um moderador cadastrado." };
+      }
+
+      const updated = [...registeredModerators, clean];
+      setRegisteredModerators(updated);
+      try {
+        localStorage.setItem("vyra_registered_moderators", JSON.stringify(updated));
+      } catch {
+        // Fallback
+      }
+
+      return {
+        success: true,
+        message: `Novo moderador "${clean}" cadastrado com sucesso na governança!`,
+      };
+    },
+    [registeredModerators]
+  );
+
+  const loginWithEmail = useCallback(
+    (email: string): { success: boolean; role: Persona; message: string } => {
+      const clean = email.trim().toLowerCase();
+      if (!clean) {
+        return { success: false, role: "student", message: "Informe um e-mail válido." };
+      }
+
+      setCurrentUserEmail(clean);
+      setLoggedInState(true);
+      localStorage.setItem("vyra_logged_in", "true");
+
+      if (isModeratorEmail(clean)) {
+        setPersonaState("moderator");
+        localStorage.setItem("vyra_persona", "moderator");
+        setActiveView("moderator");
+        return {
+          success: true,
+          role: "moderator",
+          message: "Autenticado como Moderador Oficial com sucesso!",
+        };
+      }
+
+      if (isCoachEmail(clean)) {
+        setPersonaState("coach");
+        localStorage.setItem("vyra_persona", "coach");
+        setActiveView("coach");
+        return {
+          success: true,
+          role: "coach",
+          message: "Autenticado como Coach Credenciado com sucesso!",
+        };
+      }
+
+      if (isPartnerEmail(clean)) {
+        setIsVeteranState(true);
+        localStorage.setItem("vyra_is_veteran", "true");
+        setPersonaState("student");
+        localStorage.setItem("vyra_persona", "student");
+        setActiveView("home");
+        return {
+          success: true,
+          role: "student",
+          message: "Autenticado como Parceiro Oficial VIP (Selo de Veterano Concedido)!",
+        };
+      }
+
+      // Standard student
+      setPersonaState("student");
+      localStorage.setItem("vyra_persona", "student");
+      setActiveView("home");
+      return {
+        success: true,
+        role: "student",
+        message: "Autenticado como Aluno com sucesso!",
+      };
+    },
+    [isModeratorEmail, isCoachEmail, isPartnerEmail, setCurrentUserEmail]
+  );
+
+  const dismissInviteBanner = useCallback(() => {
+    setInviteData(null);
+    try {
+      localStorage.removeItem("vyra_invite_coach");
     } catch {
       // Fallback
     }
@@ -527,8 +1105,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const dismissNotification = useCallback((id: string) => {
-    setSystemNotifications((prev) => prev.filter((n) => n.id !== id));
-  }, []);
+    if (persona === "coach") {
+      setCoachNotifications((prev) => {
+        const next = prev.filter((n) => n.id !== id);
+        try {
+          localStorage.setItem("vyra_coach_notifications", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    } else {
+      setStudentNotifications((prev) => {
+        const next = prev.filter((n) => n.id !== id);
+        try {
+          localStorage.setItem("vyra_system_notifications", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+  }, [persona]);
+
+  const markNotificationAsRead = useCallback((id: string) => {
+    if (persona === "coach") {
+      setCoachNotifications((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+        try {
+          localStorage.setItem("vyra_coach_notifications", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    } else {
+      setStudentNotifications((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+        try {
+          localStorage.setItem("vyra_system_notifications", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+  }, [persona]);
+
+  const markAllNotificationsAsRead = useCallback(() => {
+    if (persona === "coach") {
+      setCoachNotifications((prev) => {
+        const next = prev.map((n) => ({ ...n, read: true }));
+        try {
+          localStorage.setItem("vyra_coach_notifications", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    } else {
+      setStudentNotifications((prev) => {
+        const next = prev.map((n) => ({ ...n, read: true }));
+        try {
+          localStorage.setItem("vyra_system_notifications", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+  }, [persona]);
 
   const sendNotification = useCallback(
     (title: string, message: string, type: AppNotification["type"] = "general") => {
@@ -541,7 +1175,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         read: false,
       };
 
-      setSystemNotifications((prev) => [newNotif, ...prev.slice(0, 9)]);
+      if (persona === "coach") {
+        setCoachNotifications((prev) => {
+          const next = [newNotif, ...prev.slice(0, 9)];
+          try {
+            localStorage.setItem("vyra_coach_notifications", JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      } else {
+        setStudentNotifications((prev) => {
+          const next = [newNotif, ...prev.slice(0, 9)];
+          try {
+            localStorage.setItem("vyra_system_notifications", JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
 
       // Try browser push notification if supported and granted
       if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
@@ -564,11 +1214,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
     },
-    []
+    [persona]
   );
 
-  // Recurring 2-hour water reminder for student
+  // Recurring 2-hour water reminder ONLY for student persona
   useEffect(() => {
+    if (persona !== "student") return;
+
     const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
     const interval = setInterval(() => {
       sendNotification(
@@ -579,7 +1231,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, TWO_HOURS_MS);
 
     return () => clearInterval(interval);
-  }, [sendNotification]);
+  }, [persona, sendNotification]);
 
   const requestPushPermission = useCallback(async () => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -602,10 +1254,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [sendNotification]);
 
-  const setPersona = useCallback((p: Persona) => {
-    setPersonaState(p);
-    localStorage.setItem("vyra_persona", p);
-  }, []);
+  const setPersona = useCallback(
+    (p: Persona) => {
+      const normalizedPersona: Persona = p === "aluno" ? "student" : p;
+      const cleanEmail = currentUserEmail.trim().toLowerCase();
+      if (normalizedPersona === "moderator" && !isModeratorEmail(cleanEmail)) {
+        console.warn("Acesso restrito: e-mail não cadastrado como moderador.");
+        return;
+      }
+      if (normalizedPersona === "coach" && !isCoachEmail(cleanEmail)) {
+        console.warn("Acesso restrito: e-mail não credenciado como treinador/coach.");
+        return;
+      }
+      setPersonaState(normalizedPersona);
+      localStorage.setItem("vyra_persona", normalizedPersona);
+    },
+    [currentUserEmail, isModeratorEmail, isCoachEmail]
+  );
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
@@ -620,6 +1285,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setLoggedIn = useCallback((v: boolean) => {
     setLoggedInState(v);
     localStorage.setItem("vyra_logged_in", String(v));
+    if (!v) {
+      setCurrentUserEmailState("");
+      setPersonaState("student");
+      setActiveView("home");
+      try {
+        supabase.auth.signOut().catch(() => {});
+      } catch {}
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn("Supabase signOut error:", err);
+    }
+    localStorage.removeItem("vyra_logged_in");
+    localStorage.removeItem("vyra_current_user_email");
+    localStorage.removeItem("vyra_persona");
+    localStorage.removeItem("vyra_profile");
+    localStorage.setItem("vyra_logged_in", "false");
+
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith("sb-") || key.includes("supabase"))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+
+    setLoggedInState(false);
+    setCurrentUserEmailState("");
+    setPersonaState("student");
+    setActiveView("home");
   }, []);
 
   const setAnamnesisDone = useCallback((v: boolean) => {
@@ -636,6 +1338,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSubscriptionState(s);
     localStorage.setItem("vyra_sub", JSON.stringify(s));
   }, []);
+
+  const setTrackWeightsEnabled = useCallback((enabled: boolean) => {
+    setTrackWeightsEnabledState(enabled);
+    localStorage.setItem("vyra_track_weights_enabled", String(enabled));
+  }, []);
+
+  const setIsVeteran = useCallback((v: boolean) => {
+    setIsVeteranState(v);
+    localStorage.setItem("vyra_is_veteran", String(v));
+  }, []);
+
+  const setConsecutiveMonths = useCallback((m: number) => {
+    const val = Math.max(0, m);
+    setConsecutiveMonthsState(val);
+    localStorage.setItem("vyra_consecutive_months", String(val));
+  }, []);
+
+  const setMonthlyFeePaid = useCallback((paid: boolean) => {
+    setMonthlyFeePaidState(paid);
+    localStorage.setItem("vyra_monthly_fee_paid", String(paid));
+  }, []);
+
+  const updateRecurrence = useCallback(
+    (months: number, isPaid: boolean) => {
+      const prevMonths = consecutiveMonths;
+      const prevPaid = monthlyFeePaid;
+
+      setMonthlyFeePaidState(isPaid);
+      try {
+        localStorage.setItem("vyra_monthly_fee_paid", String(isPaid));
+      } catch {}
+
+      if (isPaid) {
+        const val = Math.max(0, months);
+        setConsecutiveMonthsState(val);
+        try {
+          localStorage.setItem("vyra_consecutive_months", String(val));
+        } catch {}
+
+        // Trigger celebratory animation for student when reaching 5 stars (every 5 months) or leveling up patent!
+        if (val >= 5 && (prevMonths < 5 || Math.floor(val / 5) > Math.floor(prevMonths / 5))) {
+          setMilestoneCelebration({
+            type: "five_stars",
+            months: val,
+            title: "🌟 Estrela Evoluída Desbloqueada!",
+            subtitle: `Você atingiu ${val} meses ininterruptos! Suas 5 estrelas evoluíram e você liberou a personalização de cores do Chat Global.`,
+          });
+        } else if (val > prevMonths && val >= 3) {
+          setMilestoneCelebration({
+            type: "patent",
+            months: val,
+            title: "Ascensão de Patente por Disciplina!",
+            subtitle: `Parabéns pela dedicação! Seu tempo de fidelidade garantiu uma nova medalha militar de honra.`,
+          });
+        }
+      }
+    },
+    [consecutiveMonths, monthlyFeePaid]
+  );
+
+  const applyVeteranCoupon = useCallback((code: string) => {
+    const upper = (code || "").trim().toUpperCase();
+    if (upper === "VETERANO") {
+      setIsVeteran(true);
+      api.redeemCoupon("VETERANO").catch(() => {});
+      setMilestoneCelebration({
+        type: "veteran",
+        title: "Selo de Veterano Concedido!",
+        subtitle: "Você agora ostenta a Coroa Oficial de Veterano Vyra e desconto vitalício na assinatura!",
+      });
+      return {
+        success: true,
+        message: "Selo de Veterano ativado com sucesso! Parabéns.",
+      };
+    }
+    return {
+      success: false,
+      message: "Cupom inválido. Digite 'VETERANO'.",
+    };
+  }, [setIsVeteran]);
 
   const fmtPrice = useCallback(
     (brl: number, usd: number) => {
@@ -673,18 +1455,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearUnreadCommunity,
         systemNotifications,
         dismissNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
         sendNotification,
         requestPushPermission,
         pushPermissionState,
         creatineChecks,
         toggleCreatineCheck,
+        currentUserEmail,
+        setCurrentUserEmail,
+        registeredModerators,
+        registeredCoaches,
+        registeredPartners,
+        isModeratorEmail,
+        isCoachEmail,
+        isPartnerEmail,
+        isPartner,
+        addCoachEmail,
+        toggleCoachStatus,
+        addModeratorEmail,
+        loginWithEmail,
+        inviteData,
+        setInviteData,
+        dismissInviteBanner,
         setPersona,
+        definirPerfil,
         setLang,
         setTheme,
         setLoggedIn,
+        logout,
         setAnamnesisDone,
         setPhotosDone,
         setSubscription,
+        trackWeightsEnabled,
+        setTrackWeightsEnabled,
+        isVeteran: isPartner ? true : isVeteran,
+        setIsVeteran,
+        consecutiveMonths,
+        setConsecutiveMonths,
+        monthlyFeePaid,
+        setMonthlyFeePaid,
+        updateRecurrence,
+        applyVeteranCoupon,
+        chatNameColor,
+        chatTextColor,
+        setChatColors,
+        vipChatUnlocked,
+        setVipChatUnlocked,
+        hasVipChatColors,
+        milestoneCelebration,
+        triggerMilestoneCelebration,
+        dismissMilestoneCelebration,
         setActiveView,
         setSelectedPlan,
         fmtPrice,

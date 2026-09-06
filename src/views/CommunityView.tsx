@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { ChatMessage } from "../types";
+import { getVotingUserId } from "../lib/supabaseClient";
+import { VeteranBadge, PatentBadge, getPatentInfo } from "../lib/patents";
 import {
   MessageSquare,
   Send,
@@ -12,10 +14,22 @@ import {
   Image as ImageIcon,
   X,
   Upload,
+  Palette,
 } from "lucide-react";
 
-export const CommunityView: React.FC = () => {
-  const { t, persona, clearUnreadCommunity } = useApp();
+export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOpenColorPicker }) => {
+  const {
+    t,
+    persona,
+    clearUnreadCommunity,
+    currentUserEmail,
+    isVeteran,
+    consecutiveMonths,
+    monthlyFeePaid,
+    chatNameColor,
+    chatTextColor,
+    hasVipChatColors,
+  } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [image, setImage] = useState<string | null>(null);
@@ -23,10 +37,23 @@ export const CommunityView: React.FC = () => {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Identificador exclusivo por usuário/dispositivo para evitar acúmulo de likes em um único perfil
+  const userIdentifier =
+    currentUserEmail && currentUserEmail !== "student@vyra.club"
+      ? currentUserEmail
+      : `vyra_${getVotingUserId()}`;
+
   const loadChat = async () => {
     try {
-      const data = await api.getChat();
-      setMessages(data);
+      const data = await api.getChat(userIdentifier);
+      const localLikes = new Set<string>(
+        JSON.parse(localStorage.getItem("vyra_chat_likes") || "[]")
+      );
+      const normalized = data.map((m) => ({
+        ...m,
+        has_liked: Boolean(m.has_liked || localLikes.has(m.id)),
+      }));
+      setMessages(normalized);
     } catch (e) {
       console.error("Error loading chat:", e);
     } finally {
@@ -37,7 +64,7 @@ export const CommunityView: React.FC = () => {
   useEffect(() => {
     loadChat();
     clearUnreadCommunity();
-  }, [clearUnreadCommunity]);
+  }, [clearUnreadCommunity, userIdentifier]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -52,11 +79,18 @@ export const CommunityView: React.FC = () => {
       const authorName =
         persona === "coach" ? "Coach Manoel" : persona === "moderator" ? "Moderador Vyra" : "Rafael M.";
 
+      const currentPatentInfo = getPatentInfo(consecutiveMonths, monthlyFeePaid);
+
       const newMsg = await api.postChat({
         author: authorName,
         persona,
         text: text.trim().slice(0, 200),
         image: image || null,
+        is_veteran: persona === "student" ? isVeteran : false,
+        patente_level: persona === "student" && !currentPatentInfo.isRevoked ? currentPatentInfo.level : undefined,
+        consecutive_months: persona === "student" ? consecutiveMonths : undefined,
+        name_color: (persona === "student" && hasVipChatColors) ? chatNameColor : undefined,
+        text_color: (persona === "student" && hasVipChatColors) ? chatTextColor : undefined,
       });
 
       setMessages((prev) => [...prev, newMsg]);
@@ -70,9 +104,38 @@ export const CommunityView: React.FC = () => {
   };
 
   const handleLike = async (id: string) => {
+    const localLikes = new Set<string>(
+      JSON.parse(localStorage.getItem("vyra_chat_likes") || "[]")
+    );
+    const targetMsg = messages.find((m) => m.id === id);
+    const alreadyLiked = Boolean(targetMsg?.has_liked || localLikes.has(id));
+
+    if (alreadyLiked) {
+      localLikes.delete(id);
+    } else {
+      localLikes.add(id);
+    }
+    localStorage.setItem("vyra_chat_likes", JSON.stringify(Array.from(localLikes)));
+
+    // Optimistic toggle
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m;
+        return {
+          ...m,
+          has_liked: !alreadyLiked,
+          likes: alreadyLiked ? Math.max(0, m.likes - 1) : m.likes + 1,
+        };
+      })
+    );
+
     try {
-      const updated = await api.likeChat(id);
-      setMessages((prev) => prev.map((m) => (m.id === id ? updated : m)));
+      const updated = await api.likeChat(id, userIdentifier);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...updated, has_liked: !alreadyLiked } : m
+        )
+      );
     } catch (e) {
       console.error("Error liking chat message:", e);
     }
@@ -116,6 +179,10 @@ export const CommunityView: React.FC = () => {
           {messages.map((msg) => {
             const isCoach = msg.persona === "coach";
             const isMod = msg.persona === "moderator";
+            const cleanedAuthor = (msg.author || "")
+              .replace(/—\s*Parceiro Oficial/gi, "")
+              .replace(/Parceiro Oficial/gi, "")
+              .trim() || "Atleta";
 
             return (
               <div
@@ -131,8 +198,14 @@ export const CommunityView: React.FC = () => {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-[#F5F5F7]">{msg.author}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Nome do autor com cor personalizada se desbloqueada */}
+                      <span
+                        className="text-xs font-bold transition-colors"
+                        style={{ color: msg.name_color || "#F5F5F7" }}
+                      >
+                        {cleanedAuthor}
+                      </span>
 
                       {isCoach && (
                         <span className="px-2 py-0.5 rounded-full bg-[#D8B46A] text-[#0A0A0A] text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
@@ -148,10 +221,27 @@ export const CommunityView: React.FC = () => {
                         </span>
                       )}
 
+                      {/* Selo de Veterano no chat: Apenas a Coroa, sem texto 'VETERANO' */}
+                      {msg.is_veteran && <VeteranBadge size="xs" showLabel={false} />}
+
+                      {/* Patente por Recorrência no chat: Apenas as estrelas e a medalha, sem o texto 'Patente' */}
+                      {typeof msg.patente_level === "number" && msg.patente_level > 0 && (
+                        <PatentBadge
+                          level={msg.patente_level}
+                          months={msg.consecutive_months || (msg.patente_level * 3)}
+                          size="xs"
+                          showLabel={false}
+                        />
+                      )}
+
                       <span className="text-[10px] text-[#9B9BA1]">{msg.timestamp}</span>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-[#F5F5F7] leading-relaxed pt-0.5">
+                    {/* Texto com cor personalizada se desbloqueada */}
+                    <p
+                      className="text-xs sm:text-sm leading-relaxed pt-0.5"
+                      style={{ color: msg.text_color || "#F5F5F7" }}
+                    >
                       {msg.text}
                     </p>
 
@@ -167,9 +257,18 @@ export const CommunityView: React.FC = () => {
                   <button
                     id={`like-msg-btn-${msg.id}`}
                     onClick={() => handleLike(msg.id)}
-                    className="p-1.5 rounded-lg bg-[#151515] border border-[#2B2B2F] text-[#FF6A2A] hover:bg-[#FF6A2A]/10 transition-all flex items-center gap-1 text-[11px] font-bold shrink-0"
+                    aria-label={msg.has_liked ? "Remover curtida" : "Curtir mensagem"}
+                    className={`p-1.5 rounded-lg border transition-all flex items-center gap-1 text-[11px] font-bold shrink-0 cursor-pointer ${
+                      msg.has_liked
+                        ? "bg-[#FF6A2A]/15 border-[#FF6A2A]/50 text-[#FF6A2A]"
+                        : "bg-[#151515] border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#3D3D42]"
+                    }`}
                   >
-                    <Heart className="w-3.5 h-3.5 fill-[#FF6A2A]" />
+                    <Heart
+                      className={`w-3.5 h-3.5 transition-transform active:scale-125 ${
+                        msg.has_liked ? "fill-[#FF6A2A] text-[#FF6A2A]" : ""
+                      }`}
+                    />
                     <span>{msg.likes}</span>
                   </button>
                 </div>
@@ -214,6 +313,19 @@ export const CommunityView: React.FC = () => {
               className="hidden"
             />
           </label>
+
+          {/* VIP Color Picker Shortcut */}
+          {hasVipChatColors && onOpenColorPicker && (
+            <button
+              id="chat-vip-color-btn"
+              type="button"
+              onClick={onOpenColorPicker}
+              className="w-11 h-11 rounded-2xl bg-[#1C1808] border border-[#FFD700]/40 text-[#FFD700] hover:bg-[#FFD700]/20 flex items-center justify-center transition-all cursor-pointer shadow-sm shadow-[#FFD700]/20 shrink-0"
+              title="Personalização VIP de Cores do Chat"
+            >
+              <Palette className="w-5 h-5" />
+            </button>
+          )}
 
           <input
             id="chat-text-input"

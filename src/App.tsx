@@ -4,6 +4,8 @@ import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
 import { NotificationBanner } from "./components/NotificationBanner";
 import { LoginModal } from "./components/LoginModal";
+import { MilestoneCelebrationModal } from "./components/MilestoneCelebrationModal";
+import { ChatColorPickerModal } from "./components/ChatColorPickerModal";
 import { HomeView } from "./views/HomeView";
 import { TrainingView } from "./views/TrainingView";
 import { DietView } from "./views/DietView";
@@ -19,10 +21,23 @@ import { ModeratorView } from "./views/ModeratorView";
 import { FormCheckerModal } from "./views/FormCheckerModal";
 import { PhotoGalleryView } from "./views/PhotoGalleryView";
 import { GaleriaView } from "./views/GaleriaView";
+import { WorkoutCompletionView } from "./views/WorkoutCompletionView";
 
 const AppContent: React.FC = () => {
-  const { loggedIn, activeView, setActiveView, theme, persona } = useApp();
+  const {
+    loggedIn,
+    activeView,
+    setActiveView,
+    theme,
+    persona,
+    milestoneCelebration,
+    dismissMilestoneCelebration,
+    chatNameColor,
+    chatTextColor,
+    setChatColors,
+  } = useApp();
   const [formCheckerExercise, setFormCheckerExercise] = useState<string | null>(null);
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState<boolean>(false);
 
   // Strict role-based route guard
   React.useEffect(() => {
@@ -59,13 +74,14 @@ const AppContent: React.FC = () => {
         {activeView === "challenges" && <ChallengesView />}
         {activeView === "galeria" && <GaleriaView />}
         {activeView === "photo-gallery" && <GaleriaView />}
-        {activeView === "community" && <CommunityView />}
-        {activeView === "profile" && <ProfileView />}
+        {activeView === "community" && <CommunityView onOpenColorPicker={() => setIsColorPickerOpen(true)} />}
+        {activeView === "profile" && <ProfileView onOpenColorPicker={() => setIsColorPickerOpen(true)} />}
         {activeView === "paywall" && <PaywallView />}
         {activeView === "checkout" && <CheckoutView />}
         {activeView === "anamnesis" && <AnamnesisView />}
         {activeView === "coach" && <CoachDashboardView />}
         {activeView === "moderator" && <ModeratorView />}
+        {activeView === "workout-completion" && <WorkoutCompletionView />}
       </main>
 
       {/* Form Checker Modal Overlay */}
@@ -75,6 +91,25 @@ const AppContent: React.FC = () => {
           onClose={() => setFormCheckerExercise(null)}
         />
       )}
+
+      {/* Celebratory Milestone Modal */}
+      {milestoneCelebration && (
+        <MilestoneCelebrationModal
+          data={milestoneCelebration}
+          onClose={dismissMilestoneCelebration}
+          onOpenColorPicker={() => setIsColorPickerOpen(true)}
+        />
+      )}
+
+      {/* VIP Chat Color Picker Modal */}
+      <ChatColorPickerModal
+        isOpen={isColorPickerOpen}
+        onClose={() => setIsColorPickerOpen(false)}
+        currentNameColor={chatNameColor}
+        currentTextColor={chatTextColor}
+        onSave={(nameColor, textColor) => setChatColors(nameColor, textColor)}
+        authorName={persona === "coach" ? "Coach Mari" : "Rafael Costa"}
+      />
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { UserProfile, AssessmentEntry } from "../types";
+import { VeteranBadge, PatentBadge, PatentRecurrenceCard, getPatentInfo } from "../lib/patents";
 import {
   User,
   ShieldCheck,
@@ -27,32 +28,50 @@ import {
   Calendar,
   Clock,
   Plus,
+  CheckCircle2,
+  ArrowRightLeft,
+  Palette,
 } from "lucide-react";
 
-export const ProfileView: React.FC = () => {
+export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOpenColorPicker }) => {
   const {
     t,
     persona,
-    setPersona,
     lang,
     setLang,
     theme,
     setTheme,
     subscription,
+    setSubscription,
     anamnesisDone,
+    trackWeightsEnabled,
+    setTrackWeightsEnabled,
     setActiveView,
     sendNotification,
+    currentUserEmail,
+    setLoggedIn,
+    logout,
+    isVeteran,
+    setIsVeteran,
+    consecutiveMonths,
+    setConsecutiveMonths,
+    monthlyFeePaid,
+    setMonthlyFeePaid,
+    updateRecurrence,
+    applyVeteranCoupon,
+    vipChatUnlocked,
+    hasVipChatColors,
   } = useApp();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   // Profile form state
   const [fullName, setFullName] = useState("");
   const [nickname, setNickname] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
-  const [waterTarget, setWaterTarget] = useState(2500);
-  const [creatineDose, setCreatineDose] = useState(5.0);
+  const [avatarUrl, setAvatarUrl] = useState("https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80");
   const [heightCm, setHeightCm] = useState(182);
   const [weightKg, setWeightKg] = useState(81.1);
   const [saving, setSaving] = useState(false);
@@ -76,6 +95,93 @@ export const ProfileView: React.FC = () => {
     "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=500&auto=format&fit=crop&q=80"
   );
 
+  // Protocols Catalogue
+  const PROTOCOLS = [
+    {
+      id: "force",
+      name: "💪 VYRA FORCE",
+      shortName: "FORCE PROTOCOL",
+      tag: "Hipertrofia & Força Pura",
+      desc: "Focado em sobrecarga progressiva nos exercícios compostos, densidade muscular e ganhos consistentes de carga semana a semana.",
+      accent: "#3B82F6",
+      accentBg: "bg-[#3B82F6]/15 text-[#3B82F6] border-[#3B82F6]/40",
+      phase: "Fase 2: Sobrecarga Progressiva & Tensão Mecânica",
+      coach: "Mari — Head Coach",
+      features: [
+        "Planilha de cargas e anotações ativadas",
+        "Foco em força pura e hipertrofia miofibrilar",
+        "Diretrizes nutricionais normocalórica / superávit",
+      ],
+    },
+    {
+      id: "shape",
+      name: "🍑 VYRA SHAPE",
+      shortName: "SHAPE PROTOCOL",
+      tag: "Hipertrofia & Estética",
+      desc: "Foco total na harmonia e proporção do físico: ênfase em glúteos e quadríceps, posterior denso, afunilamento de cintura e postura esculpida.",
+      accent: "#EC4899",
+      accentBg: "bg-[#EC4899]/15 text-[#EC4899] border-[#EC4899]/40",
+      phase: "Fase 1: Simetria, Glúteos & Linha de Cintura",
+      coach: "Mari — Head Coach",
+      features: [
+        "Volume alto focado em glúteos e coxas",
+        "Técnicas de pré-exaustão e pico de contração",
+        "Treino metabólico para queima e tônus",
+        "Fortalecimento específico de core e vácuo",
+      ],
+    },
+    {
+      id: "reset",
+      name: "🔥 VYRA RESET 12",
+      shortName: "RESET 12 WEEKS",
+      tag: "Recomposição Corporal Acelerada",
+      desc: "12 semanas intensivas desenhadas para secar gordura rebelde enquanto preserva massa muscular com treinos densos e cardio estratégico.",
+      accent: "#FF6A2A",
+      accentBg: "bg-[#FF6A2A]/15 text-[#FF6A2A] border-[#FF6A2A]/40",
+      phase: "Fase 3: Déficit Calórico Controlado & Alta Intensidade",
+      coach: "Mari — Head Coach",
+      features: [
+        "Cardio metabólico integrado com monitoramento",
+        "Déficit calórico sem perda de força",
+        "Sensibilidade à insulina otimizada",
+        "Check-ins quinzenais de evolução",
+      ],
+    },
+  ];
+
+  // Protocol state
+  const [showProtocolModal, setShowProtocolModal] = useState(false);
+  const [selectedProtocolId, setSelectedProtocolId] = useState<string>(() => {
+    return localStorage.getItem("vyra_active_protocol") || subscription.planId || "force";
+  });
+  const [modalSelectedProtocol, setModalSelectedProtocol] = useState<string>(selectedProtocolId);
+  const [protocolSuccessMsg, setProtocolSuccessMsg] = useState("");
+
+  const currentProtocol = PROTOCOLS.find((p) => p.id === selectedProtocolId) || PROTOCOLS[0];
+
+  const handleConfirmProtocolChange = (newId: string) => {
+    const target = PROTOCOLS.find((p) => p.id === newId);
+    if (!target) return;
+    setSelectedProtocolId(newId);
+    localStorage.setItem("vyra_active_protocol", newId);
+    setSubscription({ ...subscription, planId: newId, active: true });
+    try {
+      api.updateProfile({ plan: target.name });
+    } catch (e) {
+      console.error(e);
+    }
+    sendNotification(
+      "Protocolo Atualizado!",
+      `Você migrou com sucesso para o ${target.name}. Sua planilha de treinos e orientações foram atualizadas!`,
+      "coach"
+    );
+    setProtocolSuccessMsg(`Protocolo alterado com sucesso para ${target.name}!`);
+    setTimeout(() => {
+      setProtocolSuccessMsg("");
+      setShowProtocolModal(false);
+    }, 2000);
+  };
+
   useEffect(() => {
     api
       .getProfile()
@@ -84,8 +190,6 @@ export const ProfileView: React.FC = () => {
         setFullName(data.full_name || data.nickname || "Rafael Silva");
         setNickname(data.nickname);
         setAvatarUrl(data.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80");
-        setWaterTarget(data.water_ml);
-        setCreatineDose(data.creatine_g);
         setHeightCm(data.height_cm || 182);
         setWeightKg(data.weight_kg || 81.1);
       })
@@ -99,8 +203,6 @@ export const ProfileView: React.FC = () => {
         full_name: fullName,
         nickname,
         avatar_url: avatarUrl,
-        water_ml: waterTarget,
-        creatine_g: creatineDose,
         height_cm: heightCm,
         weight_kg: weightKg,
       });
@@ -203,7 +305,7 @@ export const ProfileView: React.FC = () => {
           <div className="relative group">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-[#FF6A2A] to-[#D8B46A] p-0.5 shadow-lg shadow-[#FF6A2A]/20 overflow-hidden">
               <img
-                src={profile?.avatar_url || avatarUrl}
+                src={profile?.avatar_url || avatarUrl || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80"}
                 alt="Avatar"
                 className="w-full h-full object-cover rounded-[14px]"
               />
@@ -226,8 +328,8 @@ export const ProfileView: React.FC = () => {
             )}
           </div>
 
-          <div className="space-y-1 text-center sm:text-left">
-            <div className="flex items-center justify-center sm:justify-start gap-2">
+          <div className="space-y-1.5 text-center sm:text-left">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
               <h2 className="text-xl font-bold text-[#F5F5F7]">
                 {profile?.full_name || profile?.nickname || "Rafael Silva"}
               </h2>
@@ -241,6 +343,18 @@ export const ProfileView: React.FC = () => {
                 </span>
               )}
             </div>
+
+            {/* Badges do Usuário: Selo de Veterano e Patente por Recorrência */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 pt-0.5">
+              {isVeteran && <VeteranBadge size="sm" />}
+              <PatentBadge
+                level={getPatentInfo(consecutiveMonths, monthlyFeePaid).level}
+                showLabel={true}
+                size="sm"
+                isRevoked={!monthlyFeePaid}
+              />
+            </div>
+
             <p className="text-xs text-[#9B9BA1]">
               Apelido: <strong className="text-[#F5F5F7]">@{profile?.nickname || "rafael"}</strong> · {profile?.email || "rafael@vyra.app"}
             </p>
@@ -348,31 +462,19 @@ export const ProfileView: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Meta de Hidratação (ml)</label>
-              <input
-                id="edit-water-input"
-                type="number"
-                step="100"
-                value={waterTarget}
-                onChange={(e) => setWaterTarget(parseInt(e.target.value) || 2500)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Dose de Creatina por Tomada (g)</label>
-              <input
-                id="edit-creatine-input"
-                type="number"
-                step="0.5"
-                value={creatineDose}
-                onChange={(e) => setCreatineDose(parseFloat(e.target.value) || 5)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
-              />
-              <p className="text-[11px] text-[#D8B46A] mt-1 font-medium">
-                Prescrita pelo Coach por dose (e não diária acumulada).
-              </p>
+            {/* Aviso de Hidratação e Creatina definida pelo Coach */}
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F]/80 border border-[#2B2B2F] flex items-start gap-3">
+              <div className="w-7 h-7 rounded-lg bg-[#FF6A2A]/10 text-[#FF9A62] flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-[#F5F5F7]">
+                  Metas de Hidratação & Creatina Prescritas pelo Coach
+                </p>
+                <p className="text-[11px] text-[#9B9BA1] leading-relaxed">
+                  Sua meta diária de água e dose de creatina são ajustadas exclusivamente pelo seu Coach no protocolo oficial e acompanhadas na tela de Início (padrão automático: 2500 ml e 5g).
+                </p>
+              </div>
             </div>
           </div>
 
@@ -392,6 +494,52 @@ export const ProfileView: React.FC = () => {
               {saving ? "Salvando..." : "Salvar Dados"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* SISTEMA DE PATENTES: Exibido no Perfil exclusivamente para o Coach */}
+      {persona === "coach" && (
+        <PatentRecurrenceCard
+          consecutiveMonths={consecutiveMonths}
+          monthlyFeePaid={monthlyFeePaid}
+          isVeteran={isVeteran}
+          onUpdateRecurrence={updateRecurrence}
+          onApplyVeteranCoupon={applyVeteranCoupon}
+        />
+      )}
+
+      {/* Para Aluno com Personalização VIP de Cores (Por 5+ Estrelas OU Concedido pelo Coach) */}
+      {persona !== "coach" && (hasVipChatColors || profile?.vip_chat_unlocked) && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#1C1808] via-[#14120A] to-[#121214] border border-[#FFD700]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl shadow-[#FFD700]/10">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/40 flex items-center justify-center shrink-0">
+              <Palette className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#FFD700] bg-[#FFD700]/15 px-2.5 py-0.5 rounded-full border border-[#FFD700]/30">
+                  {consecutiveMonths >= 5
+                    ? "Desbloqueado · 5+ Estrelas (Evoluída)"
+                    : "Benefício VIP Concedido pelo Coach"}
+                </span>
+              </div>
+              <h4 className="text-sm font-bold text-[#F5F5F7] mt-1">
+                Personalização VIP de Cores do Chat Global
+              </h4>
+              <p className="text-xs text-[#9B9BA1] mt-0.5">
+                Escolha livremente a cor do seu nome e do texto das suas mensagens para se destacar na comunidade.
+              </p>
+            </div>
+          </div>
+
+          <button
+            id="open-vip-chat-colors-btn"
+            onClick={onOpenColorPicker}
+            className="px-4 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#FFD700] to-[#FFA000] text-[#0A0A0A] hover:brightness-110 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-[#FFD700]/20 active:scale-95 shrink-0"
+          >
+            <Palette className="w-4 h-4 stroke-[2.5]" />
+            <span>Personalizar Cores do Chat</span>
+          </button>
         </div>
       )}
 
@@ -713,51 +861,204 @@ export const ProfileView: React.FC = () => {
         </button>
       </div>
 
-      {/* Demo Persona Switcher */}
+      {/* Acesso & Governança da Conta */}
       <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-3">
-        <h3 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider">
-          {t("profile.persona")}
-        </h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider">
+              Conta & Nível de Acesso
+            </h3>
+            <p className="text-sm font-semibold text-[#F5F5F7] mt-0.5">
+              {currentUserEmail}
+            </p>
+          </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            id="profile-persona-student"
-            onClick={() => setPersona("student")}
-            className={`p-3 rounded-2xl border text-center transition-all ${
-              persona === "student"
-                ? "bg-[#FF6A2A]/20 border-[#FF6A2A] text-[#FF9A62]"
-                : "bg-[#1D1D1F] border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7]"
-            }`}
-          >
-            <Dumbbell className="w-5 h-5 mx-auto mb-1" />
-            <span className="text-xs font-bold block">{t("profile.student")}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {persona === "moderator" && (
+              <span className="px-3 py-1 rounded-full bg-[#6D9BFF]/20 text-[#6D9BFF] border border-[#6D9BFF]/40 text-xs font-bold flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" />
+                Moderador Oficial
+              </span>
+            )}
+            {persona === "coach" && (
+              <span className="px-3 py-1 rounded-full bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/40 text-xs font-bold flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5" />
+                Treinador Credenciado
+              </span>
+            )}
+            {persona === "student" && (
+              <span className="px-3 py-1 rounded-full bg-[#FF6A2A]/20 text-[#FF9A62] border border-[#FF6A2A]/40 text-xs font-bold flex items-center gap-1.5">
+                <Dumbbell className="w-3.5 h-3.5" />
+                Aluno / Atleta
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="pt-2 border-t border-[#2B2B2F]/60 flex items-center gap-2 text-[11px] text-[#6E6E73]">
+          <ShieldCheck className="w-3.5 h-3.5 text-[#34C759] shrink-0" />
+          <span>
+            {persona === "moderator"
+              ? "Acesso de moderador verificado por governança interna de e-mail e permissões do Supabase."
+              : persona === "coach"
+              ? "Acesso de treinador verificado por credenciamento oficial e permissões do Supabase."
+              : "Acesso aos painéis de moderação e treinador restrito exclusivamente a e-mails cadastrados e permissões no Supabase."}
+          </span>
+        </div>
+      </div>
+
+      {/* Meu Protocolo Card (Consultar e Mudar) */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#151515] via-[#1A1A1E] to-[#121214] border border-[#2B2B2F] space-y-4 shadow-xl relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/40 flex items-center justify-center shrink-0 shadow-lg shadow-[#D8B46A]/10">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-bold text-[#F5F5F7]">
+                  Meu Protocolo
+                </h3>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase border ${currentProtocol.accentBg}`}>
+                  {currentProtocol.name}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/40">
+                  Prescrição Ativa
+                </span>
+              </div>
+              <p className="text-xs text-[#9B9BA1] mt-1 max-w-xl leading-relaxed">
+                {currentProtocol.desc}
+              </p>
+              <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-[#6E6E73]">
+                <span>Fase Atual: <strong className="text-[#F5F5F7]">{currentProtocol.phase}</strong></span>
+                <span>•</span>
+                <span>Responsável: <strong className="text-[#D8B46A]">{currentProtocol.coach}</strong></span>
+              </div>
+            </div>
+          </div>
 
           <button
-            id="profile-persona-coach"
-            onClick={() => setPersona("coach")}
-            className={`p-3 rounded-2xl border text-center transition-all ${
-              persona === "coach"
-                ? "bg-[#D8B46A]/20 border-[#D8B46A] text-[#D8B46A]"
-                : "bg-[#1D1D1F] border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7]"
-            }`}
+            id="open-my-protocol-btn"
+            onClick={() => {
+              setModalSelectedProtocol(selectedProtocolId);
+              setShowProtocolModal(true);
+            }}
+            className="px-4 py-2.5 rounded-xl text-xs font-black bg-[#D8B46A] hover:bg-[#E5C37A] text-[#0A0A0A] transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-lg shadow-[#D8B46A]/20 active:scale-95"
           >
-            <UserCheck className="w-5 h-5 mx-auto mb-1" />
-            <span className="text-xs font-bold block">{t("profile.coach")}</span>
+            <Sliders className="w-4 h-4 stroke-[2.5]" />
+            <span>Meu Protocolo · Ver e Mudar</span>
           </button>
+        </div>
+      </div>
 
-          <button
-            id="profile-persona-mod"
-            onClick={() => setPersona("moderator")}
-            className={`p-3 rounded-2xl border text-center transition-all ${
-              persona === "moderator"
-                ? "bg-[#6D9BFF]/20 border-[#6D9BFF] text-[#6D9BFF]"
-                : "bg-[#1D1D1F] border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7]"
-            }`}
-          >
-            <Shield className="w-5 h-5 mx-auto mb-1" />
-            <span className="text-xs font-bold block">{t("profile.moderator")}</span>
-          </button>
+      {/* Funcionalidade de Registro de Cargas nos Treinos */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                trackWeightsEnabled
+                  ? "bg-[#FF6A2A]/20 text-[#FF6A2A] border border-[#FF6A2A]/40 shadow-lg shadow-[#FF6A2A]/10"
+                  : "bg-[#1D1D1F] text-[#9B9BA1] border border-[#2B2B2F]"
+              }`}
+            >
+              <Dumbbell className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-bold text-[#F5F5F7]">
+                  Anotação de Cargas nos Exercícios
+                </h3>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase border ${
+                    trackWeightsEnabled
+                      ? "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/40"
+                      : "bg-[#2B2B2F] text-[#9B9BA1] border-[#3A3A40]"
+                  }`}
+                >
+                  {trackWeightsEnabled ? "LIGADO" : "DESLIGADO"}
+                </span>
+              </div>
+              <p className="text-xs text-[#9B9BA1] mt-1 max-w-xl leading-relaxed">
+                Adiciona campos numéricos em cada série dos exercícios na aba de <strong>Treinos</strong> para o aluno poder registrar quanto de peso (kg) e repetições realizou em cada série.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+            {/* Direct Option Button: Ligar / Desligar */}
+            <button
+              id="toggle-track-weights-btn"
+              onClick={() => {
+                const next = !trackWeightsEnabled;
+                setTrackWeightsEnabled(next);
+                sendNotification(
+                  "Preferência de Treino Atualizada",
+                  next
+                    ? "Campos de carga ativados! Agora você pode anotar seus pesos em cada série de repetições."
+                    : "Campos de carga desativados na visualização de treinos.",
+                  "general"
+                );
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 border cursor-pointer ${
+                trackWeightsEnabled
+                  ? "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/40 hover:bg-[#34C759]/25 shadow-sm shadow-[#34C759]/20"
+                  : "bg-[#1D1D1F] text-[#9B9BA1] border-[#2B2B2F] hover:text-[#F5F5F7] hover:border-[#FF6A2A]"
+              }`}
+            >
+              {trackWeightsEnabled ? (
+                <>
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Desligar Função</span>
+                </>
+              ) : (
+                <>
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Ligar Função</span>
+                </>
+              )}
+            </button>
+
+            {/* iOS style switch slider */}
+            <button
+              id="switch-track-weights-toggle"
+              type="button"
+              role="switch"
+              aria-checked={trackWeightsEnabled}
+              onClick={() => {
+                const next = !trackWeightsEnabled;
+                setTrackWeightsEnabled(next);
+                sendNotification(
+                  "Preferência de Treino Atualizada",
+                  next
+                    ? "Campos de carga ativados! Agora você pode anotar seus pesos em cada série de repetições."
+                    : "Campos de carga desativados na visualização de treinos.",
+                  "general"
+                );
+              }}
+              className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                trackWeightsEnabled ? "bg-[#34C759]" : "bg-[#2B2B2F]"
+              }`}
+            >
+              <span className="sr-only">Ligar ou desligar anotação de cargas</span>
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  trackWeightsEnabled ? "translate-x-6" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div className="pt-3 border-t border-[#2B2B2F]/60 flex items-center justify-between text-xs text-[#9B9BA1]">
+          <span>
+            {trackWeightsEnabled
+              ? "✔ Função ativa: Os campos para informar os pesos de cada série aparecem no treino."
+              : "✖ Função inativa: A tela de treino fica compacta sem os campos de carga."}
+          </span>
+          <span className="text-[11px] font-semibold text-[#D8B46A]">
+            Salvo automaticamente
+          </span>
         </div>
       </div>
 
@@ -808,39 +1109,229 @@ export const ProfileView: React.FC = () => {
         </div>
       </div>
 
-      {/* Admin Dashboards Direct Links */}
-      {(persona === "coach" || persona === "moderator") && (
-        <div className="space-y-2">
-          <button
-            id="profile-goto-coach-dashboard-btn"
-            onClick={() => setActiveView("coach")}
-            className="w-full p-4 rounded-2xl bg-[#151515] border border-[#D8B46A]/40 text-[#D8B46A] hover:bg-[#D8B46A]/10 flex items-center justify-between font-bold text-xs"
-          >
-            <div className="flex items-center gap-2">
-              <UserCheck className="w-4 h-4" />
-              <span>Acessar Painel do Coach</span>
-            </div>
-            <ChevronRight className="w-4 h-4" />
-          </button>
+      {/* Botão Sair da Conta */}
+      <div className="pt-6 pb-4 flex flex-col items-center gap-3 border-t border-[#2B2B2F]/60">
+        <button
+          id="profile-logout-btn"
+          type="button"
+          onClick={() => setShowLogoutConfirm(true)}
+          className="w-full sm:w-auto px-8 py-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#FF453A] hover:bg-[#FF453A]/10 hover:border-[#FF453A]/40 text-sm font-bold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-95"
+        >
+          <LogOut className="w-4 h-4 text-[#FF453A]" />
+          <span>Sair da Conta</span>
+        </button>
+        <p className="text-[11px] font-semibold text-[#6E6E73]">{t("profile.version")}</p>
+      </div>
 
-          <button
-            id="profile-goto-moderator-dashboard-btn"
-            onClick={() => setActiveView("moderator")}
-            className="w-full p-4 rounded-2xl bg-[#151515] border border-[#6D9BFF]/40 text-[#6D9BFF] hover:bg-[#6D9BFF]/10 flex items-center justify-between font-bold text-xs"
-          >
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              <span>Acessar Painel de Moderação</span>
+      {/* Modal Meu Protocolo */}
+      {showProtocolModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-[#151515] border border-[#2B2B2F] p-5 sm:p-7 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#2B2B2F] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-[#F5F5F7]">
+                    Meu Protocolo & Periodização
+                  </h3>
+                  <p className="text-xs text-[#9B9BA1]">
+                    Consulte seu protocolo ativo ou escolha uma nova periodização para migrar.
+                  </p>
+                </div>
+              </div>
+              <button
+                id="close-protocol-modal-btn"
+                onClick={() => setShowProtocolModal(false)}
+                className="w-8 h-8 rounded-full bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F] flex items-center justify-center text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
-            <ChevronRight className="w-4 h-4" />
-          </button>
+
+            {/* Success alert */}
+            {protocolSuccessMsg && (
+              <div className="p-3.5 rounded-2xl bg-[#34C759]/15 border border-[#34C759]/40 text-[#34C759] text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{protocolSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Protocols Grid */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-[#9B9BA1]">
+                <span className="font-bold uppercase tracking-wider">Protocolos Disponíveis</span>
+                <span>Toque em um protocolo para comparar</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {PROTOCOLS.map((proto) => {
+                  const isCurrentActive = selectedProtocolId === proto.id;
+                  const isSelectedInModal = modalSelectedProtocol === proto.id;
+                  return (
+                    <div
+                      key={proto.id}
+                      onClick={() => setModalSelectedProtocol(proto.id)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
+                        isSelectedInModal
+                          ? "bg-[#1A1A20] border-[#D8B46A] shadow-lg shadow-[#D8B46A]/10 ring-1 ring-[#D8B46A]/40"
+                          : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#3D3D45]"
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-black text-[#F5F5F7] block">
+                            {proto.name}
+                          </span>
+                          {isCurrentActive ? (
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40">
+                              Seu Atual
+                            </span>
+                          ) : (
+                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${proto.accentBg}`}>
+                              {proto.tag}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#9B9BA1] leading-relaxed">
+                          {proto.desc}
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5 pt-2 border-t border-[#2B2B2F]/60 text-[11px] text-[#6E6E73]">
+                        <div className="text-[#9B9BA1] font-medium">
+                          Fase: <span className="text-[#D8B46A] font-semibold">{proto.phase}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          className={`w-full py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                            isSelectedInModal
+                              ? "bg-[#D8B46A] text-[#0A0A0A] font-black"
+                              : "bg-[#252529] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                          }`}
+                        >
+                          {isSelectedInModal ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              <span>Selecionado</span>
+                            </>
+                          ) : (
+                            <span>Ver Detalhes</span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selected Protocol Comparison Card */}
+            {modalSelectedProtocol && (
+              <div className="p-4 rounded-2xl bg-[#1A1A20] border border-[#2B2B2F] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#D8B46A] uppercase tracking-wider">
+                    Recursos Inclusos no {PROTOCOLS.find((p) => p.id === modalSelectedProtocol)?.name}
+                  </span>
+                  <span className="text-[11px] text-[#9B9BA1]">
+                    {PROTOCOLS.find((p) => p.id === modalSelectedProtocol)?.coach}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#F5F5F7]">
+                  {PROTOCOLS.find((p) => p.id === modalSelectedProtocol)?.features.map((feat, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-[#34C759] shrink-0 stroke-[3]" />
+                      <span>{feat}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-[#2B2B2F]">
+              <button
+                id="cancel-protocol-modal-btn"
+                onClick={() => setShowProtocolModal(false)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] transition-all cursor-pointer"
+              >
+                Fechar
+              </button>
+
+              {modalSelectedProtocol !== selectedProtocolId ? (
+                <button
+                  id="confirm-change-protocol-btn"
+                  onClick={() => handleConfirmProtocolChange(modalSelectedProtocol)}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#FF6A2A]/20"
+                >
+                  <ArrowRightLeft className="w-4 h-4" />
+                  <span>
+                    Confirmar Mudança para {PROTOCOLS.find((p) => p.id === modalSelectedProtocol)?.name}
+                  </span>
+                </button>
+              ) : (
+                <div className="text-xs text-[#34C759] font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Este já é o seu protocolo ativo no momento.</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Version Tag & Logout */}
-      <div className="text-center pt-4 space-y-3">
-        <p className="text-[11px] font-semibold text-[#9B9BA1]">{t("profile.version")}</p>
-      </div>
+      {/* Modal Confirmação de Sair da Conta */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-[#151515] border border-[#2B2B2F] p-6 text-center space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-[#FF453A]/15 border border-[#FF453A]/30 text-[#FF453A] flex items-center justify-center mx-auto">
+              <LogOut className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black text-[#F5F5F7]">Sair da Conta</h3>
+              <p className="text-xs text-[#9B9BA1] mt-1.5 leading-relaxed">
+                Deseja realmente desconectar? Você precisará informar seu e-mail novamente para acessar seus treinos e protocolos.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                id="cancel-logout-btn"
+                disabled={isLoggingOut}
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 py-3 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs font-bold text-[#9B9BA1] hover:text-[#F5F5F7] transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                id="confirm-logout-btn"
+                disabled={isLoggingOut}
+                onClick={async () => {
+                  setIsLoggingOut(true);
+                  try {
+                    await logout();
+                  } finally {
+                    setIsLoggingOut(false);
+                    setShowLogoutConfirm(false);
+                  }
+                }}
+                className="flex-1 py-3 rounded-xl bg-[#FF453A] text-white text-xs font-bold hover:bg-[#FF453A]/90 transition-all cursor-pointer shadow-lg shadow-[#FF453A]/20 flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-95"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>{isLoggingOut ? "Saindo..." : "Sim, Sair"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

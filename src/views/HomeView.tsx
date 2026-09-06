@@ -1,9 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
-import { Workout, Diet, ProgressEntry, UserProfile, Broadcast } from "../types";
+import { Workout, ProgressEntry, UserProfile, Broadcast } from "../types";
 import {
-  Megaphone,
   Sparkles,
   ArrowRight,
   Clock,
@@ -24,7 +23,6 @@ import {
   X,
   Calendar,
   Lock,
-  UtensilsCrossed,
 } from "lucide-react";
 
 const WEEK_PT = ["S", "T", "Q", "Q", "S", "S", "D"];
@@ -46,11 +44,8 @@ export const HomeView: React.FC = () => {
 
   const isTrainingLocked =
     persona === "student" && (!subscription.active || !anamnesisDone || !photosDone);
-  const isDietLocked =
-    persona === "student" && (!subscription.active || !anamnesisDone || !photosDone);
 
   const [workout, setWorkout] = useState<Workout | null>(null);
-  const [diet, setDiet] = useState<Diet | null>(null);
   const [progress, setProgress] = useState<ProgressEntry[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
@@ -94,15 +89,13 @@ export const HomeView: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [wk, dt, pr, pf, bc] = await Promise.all([
+      const [wk, pr, pf, bc] = await Promise.all([
         api.getTodayWorkout().catch(() => null),
-        api.getDiet().catch(() => null),
         api.getProgress().catch(() => []),
         api.getProfile().catch(() => null),
         api.getBroadcasts().catch(() => []),
       ]);
       if (wk) setWorkout(wk);
-      if (dt) setDiet(dt);
       if (pr) setProgress(pr);
       if (pf) setProfile(pf);
       if (bc) setBroadcasts(bc);
@@ -119,9 +112,9 @@ export const HomeView: React.FC = () => {
   const currentWeight = progress[progress.length - 1]?.weight_kg ?? profile?.weight_kg ?? 81.1;
   const firstWeight = progress[0]?.weight_kg ?? currentWeight;
   const delta = (currentWeight - firstWeight).toFixed(1);
-  const waterTarget = profile?.water_ml || 2500;
+  const waterTarget = profile?.water_ml ? Number(profile.water_ml) : 2500;
+  const creatineDose = profile?.creatine_dose_g ? Number(profile.creatine_dose_g) : (profile?.creatine_g ? Number(profile.creatine_g) : 5.0);
   const waterPct = Math.min(100, Math.round((waterDrunk / waterTarget) * 100));
-  const latestBroadcast = broadcasts[0];
 
   const addWater = (amount: number) => {
     setWaterDrunk((prev) => {
@@ -232,29 +225,6 @@ export const HomeView: React.FC = () => {
         </button>
       </div>
 
-      {/* Coach Broadcast Banner */}
-      {latestBroadcast && (
-        <div
-          id="coach-broadcast-card"
-          className="p-4 rounded-2xl bg-gradient-to-r from-[#D8B46A]/15 to-[#D8B46A]/5 border border-[#D8B46A]/30 flex items-start gap-3.5 shadow-lg shadow-[#D8B46A]/5"
-        >
-          <div className="w-9 h-9 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center shrink-0 mt-0.5">
-            <Megaphone className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-extrabold tracking-widest text-[#D8B46A] uppercase">
-                {t("sec.coach_message")} · {latestBroadcast.author}
-              </span>
-              <span className="text-[10px] text-[#9B9BA1]">{latestBroadcast.date}</span>
-            </div>
-            <p className="text-sm font-medium text-[#F5F5F7] mt-1 leading-relaxed">
-              {latestBroadcast.text}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Premium Upsell Card (if no active subscription) */}
       {!subscription.active && (
         <div
@@ -338,7 +308,7 @@ export const HomeView: React.FC = () => {
             className="relative rounded-3xl overflow-hidden border border-[#2B2B2F] min-h-[220px] sm:min-h-[240px] flex flex-col justify-end p-5 sm:p-6 cursor-pointer group shadow-xl"
           >
             <img
-              src={workout.hero_image}
+              src={workout.hero_image || "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=1200&auto=format&fit=crop&q=80"}
               alt={workout.title}
               className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
             />
@@ -371,77 +341,11 @@ export const HomeView: React.FC = () => {
         </div>
       )}
 
-      {/* Grid: Macros Summary + Evolution */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Plano Alimentar Card (sem contadores de calorias e macros para o aluno) */}
-        {diet && (
-          <div
-            id="home-macros-card"
-            onClick={() => setActiveView("diet")}
-            className="p-5 rounded-2xl bg-[#151515] border border-[#2B2B2F] cursor-pointer hover:border-[#4A4A52] transition-colors flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
-              <div className="flex items-center gap-2">
-                <UtensilsCrossed className="w-4 h-4 text-[#FF6A2A]" />
-                <h3 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider">
-                  Plano Alimentar Prescrito
-                </h3>
-                {isDietLocked && (
-                  <span className="text-[10px] font-bold text-[#D8B46A] bg-[#D8B46A]/15 border border-[#D8B46A]/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Lock className="w-2.5 h-2.5" />
-                    Bloqueado
-                  </span>
-                )}
-              </div>
-              <span className="text-xs font-bold text-[#FF6A2A] hover:underline">
-                {isDietLocked ? "Liberar Dieta" : "Ver dieta completa"}
-              </span>
-            </div>
-
-            <div className="my-3 space-y-2">
-              {diet.foods.slice(0, 3).map((food) => (
-                <div
-                  key={food.id}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F]/60"
-                >
-                  <div className="truncate pr-2">
-                    <span className="text-xs font-bold text-[#F5F5F7] block truncate">
-                      {food.name}
-                    </span>
-                    <span className="text-[10px] text-[#FF9A62] font-semibold uppercase">
-                      {food.meal === "breakfast"
-                        ? "Café da Manhã"
-                        : food.meal === "lunch"
-                        ? "Almoço"
-                        : food.meal === "snack"
-                        ? "Lanche"
-                        : food.meal === "dinner"
-                        ? "Jantar"
-                        : "Ceia"}
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-[#9B9BA1] shrink-0">
-                    {food.grams}g
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="pt-2 border-t border-[#2B2B2F]/60 flex items-center justify-between text-xs text-[#9B9BA1]">
-              <span>Prescrição individualizada</span>
-              <span className="text-[#D8B46A] font-bold text-[11px] flex items-center gap-1">
-                <Sparkles className="w-3 h-3" />
-                O que posso comer
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Evolution Card (Full Integrated Tracker) */}
-        <div
-          id="home-evolution-card"
-          className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl"
-        >
+      {/* Evolution Card (Full Integrated Tracker) */}
+      <div
+        id="home-evolution-card"
+        className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl"
+      >
           <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
             <div className="flex items-center gap-2">
               <span className="text-xs font-black tracking-widest text-[#FF6A2A] uppercase bg-[#FF6A2A]/15 px-2.5 py-0.5 rounded-full border border-[#FF6A2A]/30">
@@ -576,7 +480,6 @@ export const HomeView: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
 
       {/* Reminders: Water & Creatine */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -652,12 +555,12 @@ export const HomeView: React.FC = () => {
               <span className="text-sm font-bold text-[#F5F5F7]">{t("sec.creatine")}</span>
             </div>
             <span className="text-xs font-bold text-[#D8B46A]">
-              {profile?.creatine_dose_g || profile?.creatine_g || 5.0}g por dose
+              {creatineDose}g por dose
             </span>
           </div>
 
           <p className="text-xs text-[#9B9BA1]">
-            Quantidade prescrita pelo Coach: {profile?.creatine_dose_g || profile?.creatine_g || 5.0}g por dose. Horários programados:
+            Quantidade prescrita pelo Coach: {creatineDose}g por dose. Horários programados:
           </p>
 
           <div className="flex flex-wrap gap-2.5 pt-1">

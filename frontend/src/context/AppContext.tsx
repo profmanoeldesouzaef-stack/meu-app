@@ -20,6 +20,8 @@ type AppState = {
   loggedIn: boolean;
   anamnesisDone: boolean;
   subscription: Subscription;
+  trackWeightsEnabled: boolean;
+  setTrackWeightsEnabled: (enabled: boolean) => void;
   colors: Palette;
   setPersona: (p: Persona) => void;
   setLang: (l: Lang) => void;
@@ -214,17 +216,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loggedIn, setLoggedInState] = useState(false);
   const [anamnesisDone, setAnamnesisDoneState] = useState(false);
   const [subscription, setSubscriptionState] = useState<Subscription>({ active: false });
+  const [trackWeightsEnabled, setTrackWeightsEnabledState] = useState<boolean>(true);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [p, l, th, li, an, s] = await Promise.all([
+      const [p, l, th, li, an, s, tw] = await Promise.all([
         AsyncStorage.getItem("vyra.persona"),
         AsyncStorage.getItem("vyra.lang"),
         AsyncStorage.getItem("vyra.theme"),
         AsyncStorage.getItem("vyra.loggedIn"),
         AsyncStorage.getItem("vyra.anamnesis"),
         AsyncStorage.getItem("vyra.sub"),
+        AsyncStorage.getItem("vyra.trackWeights"),
       ]);
       if (p) setPersonaState(p as Persona);
       if (l) setLangState(l as Lang);
@@ -232,6 +236,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (li === "1") setLoggedInState(true);
       if (an === "1") setAnamnesisDoneState(true);
       if (s) setSubscriptionState(JSON.parse(s));
+      if (tw !== null) setTrackWeightsEnabledState(tw === "1");
       setReady(true);
     })();
   }, []);
@@ -242,6 +247,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setLoggedIn = useCallback((v: boolean) => { setLoggedInState(v); AsyncStorage.setItem("vyra.loggedIn", v ? "1" : "0"); }, []);
   const setAnamnesisDone = useCallback((v: boolean) => { setAnamnesisDoneState(v); AsyncStorage.setItem("vyra.anamnesis", v ? "1" : "0"); }, []);
   const setSubscription = useCallback((s: Subscription) => { setSubscriptionState(s); AsyncStorage.setItem("vyra.sub", JSON.stringify(s)); }, []);
+  const setTrackWeightsEnabled = useCallback((enabled: boolean) => {
+    setTrackWeightsEnabledState(enabled);
+    AsyncStorage.setItem("vyra.trackWeights", enabled ? "1" : "0");
+  }, []);
 
   const fmtPrice = useCallback((brl: number, usd: number) => {
     if (lang === "pt") return `R$ ${brl.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -256,8 +265,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppCtx.Provider value={{
-      persona, lang, theme, loggedIn, anamnesisDone, subscription, colors,
-      setPersona, setLang, setTheme, setLoggedIn, setAnamnesisDone, setSubscription,
+      persona, lang, theme, loggedIn, anamnesisDone, subscription, trackWeightsEnabled, colors,
+      setPersona, setLang, setTheme, setLoggedIn, setAnamnesisDone, setSubscription, setTrackWeightsEnabled,
       fmtPrice, currencySymbol, t,
     }}>
       {children}

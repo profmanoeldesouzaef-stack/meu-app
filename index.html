@@ -11,6 +11,144 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+    <script>
+      (function() {
+        class SimpleEventEmitter {
+          constructor() {
+            this._listeners = new Map();
+          }
+          addListener(eventName, listener) {
+            if (!this._listeners.has(eventName)) {
+              this._listeners.set(eventName, new Set());
+            }
+            this._listeners.get(eventName).add(listener);
+            return {
+              remove: () => {
+                this.removeListener(eventName, listener);
+              }
+            };
+          }
+          removeListener(eventName, listener) {
+            if (this._listeners.has(eventName)) {
+              this._listeners.get(eventName).delete(listener);
+            }
+          }
+          removeAllListeners(eventName) {
+            if (eventName) {
+              this._listeners.delete(eventName);
+            } else {
+              this._listeners.clear();
+            }
+          }
+          emit(eventName, ...args) {
+            const set = this._listeners.get(eventName);
+            if (set) {
+              for (const fn of set) {
+                try { fn(...args); } catch(e) { console.error(e); }
+              }
+            }
+          }
+          listenerCount(eventName) {
+            return this._listeners.get(eventName)?.size || 0;
+          }
+        }
+        class NativeModule extends SimpleEventEmitter {}
+        class SharedObject extends SimpleEventEmitter {}
+        class SharedRef extends SimpleEventEmitter {}
+
+        const ExponentImagePickerWeb = {
+          launchImageLibraryAsync: async function(options) {
+            return new Promise(function(resolve) {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = "image/*";
+              input.style.display = "none";
+              if (options && options.allowsMultipleSelection) input.multiple = true;
+              input.onchange = function() {
+                if (input.files && input.files.length > 0) {
+                  const assets = Array.from(input.files).map(function(f) {
+                    return {
+                      uri: URL.createObjectURL(f),
+                      fileName: f.name,
+                      name: f.name,
+                      fileSize: f.size,
+                      type: "image",
+                    };
+                  });
+                  resolve({ canceled: false, assets: assets });
+                } else {
+                  resolve({ canceled: true, assets: null });
+                }
+                input.remove();
+              };
+              input.oncancel = function() {
+                resolve({ canceled: true, assets: null });
+                input.remove();
+              };
+              document.body.appendChild(input);
+              input.click();
+            });
+          },
+          launchCameraAsync: async function(options) {
+            return this.launchImageLibraryAsync(options);
+          },
+          getCameraPermissionsAsync: async function() {
+            return { status: "granted", granted: true, expires: "never", canAskAgain: true };
+          },
+          requestCameraPermissionsAsync: async function() {
+            return { status: "granted", granted: true, expires: "never", canAskAgain: true };
+          },
+          getMediaLibraryPermissionsAsync: async function() {
+            return { status: "granted", granted: true, expires: "never", canAskAgain: true };
+          },
+          requestMediaLibraryPermissionsAsync: async function() {
+            return { status: "granted", granted: true, expires: "never", canAskAgain: true };
+          },
+          getPendingResultAsync: async function() { return null; },
+        };
+
+        const modulesRegistry = {
+          ExponentImagePicker: ExponentImagePickerWeb,
+        };
+
+        const modulesProxy = new Proxy(modulesRegistry, {
+          get(target, prop) {
+            if (prop in target) return target[prop];
+            if (typeof prop === "string") {
+              return {
+                addListener: function() { return { remove: function() {} }; },
+                removeListeners: function() {},
+              };
+            }
+            return undefined;
+          }
+        });
+
+        const expoGlobal = {
+          EventEmitter: SimpleEventEmitter,
+          NativeModule,
+          SharedObject,
+          SharedRef,
+          modules: modulesProxy,
+          uuidv4: () => Math.random().toString(36).substring(2),
+          uuidv5: () => Math.random().toString(36).substring(2),
+          getViewConfig: () => ({}),
+          reloadAppAsync: async () => { window.location.reload(); },
+        };
+
+        if (typeof window !== "undefined") {
+          window.__DEV__ = true;
+          window.process = window.process || { env: { NODE_ENV: "development", EXPO_OS: "web" } };
+          window.expo = window.expo || expoGlobal;
+          window.ExpoDomWebView = window.ExpoDomWebView || {};
+        }
+        if (typeof globalThis !== "undefined") {
+          globalThis.__DEV__ = true;
+          globalThis.expo = globalThis.expo || expoGlobal;
+          globalThis.ExpoDomWebView = globalThis.ExpoDomWebView || {};
+        }
+      })();
+    </script>
   </head>
   <body class="bg-[#0A0A0A] text-[#F5F5F7] antialiased selection:bg-[#FF6A2A]/30 selection:text-[#FF9A62]">
     <div id="root"></div>
