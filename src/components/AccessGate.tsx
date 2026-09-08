@@ -13,8 +13,8 @@ import {
 
 interface AccessGateProps {
   type: "payment" | "anamnesis_photos";
-  title: string;
-  description: string;
+  title?: string;
+  description?: string;
   tabName: "treinos" | "dieta" | "desafios";
 }
 
@@ -28,25 +28,19 @@ export const AccessGate: React.FC<AccessGateProps> = ({
     setActiveView,
     anamnesisDone,
     photosDone,
-    setSubscription,
-    setAnamnesisDone,
-    setPhotosDone,
   } = useApp();
 
-  const handleSimulatePayment = () => {
-    setSubscription({
-      active: true,
-      planId: "shape",
-      cycle: "quarter",
-      billingCycle: "quarter",
-      expiresAt: "2026-12-31",
-    });
-  };
+  const displayTitle =
+    title ||
+    (type === "payment"
+      ? "Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
+      : "Etapa de Liberação Obrigatória");
 
-  const handleSimulateAnamnesisPhotos = () => {
-    setAnamnesisDone(true);
-    setPhotosDone(true);
-  };
+  const displayDescription =
+    description ||
+    (type === "payment"
+      ? "Libere seu acesso para visualizar seu treino e dieta personalizados por nossos coaches credenciados."
+      : "Complete o envio da sua anamnese e fotografias corporais para que seu treinador elabore sua periodização.");
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-12 pb-28 md:pb-12 animate-in fade-in duration-300">
@@ -77,12 +71,12 @@ export const AccessGate: React.FC<AccessGateProps> = ({
               : "Etapa Obrigatória de Liberação"}
           </span>
 
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
-            {title}
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#F5F5F7] tracking-tight">
+            {displayTitle}
           </h2>
 
           <p className="text-sm text-[#9B9BA1] max-w-lg mx-auto leading-relaxed">
-            {description}
+            {displayDescription}
           </p>
         </div>
 
@@ -140,10 +134,10 @@ export const AccessGate: React.FC<AccessGateProps> = ({
           {type === "payment" ? (
             <button
               id="gate-activate-plan-btn"
-              onClick={() => setActiveView("paywall")}
+              onClick={() => setActiveView("profile")}
               className="w-full py-3.5 px-6 rounded-2xl font-black text-sm bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 active:scale-[0.99] shadow-xl shadow-[#FF6A2A]/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>Escolher Protocolo & Ativar Assinatura</span>
+              <span>Assinar Agora</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           ) : (
@@ -156,27 +150,6 @@ export const AccessGate: React.FC<AccessGateProps> = ({
               <span>Preencher Anamnese & Anexar Fotos</span>
             </button>
           )}
-
-          {/* Quick Demo Helper (allows immediate preview/testing without card payment or file uploads) */}
-          <div className="pt-2 border-t border-[#2B2B2F]/60 flex items-center justify-center gap-2">
-            {type === "payment" ? (
-              <button
-                type="button"
-                onClick={handleSimulatePayment}
-                className="text-[11px] font-semibold text-[#9B9BA1] hover:text-[#FF9A62] transition-colors underline"
-              >
-                Modo Teste: Simular Pagamento Concluído
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSimulateAnamnesisPhotos}
-                className="text-[11px] font-semibold text-[#9B9BA1] hover:text-[#D8B46A] transition-colors underline"
-              >
-                Modo Teste: Concluir Anamnese & Fotos Agora
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </div>

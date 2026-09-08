@@ -31,11 +31,31 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
       ...(options?.headers || {}),
     },
   });
+
+  const contentType = res.headers.get("content-type") || "";
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || "Request failed");
+    let errMsg = `Request failed (${res.status} ${res.statusText})`;
+    if (contentType.includes("application/json")) {
+      try {
+        const errJson = await res.json();
+        errMsg = errJson.error || errJson.message || errMsg;
+      } catch {
+        // ignore
+      }
+    }
+    throw new Error(errMsg);
   }
-  return res.json();
+
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Endpoint ${endpoint} returned non-JSON response.`);
+  }
 }
 
 export interface PlateFoodItem {
@@ -68,6 +88,14 @@ export interface PlateAnalysisResult {
 export const api = {
   getPlans: () => request<Plan[]>("/plans"),
   getTodayWorkout: () => request<Workout>("/workout/today"),
+  todayWorkout: () => request<Workout>("/workout/today"),
+  getWorkoutSchedule: () => request<Record<number, Workout | null>>("/workout/schedule"),
+  getWorkoutDay: (day: number | string) => request<Workout | null>(`/workout/day/${day}`),
+  assignWorkoutDay: (data: { student_id?: string; student_ids?: string[]; days: number[]; workout: Partial<Workout> }) =>
+    request<{ ok: boolean; schedule: Record<number, Workout | null>; message: string }>("/coach/assign-workout-day", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   updateWorkout: (data: Partial<Workout>) =>
     request<Workout>("/workout/today", { method: "PUT", body: JSON.stringify(data) }),
   getWorkoutLogs: (workoutId?: string, userEmail?: string, exerciseId?: string) => {
@@ -113,6 +141,11 @@ export const api = {
     }>(`/workout/exercise-history/${exerciseId}${qs ? `?${qs}` : ""}`);
   },
   getDiet: () => request<Diet>("/diet"),
+  toggleDietRelease: (released?: boolean) =>
+    request<{ ok: boolean; diet_released: boolean }>("/diet/release", {
+      method: "POST",
+      body: JSON.stringify({ released }),
+    }),
   updateDiet: (data: Partial<Diet>) =>
     request<Diet>("/diet", { method: "PUT", body: JSON.stringify(data) }),
   getProgress: () => request<ProgressEntry[]>("/progress"),
@@ -372,5 +405,73 @@ export const api = {
     request<ChallengePhoto>("/challenge-photos", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+  stripeCheckout: (payload: {
+    email?: string;
+    userId?: string;
+    priceId: string;
+    paymentMethod: "card" | "pix";
+    planId?: string;
+    cycle?: string;
+    selected_protocol?: string;
+    metadata?: Record<string, any>;
+  }) =>
+    request<{
+      paymentIntent: string;
+      ephemeralKey: string;
+      customer: string;
+      priceId: string;
+      priceInfo: { id: string; name: string; amount: number; cycle: string; slug: string };
+      amount: number;
+      currency: string;
+      paymentMethod: string;
+      pixCode: string;
+      pixQrCode?: string;
+    }>("/stripe-checkout", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  confirmPayment: (payload: {
+    userId?: string;
+    email?: string;
+    priceId: string;
+    planType?: string;
+    planId?: string;
+    cycle?: string;
+    paymentMethod: string;
+    selected_protocol?: string;
+    metadata?: Record<string, any>;
+  }) =>
+    request<{
+      success: boolean;
+      supabaseSaved: boolean;
+      status: string;
+      subscription: any;
+      message: string;
+    }>("/subscription/confirm-payment", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getSubscription: (userId?: string, email?: string) => {
+    const qs = userId ? `?userId=${encodeURIComponent(userId)}` : "";
+    return request<{
+      active: boolean;
+      status: "active" | "inactive" | "trialing";
+      planId?: string;
+      paymentMethod?: string;
+      currentPeriodEnd?: string;
+      id?: string;
+      source: string;
+    }>(`/subscription${qs}`);
+  },
+  setSubscriptionStatus: (status: "active" | "inactive", userId?: string, planType?: string) =>
+    request<{
+      success: boolean;
+      status: string;
+      active: boolean;
+      subscription: any;
+    }>("/subscription/set-status", {
+      method: "POST",
+      body: JSON.stringify({ status, userId, planType }),
     }),
 };

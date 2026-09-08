@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 
 import { colors, radius, spacing, fs } from "@/src/theme/tokens";
 import { useApp } from "@/src/context/AppContext";
+import { useSubscription } from "@/src/hooks/useSubscription";
+import { PaywallGateMobile } from "@/src/components/PaywallGateMobile";
+import { useRouter } from "expo-router";
 import { api } from "@/src/api/client";
 
 const MEALS = [
@@ -20,7 +23,22 @@ const MOCK_IMG = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP////////////////////////////
 
 export default function Diet() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { t, lang } = useApp();
+  const { canAccess } = useSubscription();
+
+  // Bloqueio de Telas (Regra de Negócio Crítica: Paywall Guard)
+  if (!canAccess("diet")) {
+    return (
+      <PaywallGateMobile
+        title="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
+        description="Libere seu acesso para visualizar seu treino e dieta."
+        onSubscribe={() => router.push("/(tabs)/profile")}
+        onGoBack={() => router.replace("/(tabs)")}
+      />
+    );
+  }
+
   const [diet, setDiet] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
+import { supabase } from "../lib/supabase";
 import { Workout, ProgressEntry, UserProfile, Broadcast } from "../types";
 import {
   Sparkles,
@@ -27,7 +28,6 @@ import {
 
 const WEEK_PT = ["S", "T", "Q", "Q", "S", "S", "D"];
 const WEEK_EN = ["M", "T", "W", "T", "F", "S", "S"];
-const DONE_DAYS = [true, true, false, true, false, false, false];
 
 export const HomeView: React.FC = () => {
   const {
@@ -40,6 +40,8 @@ export const HomeView: React.FC = () => {
     setActiveView,
     creatineChecks,
     toggleCreatineCheck,
+    currentUserName,
+    currentUserNickname,
   } = useApp();
 
   const isTrainingLocked =
@@ -54,6 +56,7 @@ export const HomeView: React.FC = () => {
     return saved ? parseInt(saved, 10) : 1750;
   });
   const [loading, setLoading] = useState(true);
+  const [weeklyAdherence, setWeeklyAdherence] = useState<boolean[]>([false, false, false, false, false, false, false]);
 
   // Evolution & Body Composition Tracking State (Integrated directly in Home)
   const [showLogModal, setShowLogModal] = useState(false);
@@ -108,6 +111,91 @@ export const HomeView: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  // Real Weekly Adherence from Supabase, Workout Logs & Progress Entries
+  useEffect(() => {
+    async function calculateRealWeeklyAdherence() {
+      try {
+        const now = new Date();
+        const currentDayOfWeek = (now.getDay() + 6) % 7; // 0 = Seg, 1 = Ter, ..., 6 = Dom
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - currentDayOfWeek);
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        let completedDates = new Set<string>();
+
+        // 1. Check localStorage for workout completions
+        const localCompletion = localStorage.getItem("vyra_last_completed_workout");
+        if (localCompletion) {
+          try {
+            const parsed = JSON.parse(localCompletion);
+            if (parsed.date) {
+              completedDates.add(parsed.date);
+            }
+          } catch (e) {}
+        }
+        const localLogs = localStorage.getItem("vyra_exercise_logs");
+        if (localLogs) {
+          try {
+            const parsedLogs = JSON.parse(localLogs);
+            Object.values(parsedLogs).forEach((item: any) => {
+              if (item.date) completedDates.add(item.date);
+              if (item.completed_at) completedDates.add(new Date(item.completed_at).toISOString().split("T")[0]);
+            });
+          } catch (e) {}
+        }
+
+        // 2. Query Supabase workout_logs
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          const { data: dbLogs } = await supabase
+            .from("workout_logs")
+            .select("date, completed_at")
+            .eq("user_id", userData.user.id)
+            .gte("created_at", startOfWeek.toISOString());
+
+          if (dbLogs) {
+            dbLogs.forEach((log) => {
+              if (log.date) completedDates.add(log.date);
+              if (log.completed_at) completedDates.add(new Date(log.completed_at).toISOString().split("T")[0]);
+            });
+          }
+        }
+
+        // 3. Build adherence array for the 7 days of the current week
+        const adherenceDays: boolean[] = [];
+        for (let i = 0; i < 7; i++) {
+          const targetDay = new Date(startOfWeek);
+          targetDay.setDate(startOfWeek.getDate() + i);
+          const iso = targetDay.toISOString().split("T")[0];
+          const brDate = targetDay.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+          
+          const isDone = completedDates.has(iso) || completedDates.has(brDate) || (progress && progress.some(p => p.date === iso));
+          adherenceDays.push(Boolean(isDone));
+        }
+
+        // Check if today has logged sets
+        const todaySets = localStorage.getItem("vyra_exercise_sets");
+        if (todaySets) {
+          try {
+            const parsed = JSON.parse(todaySets);
+            const hasCompletedSet = Object.values(parsed).some((sets: any) => 
+              Array.isArray(sets) && sets.some((s: any) => s.completed)
+            );
+            if (hasCompletedSet) {
+              adherenceDays[currentDayOfWeek] = true;
+            }
+          } catch (e) {}
+        }
+
+        setWeeklyAdherence(adherenceDays);
+      } catch (err) {
+        console.error("Error calculating weekly adherence:", err);
+      }
+    }
+
+    calculateRealWeeklyAdherence();
+  }, [progress]);
+
   const weekLabels = lang === "pt" ? WEEK_PT : WEEK_EN;
   const currentWeight = progress[progress.length - 1]?.weight_kg ?? profile?.weight_kg ?? 81.1;
   const firstWeight = progress[0]?.weight_kg ?? currentWeight;
@@ -147,7 +235,7 @@ export const HomeView: React.FC = () => {
         <div>
           <span className="text-sm font-semibold text-[#9B9BA1]">{t("sec.hi")},</span>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
-            {profile?.full_name || profile?.nickname || "Rafael"}
+            {currentUserNickname || currentUserName || profile?.nickname || profile?.full_name || "Aluno"}
           </h1>
         </div>
         <div className="flex items-center gap-2">
@@ -258,7 +346,7 @@ export const HomeView: React.FC = () => {
         </h2>
         <div className="grid grid-cols-7 gap-2 bg-[#151515] border border-[#2B2B2F] p-3 sm:p-4 rounded-2xl">
           {weekLabels.map((day, idx) => {
-            const isDone = DONE_DAYS[idx];
+            const isDone = Boolean(weeklyAdherence[idx]);
             return (
               <div key={idx} className="flex flex-col items-center gap-2">
                 <div
@@ -276,70 +364,6 @@ export const HomeView: React.FC = () => {
           })}
         </div>
       </div>
-
-      {/* Today's Workout Hero */}
-      {workout && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider">
-                {t("sec.today_workout")}
-              </h2>
-              {isTrainingLocked && (
-                <span className="text-[10px] font-bold text-[#D8B46A] bg-[#D8B46A]/15 border border-[#D8B46A]/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Lock className="w-2.5 h-2.5" />
-                  Bloqueado
-                </span>
-              )}
-            </div>
-            <button
-              id="home-view-workout-btn"
-              onClick={() => setActiveView("training")}
-              className="text-xs font-bold text-[#FF6A2A] hover:underline flex items-center gap-1"
-            >
-              <span>{isTrainingLocked ? "Liberar Treino" : t("cta.edit")}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div
-            id="today-workout-hero-card"
-            onClick={() => setActiveView("training")}
-            className="relative rounded-3xl overflow-hidden border border-[#2B2B2F] min-h-[220px] sm:min-h-[240px] flex flex-col justify-end p-5 sm:p-6 cursor-pointer group shadow-xl"
-          >
-            <img
-              src={workout.hero_image || "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=1200&auto=format&fit=crop&q=80"}
-              alt={workout.title}
-              className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/70 to-transparent" />
-
-            <div className="relative z-10 space-y-2">
-              <span className="inline-block text-[11px] font-black tracking-widest text-[#FF6A2A] uppercase bg-[#0A0A0A]/80 backdrop-blur-md px-2.5 py-1 rounded-md border border-[#FF6A2A]/30">
-                {workout.day_label} · {workout.focus}
-              </span>
-              <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-                {workout.title}
-              </h3>
-
-              <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-[#F5F5F7]/90">
-                <div className="flex items-center gap-1.5 bg-[#151515]/80 px-2.5 py-1 rounded-lg backdrop-blur-sm border border-white/10">
-                  <Clock className="w-3.5 h-3.5 text-[#9B9BA1]" />
-                  <span>{workout.duration_min} min</span>
-                </div>
-                <div className="flex items-center gap-1.5 bg-[#151515]/80 px-2.5 py-1 rounded-lg backdrop-blur-sm border border-white/10">
-                  <Flame className="w-3.5 h-3.5 text-[#FF6A2A]" />
-                  <span>{workout.intensity}</span>
-                </div>
-                <div className="flex items-center gap-1.5 bg-[#151515]/80 px-2.5 py-1 rounded-lg backdrop-blur-sm border border-white/10">
-                  <Dumbbell className="w-3.5 h-3.5 text-[#D8B46A]" />
-                  <span>{workout.exercises.length} exercícios</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Evolution Card (Full Integrated Tracker) */}
       <div

@@ -65,6 +65,10 @@ interface AppContextType {
   toggleCreatineCheck: (timeKey: string) => void;
   currentUserEmail: string;
   setCurrentUserEmail: (email: string) => void;
+  currentUserName: string;
+  setCurrentUserName: (name: string) => void;
+  currentUserNickname: string;
+  setCurrentUserNickname: (nick: string) => void;
   registeredModerators: string[];
   registeredCoaches: string[];
   registeredPartners: string[];
@@ -90,6 +94,12 @@ interface AppContextType {
   setSubscription: (s: Subscription) => void;
   trackWeightsEnabled: boolean;
   setTrackWeightsEnabled: (enabled: boolean) => void;
+  isChampion: boolean;
+  setIsChampion: (v: boolean) => void;
+  userPoints: number;
+  setUserPoints: (p: number) => void;
+  userRank: string | null;
+  setUserRank: (r: string | null) => void;
   isVeteran: boolean;
   setIsVeteran: (v: boolean) => void;
   consecutiveMonths: number;
@@ -487,7 +497,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [persona, setPersonaState] = useState<Persona>("student");
   const [lang, setLangState] = useState<Lang>("pt");
   const [theme, setThemeState] = useState<Theme>("dark");
-  const [loggedIn, setLoggedInState] = useState(true);
+  const [loggedIn, setLoggedInState] = useState<boolean>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        return localStorage.getItem("vyra_logged_in") === "true";
+      }
+    } catch {}
+    return false;
+  });
   const [anamnesisDone, setAnamnesisDoneState] = useState(false);
   const [photosDone, setPhotosDoneState] = useState(false);
   const [subscription, setSubscriptionState] = useState<Subscription>({ active: false });
@@ -643,13 +660,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMilestoneCelebration(null);
   }, []);
 
-  // Gamification: Veteran Badge and Recurrence Patents
+  // Gamification: Champion, Veteran Badge, Points, Rank and Recurrence Patents
+  // Novos usuários iniciam obrigatoriamente zerados (sem Coroa e com Patente Base/Iniciante)
+  const [isChampion, setIsChampionState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_is_champion");
+      if (saved !== null) return saved === "true";
+    } catch {}
+    return false; // Estritamente condicionado ao Supabase (is_champion === true)
+  });
+
+  const [userPoints, setUserPointsState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("vyra_user_points");
+      if (saved !== null) return parseInt(saved, 10) || 0;
+    } catch {}
+    return 0; // Novos usuários iniciam obrigatoriamente com 0 pontos
+  });
+
+  const [userRank, setUserRankState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("vyra_user_rank") || null;
+    } catch {}
+    return null; // Patente base ou nula
+  });
+
   const [isVeteran, setIsVeteranState] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem("vyra_is_veteran");
       if (saved !== null) return saved === "true";
     } catch {}
-    return true; // Default demonstration state for Rafael
+    return false; // Novos usuários iniciam SEM o selo
   });
 
   const [consecutiveMonths, setConsecutiveMonthsState] = useState<number>(() => {
@@ -657,7 +698,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem("vyra_consecutive_months");
       if (saved !== null) return parseInt(saved, 10) || 0;
     } catch {}
-    return 6; // 6 months -> Patente II
+    return 0; // 0 meses: Patente base / Iniciante
   });
 
   const [monthlyFeePaid, setMonthlyFeePaidState] = useState<boolean>(() => {
@@ -665,8 +706,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saved = localStorage.getItem("vyra_monthly_fee_paid");
       if (saved !== null) return saved === "true";
     } catch {}
-    return true;
+    return false;
   });
+
+  const setIsChampion = useCallback((v: boolean) => {
+    setIsChampionState(v);
+    try {
+      localStorage.setItem("vyra_is_champion", String(v));
+    } catch {}
+  }, []);
+
+  const setUserPoints = useCallback((p: number) => {
+    setUserPointsState(p);
+    try {
+      localStorage.setItem("vyra_user_points", String(p));
+    } catch {}
+  }, []);
+
+  const setUserRank = useCallback((r: string | null) => {
+    setUserRankState(r);
+    try {
+      if (r) localStorage.setItem("vyra_user_rank", r);
+      else localStorage.removeItem("vyra_user_rank");
+    } catch {}
+  }, []);
 
   // VIP Chat Benefit (Unlocked by 5+ consecutive months OR granted directly by Coach)
   const [vipChatUnlocked, setVipChatUnlockedState] = useState<boolean>(() => {
@@ -686,8 +749,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const hasVipChatColors = consecutiveMonths >= 5 || vipChatUnlocked;
 
-  // User email & registered roles state
-  const [currentUserEmail, setCurrentUserEmailState] = useState<string>("cubocao@gmail.com");
+  // User email & registered roles state (sem e-mail pré-definido)
+  const [currentUserEmail, setCurrentUserEmailState] = useState<string>(() => {
+    try {
+      return localStorage.getItem("vyra_current_user_email") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [currentUserName, setCurrentUserNameState] = useState<string>(() => {
+    try {
+      return localStorage.getItem("vyra_user_name") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [currentUserNickname, setCurrentUserNicknameState] = useState<string>(() => {
+    try {
+      return localStorage.getItem("vyra_user_nickname") || "";
+    } catch {
+      return "";
+    }
+  });
   const [registeredModerators, setRegisteredModerators] = useState<string[]>([
     "suporte@vyratraining.com",
     "cubocao@gmail.com",
@@ -828,6 +911,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("vyra_user_email", clean);
   }, []);
 
+  const setCurrentUserName = useCallback((name: string) => {
+    const clean = name.trim();
+    setCurrentUserNameState(clean);
+    if (clean) localStorage.setItem("vyra_user_name", clean);
+    else localStorage.removeItem("vyra_user_name");
+  }, []);
+
+  const setCurrentUserNickname = useCallback((nick: string) => {
+    const clean = nick.trim();
+    setCurrentUserNicknameState(clean);
+    if (clean) localStorage.setItem("vyra_user_nickname", clean);
+    else localStorage.removeItem("vyra_user_nickname");
+  }, []);
+
   const isModeratorEmail = useCallback(
     (email: string) => {
       const clean = email.trim().toLowerCase();
@@ -871,9 +968,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Assim que o Supabase confirmar o login, você faz esta verificação:
   const definirPerfil = useCallback(
-    (usuario: any) => {
+    async (usuario: any) => {
       if (!usuario) return;
       const userEmail = (usuario.email || "").trim().toLowerCase();
+
+      // 1. Verificação preliminar baseada em e-mail / metadados
+      let detectedPersona: Persona = "student";
 
       if (
         userEmail === "suporte@vyratraining.com" ||
@@ -883,8 +983,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         usuario.app_metadata?.role === "admin" ||
         registeredModerators.some((m) => m.toLowerCase() === userEmail)
       ) {
-        setPersonaState("moderator"); // Libera tudo, incluindo o painel de admin
-        localStorage.setItem("vyra_persona", "moderator");
+        detectedPersona = "moderator";
       } else if (
         usuario.user_metadata?.is_coach === true ||
         usuario.app_metadata?.is_coach === true ||
@@ -892,11 +991,143 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         usuario.app_metadata?.role === "coach" ||
         registeredCoaches.some((c) => c.toLowerCase() === userEmail)
       ) {
-        setPersonaState("coach"); // Libera a gestão de alunos (ajuste conforme seu banco de dados)
-        localStorage.setItem("vyra_persona", "coach");
-      } else {
-        setPersonaState("student"); // Visão padrão
-        localStorage.setItem("vyra_persona", "student");
+        detectedPersona = "coach";
+      }
+
+      // 2. Consulta direta à tabela profiles do Supabase para verificar papel real e gamificação
+      try {
+        if (usuario.id) {
+          const { data: profileRecord, error } = await supabase
+            .from("profiles")
+            .select("role, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank, consecutive_months, is_veteran, monthly_fee_paid, patente_level")
+            .eq("id", usuario.id)
+            .maybeSingle();
+
+          // Sincronização do Nome e Apelido Reais com o banco de dados / metadados
+          const realName =
+            profileRecord?.full_name ||
+            profileRecord?.name ||
+            usuario.user_metadata?.full_name ||
+            usuario.user_metadata?.name ||
+            usuario.raw_user_meta_data?.full_name ||
+            usuario.raw_user_meta_data?.name ||
+            usuario.email?.split("@")[0] ||
+            "Aluno";
+
+          const realNickname =
+            profileRecord?.nickname ||
+            usuario.user_metadata?.nickname ||
+            usuario.user_metadata?.display_name ||
+            usuario.raw_user_meta_data?.nickname ||
+            usuario.raw_user_meta_data?.display_name ||
+            realName.split(" ")[0] ||
+            realName;
+
+          setCurrentUserNameState(realName);
+          setCurrentUserNicknameState(realNickname);
+          localStorage.setItem("vyra_user_name", realName);
+          localStorage.setItem("vyra_user_nickname", realNickname);
+
+          if (!error && profileRecord) {
+            if (profileRecord.role === "coach" || profileRecord.is_coach === true) {
+              detectedPersona = "coach";
+            } else if (profileRecord.role === "moderator" || profileRecord.role === "admin") {
+              detectedPersona = "moderator";
+            } else if (profileRecord.role === "student") {
+              detectedPersona = "student";
+            }
+
+            // Gamificação baseada ESTRITAMENTE nos dados do Supabase
+            // Coroa: Apenas se is_champion === true ou se tiver 'campeao' em titles
+            const isChamp = profileRecord.is_champion === true || (Array.isArray(profileRecord.titles) && profileRecord.titles.includes("campeao"));
+            setIsChampionState(isChamp);
+            localStorage.setItem("vyra_is_champion", String(isChamp));
+
+            // Pontos e Patente (Rank): novos alunos obrigatoriamente iniciam com 0 pontos e patente base/nula
+            const pts = typeof profileRecord.points === "number" ? profileRecord.points : 0;
+            setUserPointsState(pts);
+            localStorage.setItem("vyra_user_points", String(pts));
+
+            const rk = profileRecord.rank || null;
+            setUserRankState(rk);
+            if (rk) localStorage.setItem("vyra_user_rank", rk);
+            else localStorage.removeItem("vyra_user_rank");
+
+            const months = typeof profileRecord.consecutive_months === "number" ? profileRecord.consecutive_months : 0;
+            setConsecutiveMonthsState(months);
+            localStorage.setItem("vyra_consecutive_months", String(months));
+
+            const isPaid = Boolean(profileRecord.monthly_fee_paid);
+            setMonthlyFeePaidState(isPaid);
+            localStorage.setItem("vyra_monthly_fee_paid", String(isPaid));
+
+            const vet = Boolean(profileRecord.is_veteran);
+            setIsVeteranState(vet);
+            localStorage.setItem("vyra_is_veteran", String(vet));
+          } else {
+            // Se o perfil ainda não existir ou for novo aluno sem registros, zera tudo
+            setIsChampionState(false);
+            localStorage.setItem("vyra_is_champion", "false");
+            setUserPointsState(0);
+            localStorage.setItem("vyra_user_points", "0");
+            setUserRankState(null);
+            localStorage.removeItem("vyra_user_rank");
+            setConsecutiveMonthsState(0);
+            localStorage.setItem("vyra_consecutive_months", "0");
+            setMonthlyFeePaidState(false);
+            localStorage.setItem("vyra_monthly_fee_paid", "false");
+            setIsVeteranState(false);
+            localStorage.setItem("vyra_is_veteran", "false");
+          }
+        }
+      } catch (e) {
+        console.warn("Aviso ao ler perfil do Supabase:", e);
+      }
+
+      setPersonaState(detectedPersona);
+      localStorage.setItem("vyra_persona", detectedPersona);
+
+      // 3. Sincronização direta da assinatura ativa com o Supabase
+      try {
+        if (usuario.id) {
+          const { data: subData } = await supabase
+            .from("subscriptions")
+            .select("*")
+            .eq("user_id", usuario.id)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (subData && subData.length > 0) {
+            const sub = subData[0];
+            const isActive = sub.status === "active";
+            const newSub = {
+              active: isActive,
+              status: sub.status,
+              planId: sub.plan_type,
+              paymentMethod: sub.payment_method,
+              currentPeriodEnd: sub.current_period_end,
+            };
+            setSubscriptionState(newSub);
+            localStorage.setItem("vyra_sub", JSON.stringify(newSub));
+          } else {
+            // Se for coach, não bloqueia
+            if (detectedPersona !== "coach") {
+              // Verifica se há status na API
+              try {
+                const apiSub = await api.getSubscription(usuario.id, userEmail);
+                if (apiSub) {
+                  setSubscriptionState({
+                    active: apiSub.active,
+                    status: apiSub.status,
+                    planId: apiSub.planId,
+                  });
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso ao ler assinatura do Supabase:", err);
       }
     },
     [registeredModerators, registeredCoaches]
@@ -1303,9 +1534,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     localStorage.removeItem("vyra_logged_in");
     localStorage.removeItem("vyra_current_user_email");
+    localStorage.removeItem("vyra_user_name");
+    localStorage.removeItem("vyra_user_nickname");
     localStorage.removeItem("vyra_persona");
     localStorage.removeItem("vyra_profile");
+    localStorage.removeItem("vyra_is_champion");
+    localStorage.removeItem("vyra_user_points");
+    localStorage.removeItem("vyra_user_rank");
+    localStorage.removeItem("vyra_is_veteran");
+    localStorage.removeItem("vyra_consecutive_months");
+    localStorage.removeItem("vyra_monthly_fee_paid");
     localStorage.setItem("vyra_logged_in", "false");
+
+    setCurrentUserNameState("");
+    setCurrentUserNicknameState("");
+    setIsChampionState(false);
+    setUserPointsState(0);
+    setUserRankState(null);
+    setIsVeteranState(false);
+    setConsecutiveMonthsState(0);
+    setMonthlyFeePaidState(false);
 
     try {
       const keysToRemove: string[] = [];
@@ -1422,9 +1670,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const fmtPrice = useCallback(
     (brl: number, usd: number) => {
       if (lang === "pt") {
-        return `R$ ${brl.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+        return `R$ ${brl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       }
-      return `$ ${usd.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+      return `$ ${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     },
     [lang]
   );
@@ -1464,6 +1712,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleCreatineCheck,
         currentUserEmail,
         setCurrentUserEmail,
+        currentUserName,
+        setCurrentUserName,
+        currentUserNickname,
+        setCurrentUserNickname,
         registeredModerators,
         registeredCoaches,
         registeredPartners,
@@ -1489,6 +1741,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSubscription,
         trackWeightsEnabled,
         setTrackWeightsEnabled,
+        isChampion,
+        setIsChampion,
+        userPoints,
+        setUserPoints,
+        userRank,
+        setUserRank,
         isVeteran: isPartner ? true : isVeteran,
         setIsVeteran,
         consecutiveMonths,

@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 
 import { colors, radius, spacing, fs } from "@/src/theme/tokens";
 import { useApp } from "@/src/context/AppContext";
+import { useSubscription } from "@/src/hooks/useSubscription";
+import { PaywallGateMobile } from "@/src/components/PaywallGateMobile";
+import { useRouter } from "expo-router";
 import { api } from "@/src/api/client";
 
 const MEALS = [
@@ -20,7 +23,22 @@ const MOCK_IMG = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP////////////////////////////
 
 export default function Diet() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { t, lang } = useApp();
+  const { canAccess } = useSubscription();
+
+  // Bloqueio de Telas (Regra de Negócio Crítica: Paywall Guard)
+  if (!canAccess("diet")) {
+    return (
+      <PaywallGateMobile
+        title="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
+        description="Libere seu acesso para visualizar seu treino e dieta."
+        onSubscribe={() => router.push("/(tabs)/profile")}
+        onGoBack={() => router.replace("/(tabs)")}
+      />
+    );
+  }
+
   const [diet, setDiet] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
@@ -114,7 +132,18 @@ export default function Diet() {
         </Pressable>
 
         <Text style={styles.section}>{t("diet.foods")}</Text>
-        {MEALS.map((meal) => {
+        {diet.diet_released === false ? (
+          <View style={styles.waitingCard}>
+            <View style={styles.waitingIconBox}>
+              <Ionicons name="time-outline" size={32} color={colors.gold} />
+            </View>
+            <Text style={styles.waitingTitle}>Aguardando resposta do coach</Text>
+            <Text style={styles.waitingDesc}>
+              Seu treinador está analisando suas respostas e montando o seu planejamento alimentar individualizado. Em breve suas refeições estarão disponíveis aqui.
+            </Text>
+          </View>
+        ) : (
+          MEALS.map((meal) => {
           const items = diet.foods.filter((f: any) => f.meal === meal.id);
           if (!items.length) return null;
           return (
@@ -168,7 +197,8 @@ export default function Diet() {
               )}
             </View>
           );
-        })}
+        })
+        )}
       </ScrollView>
 
       <Modal visible={plateOpen} transparent animationType="slide" onRequestClose={() => setPlateOpen(false)}>
@@ -278,4 +308,8 @@ const styles = StyleSheet.create({
   editable: { flex: 1, padding: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
   editableLabel: { color: colors.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
   editableInput: { color: colors.text, fontSize: fs.lg, fontWeight: "700", textAlign: "center", padding: 0, marginTop: 4, width: "100%" },
+  waitingCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xl, borderWidth: 1, borderColor: colors.border, alignItems: "center", marginTop: spacing.sm, marginBottom: spacing.lg },
+  waitingIconBox: { width: 56, height: 56, borderRadius: 28, backgroundColor: "rgba(216,180,106,0.15)", borderWidth: 1, borderColor: "rgba(216,180,106,0.3)", alignItems: "center", justifyContent: "center", marginBottom: spacing.md },
+  waitingTitle: { color: colors.text, fontSize: fs.lg, fontWeight: "700", textAlign: "center", marginBottom: spacing.xs },
+  waitingDesc: { color: colors.textDim, fontSize: fs.sm, textAlign: "center", lineHeight: 20 },
 });

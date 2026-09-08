@@ -59,6 +59,19 @@ export function getSupabaseCredentials(): SupabaseCredentialStatus {
     rawKey = DEFAULT_SUPABASE_ANON_KEY;
   }
 
+  // Garantir que a URL seja válida HTTP/HTTPS
+  if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+    if (rawUrl.includes("supabase.co")) {
+      rawUrl = `https://${rawUrl}`;
+    } else {
+      rawUrl = DEFAULT_SUPABASE_URL;
+    }
+  }
+
+  if (!rawKey || rawKey.startsWith("http://") || rawKey.startsWith("https://")) {
+    rawKey = DEFAULT_SUPABASE_ANON_KEY;
+  }
+
   const isValidUrl = Boolean(rawUrl && (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")));
   const hasKey = Boolean(rawKey);
   const isConfigured = isValidUrl && hasKey;
@@ -66,7 +79,7 @@ export function getSupabaseCredentials(): SupabaseCredentialStatus {
   let urlWarning: string | undefined;
   if (detectedKeyInUrl) {
     urlWarning = "Chave detectada no campo de URL. Conectando automaticamente à URL oficial do Supabase: " + DEFAULT_SUPABASE_URL;
-  } else if (rawUrl && !isValidUrl) {
+  } else if (!isValidUrl) {
     urlWarning = "A URL do Supabase precisa começar com https:// (ex: https://seu-projeto.supabase.co)";
   }
 
@@ -86,27 +99,39 @@ let lastUsedUrl = "";
 let lastUsedKey = "";
 
 export function getSupabaseClient(): SupabaseClient | null {
-  const { url, key, isConfigured, isValidUrl } = getSupabaseCredentials();
+  const { url, key, isValidUrl } = getSupabaseCredentials();
 
-  if (!isConfigured || !isValidUrl) return null;
+  const safeUrl = isValidUrl && (url.startsWith("http://") || url.startsWith("https://"))
+    ? url
+    : DEFAULT_SUPABASE_URL;
+  const safeKey = key && !key.startsWith("http") ? key : DEFAULT_SUPABASE_ANON_KEY;
 
-  if (cachedClient && lastUsedUrl === url && lastUsedKey === key) {
+  if (cachedClient && lastUsedUrl === safeUrl && lastUsedKey === safeKey) {
     return cachedClient;
   }
 
   try {
-    cachedClient = createClient(url, key, {
+    cachedClient = createClient(safeUrl, safeKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
       },
     });
-    lastUsedUrl = url;
-    lastUsedKey = key;
+    lastUsedUrl = safeUrl;
+    lastUsedKey = safeKey;
     return cachedClient;
   } catch (err) {
     console.error("Falha ao inicializar SupabaseClient:", err);
-    return null;
+    try {
+      return createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+        },
+      });
+    } catch {
+      return null;
+    }
   }
 }
 

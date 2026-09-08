@@ -17,6 +17,7 @@ import {
   Check,
   CheckCheck,
   CheckCircle2,
+  Crown,
   LogOut,
 } from "lucide-react";
 
@@ -35,6 +36,11 @@ export const Header: React.FC = () => {
     markNotificationAsRead,
     markAllNotificationsAsRead,
     logout,
+    isChampion,
+    consecutiveMonths,
+    monthlyFeePaid,
+    currentUserName,
+    currentUserNickname,
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -100,6 +106,17 @@ export const Header: React.FC = () => {
               {subscription.planId?.toUpperCase() || "CLUB"}
             </span>
           )}
+          {/* Coroa do Campeão: Estritamente condicionada ao Supabase (is_champion === true) */}
+          {isChampion && (
+            <span
+              id="header-champion-crown-badge"
+              className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-[#FF6A2A] via-[#E5A93C] to-[#D8B46A] text-[#121214] border border-[#FFE4A0]/60 uppercase tracking-wider flex items-center gap-1 shadow-sm animate-pulse"
+              title="Campeão Oficial Vyra (Reconhecido no Banco de Dados)"
+            >
+              <Crown className="w-3 h-3 fill-[#121214] stroke-[2]" />
+              <span className="hidden sm:inline">CAMPEÃO</span>
+            </span>
+          )}
         </div>
 
         {/* Action Controls */}
@@ -128,6 +145,26 @@ export const Header: React.FC = () => {
               <span className="hidden sm:inline">Moderação</span>
             </div>
           )}
+
+          {/* User Profile Pill consuming real name / nickname */}
+          <div
+            id="header-user-profile-badge"
+            onClick={() => setActiveView("profile")}
+            className="cursor-pointer flex items-center gap-2 pl-2 pr-3 py-1 rounded-xl bg-[#151515] border border-[#2B2B2F] hover:border-[#FF6A2A]/50 hover:bg-[#1D1D1F] transition-all group"
+            title="Acessar Perfil do Usuário"
+          >
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#FF6A2A] to-[#FF9A62] text-black font-black text-[11px] flex items-center justify-center shadow-sm shrink-0">
+              {(currentUserNickname || currentUserName || "A").slice(0, 1).toUpperCase()}
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-xs font-bold text-[#F5F5F7] group-hover:text-[#FF6A2A] transition-colors leading-tight max-w-[90px] sm:max-w-[130px] truncate">
+                {currentUserNickname || currentUserName || "Aluno"}
+              </span>
+              <span className="text-[9px] font-semibold text-[#9B9BA1] leading-none uppercase tracking-wider">
+                {persona === "coach" ? "Coach" : persona === "moderator" ? "Mod" : "Aluno"}
+              </span>
+            </div>
+          </div>
 
           {/* Language Toggle */}
           <button

@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { LogBox, StatusBar, Platform } from "react-native";
@@ -24,7 +24,18 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
 }
 
 function AppInner() {
-  const { setAnamnesisDone } = useApp();
+  const { loggedIn, setAnamnesisDone } = useApp();
+  const router = useRouter();
+  const segments = useSegments();
+
+  // AuthGuard: Bloqueio de Visitantes - Fim do Modo Visitante
+  useEffect(() => {
+    const inAuthGroup = segments[0] === "login";
+    if (!loggedIn && !inAuthGroup) {
+      router.replace("/login");
+    }
+  }, [loggedIn, segments, router]);
+
   // sync remote profile → local flag once on cold start
   useEffect(() => {
     api.profile()

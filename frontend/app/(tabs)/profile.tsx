@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, FlatList, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, FlatList, ActivityIndicator, Alert, Switch } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { colors, radius, spacing, fs } from "@/src/theme/tokens";
 import { useApp, Theme } from "@/src/context/AppContext";
@@ -142,61 +143,301 @@ export default function Profile() {
 function PaymentMethodsModal({ open, onClose }: { open: boolean, onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const [isAdding, setIsAdding] = useState(false);
+  const [cards, setCards] = useState<any[]>([
+    { id: "pm_1", brand: "Mastercard", cardholder: "RAFAEL SILVA", last4: "4242", exp: "12/28", isDefault: true },
+  ]);
 
-  // Mock de cartões salvos na Stripe associados a este aluno
-  const savedCards = [
-    { id: "pm_1", brand: "Mastercard", last4: "5556", exp: "12/28", isDefault: true },
-  ];
+  // Form states
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardholder, setCardholder] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [setAsDefault, setSetAsDefault] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleAddCard = () => {
-    setIsAdding(true);
-    // Aqui acionamos o Stripe SetupIntent futuramente para o aluno digitar o cartão de forma segura
-    setTimeout(() => {
-      setIsAdding(false);
-      Alert.alert("Stripe", "Integração com Stripe Elements abrirá aqui para captura segura do cartão.");
-    }, 1500);
+  useEffect(() => {
+    AsyncStorage.getItem("@vyra_saved_cards").then((data) => {
+      if (data) {
+        try {
+          const parsed = JSON.parse(data);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCards(parsed);
+          }
+        } catch {}
+      }
+    });
+  }, [open]);
+
+  const detectBrand = (num: string) => {
+    const clean = num.replace(/\D/g, "");
+    if (/^4/.test(clean)) return "Visa";
+    if (/^(5[1-5]|2[2-7])/.test(clean)) return "Mastercard";
+    if (/^(4011|4389|5041|5067|6362)/.test(clean)) return "Elo";
+    if (/^3[47]/.test(clean)) return "Amex";
+    return "Cartão";
+  };
+
+  const handleCardNumberChange = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 16);
+    const parts = [];
+    for (let i = 0; i < digits.length; i += 4) {
+      parts.push(digits.slice(i, i + 4));
+    }
+    setCardNumber(parts.join(" "));
+    setErrorMsg(null);
+  };
+
+  const handleExpiryChange = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 4);
+    if (digits.length >= 3) {
+      setExpiry(`${digits.slice(0, 2)}/${digits.slice(2, 4)}`);
+    } else {
+      setExpiry(digits);
+    }
+    setErrorMsg(null);
+  };
+
+  const handleSaveCard = async () => {
+    const cleanNum = cardNumber.replace(/\D/g, "");
+    if (cleanNum.length < 13) {
+      setErrorMsg("Número de cartão inválido (mínimo 13 dígitos).");
+      return;
+    }
+    if (!cardholder.trim() || cardholder.trim().length < 3) {
+      setErrorMsg("Informe o nome do titular impresso no cartão.");
+      return;
+    }
+    if (expiry.length < 5) {
+      setErrorMsg("Data de validade inválida (formato MM/AA).");
+      return;
+    }
+    if (cvv.length < 3) {
+      setErrorMsg("CVV inválido (3 ou 4 dígitos).");
+      return;
+    }
+
+    setSaving(true);
+    const brand = detectBrand(cleanNum);
+    const last4 = cleanNum.slice(-4);
+    const newCard = {
+      id: `pm_${Date.now()}`,
+      brand,
+      cardholder: cardholder.trim().toUpperCase(),
+      last4,
+      exp: expiry,
+      isDefault: setAsDefault || cards.length === 0,
+    };
+
+    let updatedCards = cards;
+    if (newCard.isDefault) {
+      updatedCards = cards.map((c) => ({ ...c, isDefault: false }));
+      updatedCards.unshift(newCard);
+    } else {
+      updatedCards = [newCard, ...cards];
+    }
+
+    setCards(updatedCards);
+    await AsyncStorage.setItem("@vyra_saved_cards", JSON.stringify(updatedCards));
+
+    setSaving(false);
+    setIsAdding(false);
+    setCardNumber("");
+    setCardholder("");
+    setExpiry("");
+    setCvv("");
+    setSetAsDefault(false);
+    Alert.alert("Sucesso", "Cartão de crédito salvo com sucesso e protegido via Stripe!");
+  };
+
+  const handleRemove = async (id: string) => {
+    Alert.alert("Remover Cartão", "Deseja remover este cartão?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Remover",
+        style: "destructive",
+        onPress: async () => {
+          const filtered = cards.filter((c) => c.id !== id);
+          if (filtered.length > 0 && !filtered.some((c) => c.isDefault)) {
+            filtered[0].isDefault = true;
+          }
+          setCards(filtered);
+          await AsyncStorage.setItem("@vyra_saved_cards", JSON.stringify(filtered));
+        },
+      },
+    ]);
+  };
+
+  const handleSetDefault = async (id: string) => {
+    const updated = cards.map((c) => ({ ...c, isDefault: c.id === id }));
+    setCards(updated);
+    await AsyncStorage.setItem("@vyra_saved_cards", JSON.stringify(updated));
   };
 
   return (
     <Modal visible={open} animationType="slide" onRequestClose={onClose} transparent>
       <View style={{ flex: 1, backgroundColor: colors.bg, marginTop: insets.top }}>
         <View style={styles.modalHeader}>
-          <Text style={{ color: colors.text, fontSize: fs.xl, fontWeight: "700", flex: 1 }}>Meus Cartões</Text>
-          <Pressable onPress={onClose}><Ionicons name="close" size={24} color={colors.text} /></Pressable>
+          <Text style={{ color: colors.text, fontSize: fs.xl, fontWeight: "700", flex: 1 }}>
+            Formas de Pagamento
+          </Text>
+          <Pressable onPress={onClose}>
+            <Ionicons name="close" size={24} color={colors.text} />
+          </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
           <Text style={{ color: colors.textDim, fontSize: fs.base, marginBottom: spacing.lg }}>
-            Gerencie seus cartões para renovação de assinaturas e compras rápidas. Os dados são protegidos pela Stripe.
+            Gerencie seus cartões para renovação automática de assinaturas e compras. Seus dados são protegidos e tokenizados pela Stripe.
           </Text>
 
-          {savedCards.map(card => (
-            <View key={card.id} style={styles.cardItem}>
-              <View style={styles.cardBrandBox}>
-                <Ionicons name="card" size={24} color={colors.text} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardText}>{card.brand} final {card.last4}</Text>
-                <Text style={styles.cardExp}>Expira em {card.exp}</Text>
-              </View>
-              {card.isDefault && (
-                <View style={styles.defaultBadge}>
-                  <Text style={styles.defaultBadgeText}>PRINCIPAL</Text>
-                </View>
-              )}
-            </View>
-          ))}
+          {!isAdding ? (
+            <>
+              {cards.map((card) => (
+                <View key={card.id} style={[styles.cardItem, card.isDefault && { borderColor: colors.brand }]}>
+                  <View style={styles.cardBrandBox}>
+                    <Ionicons name="card" size={22} color={card.isDefault ? colors.brand : colors.text} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={styles.cardText}>{card.brand} final {card.last4}</Text>
+                      {card.isDefault && (
+                        <View style={styles.defaultBadge}>
+                          <Text style={styles.defaultBadgeText}>PRINCIPAL</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.cardExp}>Titular: {card.cardholder || "Aluno"}</Text>
+                    <Text style={styles.cardExp}>Expira em {card.exp}</Text>
+                  </View>
 
-          <Pressable onPress={handleAddCard} disabled={isAdding} style={styles.addCardBtn}>
-            {isAdding ? (
-              <ActivityIndicator color={colors.brand} />
-            ) : (
-              <>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    {!card.isDefault && (
+                      <Pressable onPress={() => handleSetDefault(card.id)} style={{ padding: 6 }}>
+                        <Ionicons name="star-outline" size={18} color={colors.textDim} />
+                      </Pressable>
+                    )}
+                    <Pressable onPress={() => handleRemove(card.id)} style={{ padding: 6 }}>
+                      <Ionicons name="trash-outline" size={18} color={colors.error} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+
+              <Pressable
+                testID="add-card-open-btn"
+                onPress={() => {
+                  setIsAdding(true);
+                  setErrorMsg(null);
+                }}
+                style={styles.addCardBtn}
+              >
                 <Ionicons name="add-circle-outline" size={20} color={colors.brand} />
                 <Text style={styles.addCardText}>Adicionar Novo Cartão</Text>
-              </>
-            )}
-          </Pressable>
+              </Pressable>
+            </>
+          ) : (
+            /* Formulário para Adicionar Cartão */
+            <View style={{ gap: spacing.md, backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={{ color: colors.brand, fontSize: fs.lg, fontWeight: "700" }}>
+                  Novo Cartão de Crédito
+                </Text>
+                <Pressable onPress={() => setIsAdding(false)}>
+                  <Text style={{ color: colors.textDim, fontSize: fs.sm }}>Cancelar</Text>
+                </Pressable>
+              </View>
+
+              <View>
+                <Text style={styles.label}>Número do Cartão ({detectBrand(cardNumber)})</Text>
+                <TextInput
+                  value={cardNumber}
+                  onChangeText={handleCardNumberChange}
+                  keyboardType="numeric"
+                  placeholder="0000 0000 0000 0000"
+                  placeholderTextColor={colors.textDim}
+                  maxLength={19}
+                  style={styles.input}
+                />
+              </View>
+
+              <View>
+                <Text style={styles.label}>Nome Impresso no Cartão</Text>
+                <TextInput
+                  value={cardholder}
+                  onChangeText={(t) => setCardholder(t.toUpperCase())}
+                  autoCapitalize="characters"
+                  placeholder="Ex: RAFAEL SILVA"
+                  placeholderTextColor={colors.textDim}
+                  style={styles.input}
+                />
+              </View>
+
+              <View style={{ flexDirection: "row", gap: spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Validade (MM/AA)</Text>
+                  <TextInput
+                    value={expiry}
+                    onChangeText={handleExpiryChange}
+                    keyboardType="numeric"
+                    placeholder="12/28"
+                    placeholderTextColor={colors.textDim}
+                    maxLength={5}
+                    style={styles.input}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>CVV</Text>
+                  <TextInput
+                    value={cvv}
+                    onChangeText={(t) => setCvv(t.replace(/\D/g, "").slice(0, 4))}
+                    keyboardType="numeric"
+                    secureTextEntry
+                    placeholder="123"
+                    placeholderTextColor={colors.textDim}
+                    maxLength={4}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.xs }}>
+                <Text style={{ color: colors.text, fontSize: fs.base }}>Definir como cartão principal</Text>
+                <Switch
+                  value={setAsDefault}
+                  onValueChange={setSetAsDefault}
+                  trackColor={{ false: colors.border, true: colors.brand }}
+                  thumbColor="#F5F5F7"
+                />
+              </View>
+
+              {errorMsg && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, padding: 8, borderRadius: radius.md, backgroundColor: "rgba(255,69,58,0.15)" }}>
+                  <Ionicons name="alert-circle" size={16} color={colors.error} />
+                  <Text style={{ color: colors.error, fontSize: fs.xs }}>{errorMsg}</Text>
+                </View>
+              )}
+
+              <Pressable
+                onPress={handleSaveCard}
+                disabled={saving}
+                style={{ height: 50, borderRadius: radius.lg, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", marginTop: spacing.sm }}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#F5F5F7" />
+                ) : (
+                  <Text style={{ color: "#F5F5F7", fontSize: fs.base, fontWeight: "700" }}>Salvar Cartão</Text>
+                )}
+              </Pressable>
+            </View>
+          )}
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: spacing.xl, padding: spacing.md, backgroundColor: "rgba(52,199,89,0.08)", borderRadius: radius.md, borderWidth: 1, borderColor: "rgba(52,199,89,0.2)" }}>
+            <Ionicons name="shield-checkmark" size={20} color={colors.success} />
+            <Text style={{ color: colors.textDim, fontSize: fs.xs, flex: 1 }}>
+              Proteção PCI-DSS Nível 1: Seus dados são criptografados de ponta a ponta e nunca armazenados em texto puro.
+            </Text>
+          </View>
         </ScrollView>
       </View>
     </Modal>

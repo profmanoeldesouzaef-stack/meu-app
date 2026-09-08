@@ -40,11 +40,16 @@ export interface UserProfile {
   nickname: string;
   email: string;
   avatar_url?: string;
+  role?: "coach" | "student" | "moderator";
+  is_coach?: boolean;
   plan?: string;
   active_protocol?: string;
   height_cm?: number;
   weight_kg?: number;
   waist_cm?: number;
+  arm_cm?: number;
+  chest_cm?: number;
+  thigh_cm?: number;
   right_arm_cm?: number;
   left_arm_cm?: number;
   right_leg_cm?: number;
@@ -65,6 +70,7 @@ export interface UserProfile {
   monthly_fee_paid?: boolean;
   patente_level?: number;
   vip_chat_unlocked?: boolean;
+  diet_released?: boolean;
 }
 
 export interface Student {
@@ -88,7 +94,7 @@ export interface Student {
   vip_chat_unlocked?: boolean;
 }
 
-export type BillingCycle = "month" | "quarter" | "semester" | "year" | "single";
+export type BillingCycle = "month" | "quarter" | "semester" | "year" | "single" | "test";
 
 export interface PlanPrices {
   month: number;
@@ -96,6 +102,7 @@ export interface PlanPrices {
   semester?: number;
   year: number;
   single?: number;
+  test?: number;
 }
 
 export interface Plan {
@@ -187,6 +194,7 @@ export interface Diet {
   carbs_pct: number;
   fats_pct: number;
   foods: FoodItem[];
+  diet_released?: boolean;
 }
 
 export interface ProgressEntry {
@@ -238,6 +246,36 @@ export interface PhotoVote {
   photo_id: string;
   user_id: string;
   created_at: string;
+}
+
+export interface ChallengeEntry {
+  id: string;
+  user_id: string;
+  challenge_id: string;
+  photo_url: string;
+  created_at: string;
+  participant_name?: string;
+  caption?: string;
+  votes_count?: number;
+  is_winner?: boolean;
+}
+
+export interface ActiveChallenge {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description: string;
+  protocol: string;
+  prize: string;
+  banner_url?: string;
+  start_date: string;
+  end_date: string;
+  status: "active" | "finished" | "closed";
+  entries_count?: number;
+  winner_id?: string;
+  winner_name?: string;
+  winner_photo_url?: string;
+  finished_at?: string;
 }
 
 export interface Challenge {
@@ -339,9 +377,11 @@ export interface Broadcast {
 
 export interface Subscription {
   active: boolean;
+  status?: string;
   planId?: string;
   cycle?: BillingCycle;
   billingCycle?: BillingCycle | string;
+  paymentMethod?: string;
   expiresAt?: string;
   couponCode?: string;
   isVeteran?: boolean;
@@ -368,4 +408,16 @@ export interface ExerciseLog {
   sets: ExerciseSetLog[];
   notes?: string;
   updated_at: string;
+}
+
+export interface SavedCreditCard {
+  id: string;
+  cardholderName: string;
+  cardNumberMasked: string;
+  last4: string;
+  brand: "visa" | "mastercard" | "elo" | "amex" | "hipercard" | "generic";
+  expiryMonth: string;
+  expiryYear: string;
+  isDefault: boolean;
+  createdAt: string;
 }

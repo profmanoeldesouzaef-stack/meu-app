@@ -3,6 +3,7 @@ import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { Workout, Exercise } from "../types";
 import { AccessGate } from "../components/AccessGate";
+import { EmptyStatePaywall } from "../components/EmptyStatePaywall";
 import {
   Clock,
   Flame,
@@ -30,6 +31,14 @@ import {
   TrendingUp,
   Save,
   Video,
+  Calendar,
+  Folder,
+  FolderOpen,
+  Send,
+  Trash2,
+  Droplets,
+  Bed,
+  ShieldCheck,
 } from "lucide-react";
 import {
   getExerciseVideoInfo,
@@ -60,15 +69,28 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     currentUserEmail,
   } = useApp();
 
-  // Access Gating for Student
-  if (persona === "student") {
-    if (!subscription.active) {
+  const isCoach =
+    persona === "coach" ||
+    Boolean(
+      currentUserEmail &&
+        [
+          "coach@vyra.club",
+          "mari@vyra.club",
+          "treinador@vyra.club",
+          "admin@vyra.club",
+          "headcoach@vyra.club",
+          "cubocao@gmail.com",
+        ].includes(currentUserEmail.toLowerCase())
+    );
+
+  // Access Gating for Student (never gates a Coach)
+  if (!isCoach && persona === "student") {
+    if (!subscription.active || (subscription as any)?.status === "inactive") {
       return (
-        <AccessGate
-          type="payment"
-          tabName="treinos"
-          title="Periodização de Treino Bloqueada"
-          description="A sua planilha de treino e a periodização individualizada são exclusivas para alunos com assinatura Vyra ativa. Escolha um plano para liberar seu acesso."
+        <EmptyStatePaywall
+          message="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
+          buttonText="Assinar Agora"
+          onGoToProfile={() => setActiveView("profile")}
         />
       );
     }
@@ -86,6 +108,19 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
   }
 
   const [workout, setWorkout] = useState<Workout | null>(null);
+  const [schedule, setSchedule] = useState<Record<number, Workout | null>>({});
+  const [selectedDayIdx, setSelectedDayIdx] = useState<number>(() => new Date().getDay());
+
+  // Coach Library state
+  const [coachLibrary, setCoachLibrary] = useState<any[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string>("all");
+  const [editWorkoutModal, setEditWorkoutModal] = useState<any | null>(null);
+  const [dispatchModalWorkout, setDispatchModalWorkout] = useState<any | null>(null);
+  const [dispatchRecipient, setDispatchRecipient] = useState<string>("all");
+  const [dispatchDays, setDispatchDays] = useState<number[]>([1, 4]);
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchFeedback, setDispatchFeedback] = useState<string | null>(null);
+
   const [completedExercises, setCompletedExercises] = useState<Record<string, boolean>>({});
   const [exerciseSets, setExerciseSets] = useState<Record<string, SetRecord[]>>({});
   const [activeVideoModal, setActiveVideoModal] = useState<Exercise | null>(null);
@@ -167,101 +202,168 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
+  const setupWorkoutData = async (data: Workout | null) => {
+    setWorkout(data);
+    if (!data || !data.exercises) {
+      setExerciseSets({});
+      return;
+    }
+    const initial: Record<string, SetRecord[]> = {};
+    data.exercises.forEach((ex) => {
+      const targetReps = ex.reps ? ex.reps.replace(/[^0-9-]/g, "").trim() : "10";
+      initial[ex.id] = Array.from({ length: Math.max(1, ex.sets || 3) }, (_, i) => ({
+        setNum: i + 1,
+        weight: (ex as any).load_kg || "",
+        reps: targetReps,
+        completed: false,
+      }));
+    });
+
+    try {
+      const storageKey = `vyra_workout_sets_${data.id}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        Object.keys(parsed).forEach((k) => {
+          if (initial[k] && Array.isArray(parsed[k])) {
+            initial[k] = parsed[k];
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Error loading workout sets from local cache:", err);
+    }
+
+    try {
+      const dbLogs = await api.getWorkoutLogs(data.id, currentUserEmail);
+      if (dbLogs && dbLogs.length > 0) {
+        dbLogs.forEach((log) => {
+          if (log.sets && log.sets.length > 0 && initial[log.exercise_id]) {
+            initial[log.exercise_id] = log.sets.map((s, idx) => ({
+              setNum: s.set_num || idx + 1,
+              weight:
+                s.weight_kg !== undefined && s.weight_kg !== null && s.weight_kg !== ""
+                  ? String(s.weight_kg)
+                  : initial[log.exercise_id]?.[idx]?.weight || "",
+              reps:
+                s.reps !== undefined && s.reps !== null && s.reps !== ""
+                  ? String(s.reps)
+                  : initial[log.exercise_id]?.[idx]?.reps || "10",
+              completed: Boolean(s.completed),
+            }));
+          }
+        });
+      }
+    } catch (dbErr) {
+      console.warn("Database sync note (using local cache):", dbErr);
+    }
+
+    setExerciseSets(initial);
+
+    try {
+      const histories: Record<
+        string,
+        { max_weight_kg: number; last_weight_kg: number | string; last_reps: number | string; last_date: string }
+      > = {};
+      for (const ex of data.exercises) {
+        const hist = await api.getExerciseHistory(ex.id, currentUserEmail);
+        if (hist && (hist.max_weight_kg > 0 || hist.last_weight_kg)) {
+          histories[ex.id] = hist;
+        }
+      }
+      setExerciseHistories(histories);
+    } catch (_) {}
+  };
+
+  // Calendário Semanal (Segunda a Domingo)
+  const weekDays = React.useMemo(() => {
+    const now = new Date();
+    const currentDayOfWeek = now.getDay();
+    const diffToMonday = (currentDayOfWeek + 6) % 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diffToMonday);
+
+    const days = [];
+    const dayNames = [
+      { label: "SEG", full: "Segunda-feira", dayIdx: 1 },
+      { label: "TER", full: "Terça-feira", dayIdx: 2 },
+      { label: "QUA", full: "Quarta-feira", dayIdx: 3 },
+      { label: "QUI", full: "Quinta-feira", dayIdx: 4 },
+      { label: "SEX", full: "Sexta-feira", dayIdx: 5 },
+      { label: "SÁB", full: "Sábado", dayIdx: 6 },
+      { label: "DOM", full: "Domingo", dayIdx: 0 },
+    ];
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const conf = dayNames[i];
+      days.push({
+        ...conf,
+        dateNumber: d.getDate(),
+        isToday: d.toDateString() === now.toDateString(),
+        hasWorkout: Boolean(schedule[conf.dayIdx]),
+      });
+    }
+    return days;
+  }, [schedule]);
+
+  const loadCoachLibraryData = async () => {
+    try {
+      const items = await api.getWorkoutLibrary();
+      setCoachLibrary(items || []);
+    } catch (e) {
+      console.error("Error loading coach library:", e);
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
+    setLoading(true);
 
-    api
-      .getTodayWorkout()
-      .then(async (data) => {
-        if (!isMounted) return;
-        setWorkout(data);
-        if (data?.exercises) {
-          // 1. Initial template sets based on prescribed reps/sets
-          const initial: Record<string, SetRecord[]> = {};
-          data.exercises.forEach((ex) => {
-            const targetReps = ex.reps ? ex.reps.replace(/[^0-9-]/g, "").trim() : "10";
-            initial[ex.id] = Array.from({ length: Math.max(1, ex.sets || 3) }, (_, i) => ({
-              setNum: i + 1,
-              weight: "",
-              reps: targetReps,
-              completed: false,
-            }));
-          });
-
-          // 2. Overlay local storage cache for instant offline responsiveness
-          try {
-            const storageKey = `vyra_workout_sets_${data.id}`;
-            const saved = localStorage.getItem(storageKey);
-            if (saved) {
-              const parsed = JSON.parse(saved);
-              Object.keys(parsed).forEach((k) => {
-                if (initial[k] && Array.isArray(parsed[k])) {
-                  initial[k] = parsed[k];
-                }
-              });
-            }
-          } catch (err) {
-            console.error("Error loading workout sets from local cache:", err);
+    if (isCoach) {
+      api
+        .getWorkoutLibrary()
+        .then((items) => {
+          if (isMounted) setCoachLibrary(items || []);
+        })
+        .catch((err) => console.error("Error fetching coach library:", err))
+        .finally(() => {
+          if (isMounted) setLoading(false);
+        });
+    } else {
+      api
+        .getWorkoutSchedule()
+        .then(async (sched) => {
+          if (!isMounted) return;
+          const map = sched || {};
+          setSchedule(map);
+          const currentDay = map[selectedDayIdx] ?? null;
+          await setupWorkoutData(currentDay);
+        })
+        .catch(async (err) => {
+          console.error("Error fetching workout schedule:", err);
+          const fallback = await api.getTodayWorkout().catch(() => null);
+          if (isMounted && fallback) {
+            setSchedule({ [selectedDayIdx]: fallback });
+            await setupWorkoutData(fallback);
           }
-
-          // 3. Query Database for persistent records (Authoritative Store)
-          try {
-            const dbLogs = await api.getWorkoutLogs(data.id, currentUserEmail);
-            if (dbLogs && dbLogs.length > 0) {
-              dbLogs.forEach((log) => {
-                if (log.sets && log.sets.length > 0 && initial[log.exercise_id]) {
-                  initial[log.exercise_id] = log.sets.map((s, idx) => ({
-                    setNum: s.set_num || idx + 1,
-                    weight:
-                      s.weight_kg !== undefined && s.weight_kg !== null && s.weight_kg !== ""
-                        ? String(s.weight_kg)
-                        : initial[log.exercise_id]?.[idx]?.weight || "",
-                    reps:
-                      s.reps !== undefined && s.reps !== null && s.reps !== ""
-                        ? String(s.reps)
-                        : initial[log.exercise_id]?.[idx]?.reps || "10",
-                    completed: Boolean(s.completed),
-                  }));
-                }
-              });
-            }
-          } catch (dbErr) {
-            console.warn("Database sync note (using local cache):", dbErr);
-          }
-
-          if (isMounted) {
-            setExerciseSets(initial);
-          }
-
-          // 4. Fetch exercise previous loads & personal records
-          try {
-            const histories: Record<
-              string,
-              { max_weight_kg: number; last_weight_kg: number | string; last_reps: number | string; last_date: string }
-            > = {};
-            for (const ex of data.exercises) {
-              const hist = await api.getExerciseHistory(ex.id, currentUserEmail);
-              if (hist && (hist.max_weight_kg > 0 || hist.last_weight_kg)) {
-                histories[ex.id] = hist;
-              }
-            }
-            if (isMounted) {
-              setExerciseHistories(histories);
-            }
-          } catch (_) {
-            // Non-blocking
-          }
-        }
-      })
-      .catch((err) => console.error("Error fetching workout:", err))
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
+        })
+        .finally(() => {
+          if (isMounted) setLoading(false);
+        });
+    }
 
     return () => {
       isMounted = false;
     };
-  }, [currentUserEmail]);
+  }, [isCoach, currentUserEmail]);
+
+  const handleSelectCalendarDay = async (dayIdx: number) => {
+    setSelectedDayIdx(dayIdx);
+    const chosen = schedule[dayIdx] ?? null;
+    await setupWorkoutData(chosen);
+  };
 
   const saveSetsToStorage = (updated: Record<string, SetRecord[]>) => {
     if (workout?.id) {
@@ -472,46 +574,670 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     );
   }
 
-  if (!workout) {
+  // COACH VIEW: Biblioteca de Treinos, Pastas & Prescrição
+  if (isCoach) {
+    const COACH_FOLDERS = [
+      { id: "all", label: "Todas as Pastas", icon: FolderOpen },
+      { id: "Programas Vyra", label: "Programas Oficiais Vyra", icon: ShieldCheck },
+      { id: "Hipertrofia", label: "Hipertrofia Muscular", icon: Dumbbell },
+      { id: "Emagrecimento", label: "Emagrecimento & Definição", icon: Flame },
+      { id: "Força", label: "Força & Powerlifting", icon: Trophy },
+      { id: "Recuperação", label: "Recuperação & Mobilidade", icon: Bed },
+    ];
+
+    const filteredTemplates = coachLibrary.filter((item) => {
+      if (selectedFolder === "all") return true;
+      const cat = item.category || "";
+      const title = item.title || "";
+      const focus = item.focus || "";
+      return (
+        cat.toLowerCase().includes(selectedFolder.toLowerCase()) ||
+        title.toLowerCase().includes(selectedFolder.toLowerCase()) ||
+        focus.toLowerCase().includes(selectedFolder.toLowerCase())
+      );
+    });
+
+    const handleSaveExerciseModal = async () => {
+      if (!editWorkoutModal) return;
+      try {
+        await api.saveWorkoutLibrary(editWorkoutModal);
+        await loadCoachLibraryData();
+        setEditWorkoutModal(null);
+        setDispatchFeedback("Bloco de treino e exercícios salvos com sucesso na Biblioteca!");
+        setTimeout(() => setDispatchFeedback(null), 4000);
+      } catch (err: any) {
+        alert("Erro ao salvar treino: " + err.message);
+      }
+    };
+
+    const handleConfirmDispatch = async () => {
+      if (!dispatchModalWorkout) return;
+      if (dispatchDays.length === 0) {
+        alert("Selecione ao menos um dia da semana para agendar a prescrição.");
+        return;
+      }
+      try {
+        setDispatching(true);
+        const res = await api.assignWorkoutDay({
+          student_id: dispatchRecipient,
+          days: dispatchDays,
+          workout: dispatchModalWorkout,
+        });
+        setDispatchModalWorkout(null);
+        setDispatchFeedback(res.message || "Treino despachado para os alunos com sucesso!");
+        setTimeout(() => setDispatchFeedback(null), 5000);
+      } catch (err: any) {
+        alert("Erro ao despachar: " + err.message);
+      } finally {
+        setDispatching(false);
+      }
+    };
+
+    const toggleDay = (d: number) => {
+      if (dispatchDays.includes(d)) {
+        setDispatchDays(dispatchDays.filter((x) => x !== d));
+      } else {
+        setDispatchDays([...dispatchDays, d]);
+      }
+    };
+
     return (
-      <div className="max-w-4xl mx-auto px-4 py-12 text-center text-[#9B9BA1]">
-        <p>Nenhum treino disponível hoje.</p>
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-32 space-y-6 animate-in fade-in duration-300">
+        {/* Coach Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#FF6A2A]/15 text-[#FF6A2A] border border-[#FF6A2A]/30">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Coach Oficial · Vyra
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
+              Biblioteca de Treinos
+            </h1>
+            <p className="text-xs sm:text-sm text-[#9B9BA1] mt-1">
+              Prescrição de programas biomecânicos, edição de exercícios e despacho para o calendário dos alunos.
+            </p>
+          </div>
+
+          <button
+            onClick={() => {
+              setEditWorkoutModal({
+                id: `lib-new-${Date.now()}`,
+                title: "Novo Bloco de Treino",
+                focus: "Hipertrofia / Força",
+                duration_min: 50,
+                intensity: "Alta",
+                category: selectedFolder === "all" ? "Hipertrofia" : selectedFolder,
+                coach_note: "Instruções do Coach sobre cadência e segurança.",
+                exercises: [
+                  {
+                    id: `ex-${Date.now()}-1`,
+                    name: "Exercício 1",
+                    muscle: "Geral",
+                    sets: 4,
+                    reps: "10-12",
+                    rest: "60s",
+                    load_kg: "20",
+                    coach_tip: "Cadência 3s excêntrica.",
+                  },
+                ],
+              });
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#FF6A2A] text-[#0A0A0A] font-bold text-xs hover:brightness-110 shadow-lg shadow-[#FF6A2A]/20 transition-all shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Criar Novo Bloco</span>
+          </button>
+        </div>
+
+        {/* Feedback Alert */}
+        {dispatchFeedback && (
+          <div className="p-4 rounded-xl bg-[#34C759]/10 border border-[#34C759]/30 text-[#34C759] text-xs font-semibold flex items-center justify-between">
+            <span>{dispatchFeedback}</span>
+            <button onClick={() => setDispatchFeedback(null)} className="text-[#34C759] hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Subseções / Pastas */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          {COACH_FOLDERS.map((f) => {
+            const Icon = f.icon;
+            const active = selectedFolder === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => setSelectedFolder(f.id)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border cursor-pointer ${
+                  active
+                    ? "bg-[#FF6A2A]/15 text-[#FF6A2A] border-[#FF6A2A]/40 shadow-sm"
+                    : "bg-[#151515] text-[#9B9BA1] border-[#2B2B2F] hover:text-[#F5F5F7]"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{f.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Lista de Treinos da Pasta */}
+        {filteredTemplates.length === 0 ? (
+          <div className="p-8 text-center rounded-2xl bg-[#151515] border border-[#2B2B2F]">
+            <Folder className="w-10 h-10 text-[#9B9BA1]/40 mx-auto mb-3" />
+            <h3 className="text-sm font-bold text-[#F5F5F7]">Nenhum treino nesta pasta</h3>
+            <p className="text-xs text-[#9B9BA1] mt-1">
+              Crie um novo treino para esta categoria ou selecione outra pasta acima.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredTemplates.map((tpl) => (
+              <div
+                key={tpl.id}
+                className="p-5 rounded-2xl bg-[#151515] border border-[#2B2B2F] hover:border-[#FF6A2A]/40 transition-all flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#FF6A2A] bg-[#FF6A2A]/10 px-2.5 py-0.5 rounded-full border border-[#FF6A2A]/20">
+                      {tpl.category || "Hipertrofia"}
+                    </span>
+                    <span className="text-[10px] font-bold text-[#9B9BA1] bg-[#1D1D1F] px-2 py-0.5 rounded-full">
+                      Intensidade {tpl.intensity || "Alta"}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-base font-bold text-[#F5F5F7] line-clamp-1">{tpl.title}</h3>
+                    <p className="text-xs text-[#9B9BA1] mt-0.5 line-clamp-1">{tpl.focus}</p>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs text-[#9B9BA1] pt-1">
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      {tpl.duration_min || 50} min
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Dumbbell className="w-3.5 h-3.5" />
+                      {tpl.exercises?.length || 0} exercícios
+                    </span>
+                  </div>
+
+                  {/* Prévia dos Exercícios */}
+                  <div className="p-3 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F]/60 text-xs text-[#9B9BA1] space-y-1.5">
+                    {tpl.exercises?.slice(0, 3).map((ex: any, idx: number) => (
+                      <div key={ex.id || idx} className="truncate">
+                        • <span className="text-[#F5F5F7] font-medium">{ex.name}</span> ({ex.sets} × {ex.reps})
+                        {ex.load_kg ? ` · ${ex.load_kg} kg` : ""}
+                      </div>
+                    ))}
+                    {(tpl.exercises?.length || 0) > 3 && (
+                      <div className="text-[11px] text-[#FF6A2A] font-semibold pt-0.5">
+                        + {(tpl.exercises?.length || 0) - 3} outros exercícios
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Botões de Ação */}
+                <div className="flex items-center gap-2 pt-4 border-t border-[#2B2B2F] mt-4">
+                  <button
+                    onClick={() => setEditWorkoutModal({ ...tpl })}
+                    className="flex-1 py-2 rounded-xl bg-[#1D1D1F] hover:bg-[#252528] text-xs font-semibold text-[#F5F5F7] border border-[#2B2B2F] transition-all cursor-pointer"
+                  >
+                    Editar Exercícios
+                  </button>
+                  <button
+                    onClick={() => setDispatchModalWorkout({ ...tpl })}
+                    className="flex-1.3 py-2 rounded-xl bg-[#FF6A2A] hover:brightness-110 text-xs font-bold text-[#0A0A0A] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shadow-[#FF6A2A]/20"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Despachar Alunos</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* MODAL: EDITAR / CRIAR EXERCÍCIOS (Coach) */}
+        {editWorkoutModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl bg-[#151515] border border-[#2B2B2F] rounded-2xl max-h-[90vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="p-5 border-b border-[#2B2B2F] flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-[#F5F5F7]">Editar Bloco de Treino</h2>
+                  <p className="text-xs text-[#9B9BA1]">
+                    Ajuste séries, repetições, carga sugerida e orientações técnicas.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditWorkoutModal(null)}
+                  className="p-1 rounded-lg text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F]"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                <div>
+                  <label className="text-[11px] font-bold text-[#9B9BA1] uppercase">Título do Treino</label>
+                  <input
+                    type="text"
+                    value={editWorkoutModal.title}
+                    onChange={(e) =>
+                      setEditWorkoutModal({ ...editWorkoutModal, title: e.target.value })
+                    }
+                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#FF6A2A]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-[#9B9BA1] uppercase">Foco Muscular</label>
+                    <input
+                      type="text"
+                      value={editWorkoutModal.focus}
+                      onChange={(e) =>
+                        setEditWorkoutModal({ ...editWorkoutModal, focus: e.target.value })
+                      }
+                      className="w-full mt-1 px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#FF6A2A]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-[#9B9BA1] uppercase">Pasta / Categoria</label>
+                    <select
+                      value={editWorkoutModal.category || "Hipertrofia"}
+                      onChange={(e) =>
+                        setEditWorkoutModal({ ...editWorkoutModal, category: e.target.value })
+                      }
+                      className="w-full mt-1 px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#FF6A2A]"
+                    >
+                      <option value="Programas Vyra">Programas Oficiais Vyra</option>
+                      <option value="Hipertrofia">Hipertrofia Muscular</option>
+                      <option value="Emagrecimento">Emagrecimento & Definição</option>
+                      <option value="Força">Força & Powerlifting</option>
+                      <option value="Recuperação">Recuperação & Mobilidade</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-[#9B9BA1] uppercase">Nota do Coach</label>
+                  <textarea
+                    rows={2}
+                    value={editWorkoutModal.coach_note || ""}
+                    onChange={(e) =>
+                      setEditWorkoutModal({ ...editWorkoutModal, coach_note: e.target.value })
+                    }
+                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#FF6A2A]"
+                  />
+                </div>
+
+                {/* Exercícios */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-[#F5F5F7] uppercase tracking-wider">
+                      Exercícios Prescritos ({editWorkoutModal.exercises?.length || 0})
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newEx = {
+                          id: `ex-${Date.now()}`,
+                          name: "Novo Exercício",
+                          muscle: "Geral",
+                          sets: 4,
+                          reps: "10-12",
+                          load_kg: "20",
+                          rest: "60s",
+                          coach_tip: "Controle a respiração e postura.",
+                        };
+                        setEditWorkoutModal({
+                          ...editWorkoutModal,
+                          exercises: [...(editWorkoutModal.exercises || []), newEx],
+                        });
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#FF6A2A]/15 text-[#FF6A2A] border border-[#FF6A2A]/30 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Adicionar Exercício</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {editWorkoutModal.exercises?.map((ex: any, idx: number) => (
+                      <div
+                        key={ex.id || idx}
+                        className="p-3.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-2.5"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-[#FF6A2A] w-5">#{idx + 1}</span>
+                          <input
+                            type="text"
+                            value={ex.name}
+                            onChange={(e) => {
+                              const updated = [...editWorkoutModal.exercises];
+                              updated[idx].name = e.target.value;
+                              setEditWorkoutModal({ ...editWorkoutModal, exercises: updated });
+                            }}
+                            placeholder="Nome do Exercício"
+                            className="flex-1 px-3 py-1.5 rounded-lg bg-[#151515] border border-[#2B2B2F] text-xs font-semibold text-[#F5F5F7]"
+                          />
+                          <button
+                            onClick={() => {
+                              const updated = editWorkoutModal.exercises.filter(
+                                (_: any, i: number) => i !== idx
+                              );
+                              setEditWorkoutModal({ ...editWorkoutModal, exercises: updated });
+                            }}
+                            className="p-1.5 text-[#FF453A] hover:bg-red-500/10 rounded-lg"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-2">
+                          <div>
+                            <span className="text-[10px] text-[#9B9BA1] uppercase font-bold">Séries</span>
+                            <input
+                              type="number"
+                              value={ex.sets || 4}
+                              onChange={(e) => {
+                                const updated = [...editWorkoutModal.exercises];
+                                updated[idx].sets = Number(e.target.value) || 0;
+                                setEditWorkoutModal({ ...editWorkoutModal, exercises: updated });
+                              }}
+                              className="w-full mt-0.5 px-2 py-1 rounded bg-[#151515] border border-[#2B2B2F] text-xs text-center text-[#F5F5F7]"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#9B9BA1] uppercase font-bold">Reps</span>
+                            <input
+                              type="text"
+                              value={ex.reps || "10"}
+                              onChange={(e) => {
+                                const updated = [...editWorkoutModal.exercises];
+                                updated[idx].reps = e.target.value;
+                                setEditWorkoutModal({ ...editWorkoutModal, exercises: updated });
+                              }}
+                              className="w-full mt-0.5 px-2 py-1 rounded bg-[#151515] border border-[#2B2B2F] text-xs text-center text-[#F5F5F7]"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#9B9BA1] uppercase font-bold">Carga (kg)</span>
+                            <input
+                              type="text"
+                              placeholder="kg"
+                              value={ex.load_kg || ex.weight_kg || ""}
+                              onChange={(e) => {
+                                const updated = [...editWorkoutModal.exercises];
+                                updated[idx].load_kg = e.target.value;
+                                setEditWorkoutModal({ ...editWorkoutModal, exercises: updated });
+                              }}
+                              className="w-full mt-0.5 px-2 py-1 rounded bg-[#151515] border border-[#2B2B2F] text-xs text-center text-[#F5F5F7]"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#9B9BA1] uppercase font-bold">Descanso</span>
+                            <input
+                              type="text"
+                              value={ex.rest || "60s"}
+                              onChange={(e) => {
+                                const updated = [...editWorkoutModal.exercises];
+                                updated[idx].rest = e.target.value;
+                                setEditWorkoutModal({ ...editWorkoutModal, exercises: updated });
+                              }}
+                              className="w-full mt-0.5 px-2 py-1 rounded bg-[#151515] border border-[#2B2B2F] text-xs text-center text-[#F5F5F7]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-[#2B2B2F] flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setEditWorkoutModal(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#9B9BA1] hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveExerciseModal}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#FF6A2A] text-[#0A0A0A] font-bold text-xs hover:brightness-110 shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Salvar Bloco</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: DESPACHAR TREINO PARA ALUNOS (Coach) */}
+        {dispatchModalWorkout && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-lg bg-[#151515] border border-[#2B2B2F] rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+                <div>
+                  <h2 className="text-base font-bold text-[#F5F5F7]">Despachar Prescrição</h2>
+                  <p className="text-xs text-[#9B9BA1] mt-0.5">
+                    Atribuir "{dispatchModalWorkout.title}" aos dias no calendário dos alunos.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDispatchModalWorkout(null)}
+                  className="p-1 text-[#9B9BA1] hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-[#9B9BA1] uppercase">Destinatário</label>
+                <div className="space-y-1.5 mt-2">
+                  {[
+                    { id: "all", label: "Todos os Alunos Ativos" },
+                    { id: "std-1", label: "Rafael Silva (Atleta Shape)" },
+                    { id: "std-2", label: "Camila Siqueira (Hipertrofia)" },
+                    { id: "std-3", label: "Beatriz Lima (Reset 12)" },
+                  ].map((s) => {
+                    const active = dispatchRecipient === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => setDispatchRecipient(s.id)}
+                        className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                          active
+                            ? "bg-[#FF6A2A]/10 border-[#FF6A2A] text-[#F5F5F7]"
+                            : "bg-[#1D1D1F] border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                        }`}
+                      >
+                        <span>{s.label}</span>
+                        {active && <Check className="w-4 h-4 text-[#FF6A2A]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-[#9B9BA1] uppercase">
+                  Dias no Calendário Semanal
+                </label>
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  {[
+                    { dayIdx: 1, label: "Seg", full: "Segunda" },
+                    { dayIdx: 2, label: "Ter", full: "Terça" },
+                    { dayIdx: 3, label: "Qua", full: "Quarta" },
+                    { dayIdx: 4, label: "Qui", full: "Quinta" },
+                    { dayIdx: 5, label: "Sex", full: "Sexta" },
+                    { dayIdx: 6, label: "Sáb", full: "Sábado" },
+                    { dayIdx: 0, label: "Dom", full: "Domingo" },
+                  ].map((d) => {
+                    const active = dispatchDays.includes(d.dayIdx);
+                    return (
+                      <button
+                        key={d.dayIdx}
+                        onClick={() => toggleDay(d.dayIdx)}
+                        className={`py-2 px-2 rounded-xl text-xs font-bold text-center border transition-all cursor-pointer ${
+                          active
+                            ? "bg-[#FF6A2A] text-[#0A0A0A] border-[#FF6A2A]"
+                            : "bg-[#1D1D1F] text-[#9B9BA1] border-[#2B2B2F] hover:text-white"
+                        }`}
+                      >
+                        {d.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#2B2B2F]">
+                <button
+                  onClick={() => setDispatchModalWorkout(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#9B9BA1] hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmDispatch}
+                  disabled={dispatching}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#FF6A2A] text-[#0A0A0A] font-extrabold text-xs hover:brightness-110 shadow-lg shadow-[#FF6A2A]/20 cursor-pointer disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{dispatching ? "Despachando..." : "Confirmar Agendamento"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
+  // ALUNO VIEW: Calendário Semanal no Topo + Treino do Dia ou Estado Vazio
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-64 md:pb-48 space-y-6 animate-in fade-in duration-300">
-      {/* Top Header & Overview */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-black tracking-widest text-[#FF6A2A] uppercase bg-[#FF6A2A]/15 px-3 py-1 rounded-full border border-[#FF6A2A]/30">
-            {workout.day_label}
-          </span>
-          <span className="text-xs font-bold text-[#9B9BA1] bg-[#151515] px-3 py-1 rounded-full border border-[#2B2B2F]">
-            {workout.focus}
-          </span>
+      {/* Calendário Semanal do Aluno (Segunda a Domingo) */}
+      <div className="p-4 rounded-2xl bg-[#151515] border border-[#2B2B2F] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-[#FF6A2A]" />
+            <span className="text-xs font-bold text-[#F5F5F7] uppercase tracking-wider">
+              Semana de Treinos
+            </span>
+          </div>
+          <span className="text-[11px] text-[#9B9BA1]">Toque no dia para alternar</span>
         </div>
 
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
-          {workout.title}
-        </h1>
-
-        <div className="flex items-center gap-4 text-xs font-semibold text-[#9B9BA1] pt-1">
-          <span className="flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-[#9B9BA1]" />
-            {workout.duration_min} minutos
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Flame className="w-4 h-4 text-[#FF6A2A]" />
-            Intensidade {workout.intensity}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Dumbbell className="w-4 h-4 text-[#D8B46A]" />
-            {totalCount} exercícios
-          </span>
+        <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+          {weekDays.map((d) => {
+            const isSelected = selectedDayIdx === d.dayIdx;
+            return (
+              <button
+                key={d.dayIdx}
+                onClick={() => handleSelectCalendarDay(d.dayIdx)}
+                className={`py-2.5 sm:py-3 px-1 rounded-xl flex flex-col items-center justify-center transition-all border cursor-pointer ${
+                  isSelected
+                    ? "bg-[#FF6A2A] text-[#0A0A0A] border-[#FF6A2A] shadow-md shadow-[#FF6A2A]/20 scale-[1.02]"
+                    : d.isToday
+                    ? "bg-[#1D1D1F] text-[#F5F5F7] border-[#FF6A2A]/50 hover:border-[#FF6A2A]"
+                    : "bg-[#1D1D1F] text-[#9B9BA1] border-[#2B2B2F] hover:text-[#F5F5F7] hover:border-[#3E3E44]"
+                }`}
+              >
+                <span
+                  className={`text-[10px] font-black uppercase tracking-wider ${
+                    isSelected ? "text-[#0A0A0A]" : "text-[#9B9BA1]"
+                  }`}
+                >
+                  {d.label}
+                </span>
+                <span
+                  className={`text-sm sm:text-base font-extrabold mt-0.5 ${
+                    isSelected ? "text-[#0A0A0A]" : "text-[#F5F5F7]"
+                  }`}
+                >
+                  {d.dateNumber}
+                </span>
+                <span
+                  className={`w-1.5 h-1.5 rounded-full mt-1.5 ${
+                    d.hasWorkout
+                      ? isSelected
+                        ? "bg-[#0A0A0A]"
+                        : "bg-[#FF6A2A]"
+                      : "bg-transparent"
+                  }`}
+                />
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {!workout ? (
+        /* Estado Vazio Amigável: Dia de Descanso */
+        <div className="p-8 sm:p-12 text-center rounded-2xl bg-[#151515] border border-[#2B2B2F] space-y-4">
+          <div className="w-16 h-16 rounded-full bg-[#FF6A2A]/10 border border-[#FF6A2A]/25 text-[#FF6A2A] flex items-center justify-center mx-auto">
+            <Bed className="w-8 h-8" />
+          </div>
+          <div className="space-y-1 max-w-md mx-auto">
+            <h2 className="text-xl font-bold text-[#F5F5F7]">Dia de Descanso & Regeneração</h2>
+            <p className="text-xs sm:text-sm text-[#9B9BA1] leading-relaxed">
+              Nenhum treino programado para este dia. O repouso das articulações e o sono anabólico profundo são indispensáveis para a hipertrofia e reconstrução muscular.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-[#F5F5F7] max-w-sm mx-auto flex items-center gap-3 text-left">
+            <Droplets className="w-5 h-5 text-sky-400 shrink-0" />
+            <span>Mantenha sua hidratação acima de 2.500 ml e priorize o descanso celular hoje.</span>
+          </div>
+
+          {selectedDayIdx !== new Date().getDay() && (
+            <button
+              onClick={() => handleSelectCalendarDay(new Date().getDay())}
+              className="px-5 py-2.5 rounded-xl bg-[#1D1D1F] hover:bg-[#252528] text-xs font-bold text-[#F5F5F7] border border-[#2B2B2F] transition-all cursor-pointer"
+            >
+              Voltar para Treino de Hoje
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Top Header & Overview */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-black tracking-widest text-[#FF6A2A] uppercase bg-[#FF6A2A]/15 px-3 py-1 rounded-full border border-[#FF6A2A]/30">
+                {workout.day_label}
+              </span>
+              <span className="text-xs font-bold text-[#9B9BA1] bg-[#151515] px-3 py-1 rounded-full border border-[#2B2B2F]">
+                {workout.focus}
+              </span>
+            </div>
+
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
+              {workout.title}
+            </h1>
+
+            <div className="flex items-center gap-4 text-xs font-semibold text-[#9B9BA1] pt-1">
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-[#9B9BA1]" />
+                {workout.duration_min} minutos
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Flame className="w-4 h-4 text-[#FF6A2A]" />
+                Intensidade {workout.intensity}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Dumbbell className="w-4 h-4 text-[#D8B46A]" />
+                {totalCount} exercícios
+              </span>
+            </div>
+          </div>
 
       {/* Progress & AI Form Action Bar */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#151515] border border-[#2B2B2F] space-y-4">
@@ -1340,6 +2066,8 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

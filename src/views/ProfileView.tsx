@@ -3,10 +3,12 @@ import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { UserProfile, AssessmentEntry } from "../types";
 import { VeteranBadge, PatentBadge, PatentRecurrenceCard, getPatentInfo } from "../lib/patents";
+import { supabase } from "../lib/supabase";
 import {
   User,
   ShieldCheck,
   Award,
+  Crown,
   Globe,
   Sun,
   Moon,
@@ -31,7 +33,14 @@ import {
   CheckCircle2,
   ArrowRightLeft,
   Palette,
+  CreditCard,
+  TrendingUp,
+  Users,
+  DollarSign,
+  X,
 } from "lucide-react";
+import { SavedCardsModal } from "../components/SavedCardsModal";
+import { CoachFinancialModal, CoachStudentsModal } from "../components/CoachModals";
 
 export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOpenColorPicker }) => {
   const {
@@ -51,6 +60,9 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
     currentUserEmail,
     setLoggedIn,
     logout,
+    isChampion,
+    userPoints,
+    userRank,
     isVeteran,
     setIsVeteran,
     consecutiveMonths,
@@ -76,9 +88,15 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const [weightKg, setWeightKg] = useState(81.1);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showSavedCardsModal, setShowSavedCardsModal] = useState(false);
+  const [showFinancialModal, setShowFinancialModal] = useState(false);
+  const [showStudentsModal, setShowStudentsModal] = useState(false);
+  const [supabaseRole, setSupabaseRole] = useState<string | null>(null);
 
   // 20-day assessment state
   const [showAssessmentModal, setShowAssessmentModal] = useState(false);
+  const [assessmentSaving, setAssessmentSaving] = useState(false);
+  const [assessmentFeedback, setAssessmentFeedback] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [armCm, setArmCm] = useState("39.5");
   const [waistCm, setWaistCm] = useState("82.0");
   const [chestCm, setChestCm] = useState("104.0");
@@ -183,22 +201,75 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   };
 
   useEffect(() => {
+    // Busca no Supabase diretamente
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data) {
+              if (data.role) setSupabaseRole(data.role);
+              if (data.is_coach) setSupabaseRole("coach");
+              if (data.full_name) setFullName(data.full_name);
+              if (data.nickname) setNickname(data.nickname);
+              if (data.avatar_url) setAvatarUrl(data.avatar_url);
+              if (data.height_cm) setHeightCm(data.height_cm);
+              if (data.weight_kg) {
+                setWeightKg(data.weight_kg);
+                setAssessmentWeight(String(data.weight_kg));
+              }
+              if (data.arm_cm || data.right_arm_cm) setArmCm(String(data.arm_cm || data.right_arm_cm));
+              if (data.waist_cm) setWaistCm(String(data.waist_cm));
+              if (data.chest_cm) setChestCm(String(data.chest_cm));
+              if (data.thigh_cm || data.right_leg_cm) setThighCm(String(data.thigh_cm || data.right_leg_cm));
+            }
+          });
+      }
+    });
+
     api
       .getProfile()
       .then((data) => {
         setProfile(data);
-        setFullName(data.full_name || data.nickname || "Rafael Silva");
+        const pendingName = localStorage.getItem("vyra_pending_fullname");
+        setFullName(pendingName || data.full_name || data.nickname || "Aluno Vyra");
         setNickname(data.nickname);
-        setAvatarUrl(data.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80");
-        setHeightCm(data.height_cm || 182);
-        setWeightKg(data.weight_kg || 81.1);
+        if (data.avatar_url) setAvatarUrl(data.avatar_url);
+        if (data.height_cm) setHeightCm(data.height_cm);
+        if (data.weight_kg) setWeightKg(data.weight_kg);
+
+        if (localStorage.getItem("vyra_open_profile_edit") === "true" || localStorage.getItem("vyra_is_new_user") === "true") {
+          setEditingProfile(true);
+          localStorage.removeItem("vyra_open_profile_edit");
+        }
       })
-      .catch((e) => console.error("Error loading profile:", e));
+      .catch((e) => {
+        console.error("Error loading profile:", e);
+        if (localStorage.getItem("vyra_open_profile_edit") === "true" || localStorage.getItem("vyra_is_new_user") === "true") {
+          setEditingProfile(true);
+        }
+      });
   }, []);
 
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from("profiles").upsert({
+          id: user.id,
+          full_name: fullName,
+          nickname,
+          avatar_url: avatarUrl,
+          height_cm: heightCm,
+          weight_kg: weightKg,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
       const updated = await api.updateProfile({
         full_name: fullName,
         nickname,
@@ -246,6 +317,15 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   };
 
   const handleSaveAssessment = async () => {
+    setAssessmentSaving(true);
+    setAssessmentFeedback(null);
+
+    const weightVal = parseFloat(assessmentWeight) || weightKg || 80.0;
+    const armVal = parseFloat(armCm) || 39.5;
+    const waistVal = parseFloat(waistCm) || 82.0;
+    const chestVal = parseFloat(chestCm) || 104.0;
+    const thighVal = parseFloat(thighCm) || 61.0;
+
     const newEntry: any = {
       id: `ass-${Date.now()}`,
       date: new Date().toISOString().split("T")[0],
@@ -253,34 +333,88 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
       photo_front: photoFront,
       photo_side: photoSide,
       photo_back: photoBack,
+      notes: assessmentNotes,
       measurements: {
-        arm_cm: parseFloat(armCm) || 39.5,
-        waist_cm: parseFloat(waistCm) || 82.0,
-        chest_cm: parseFloat(chestCm) || 104.0,
-        thigh_cm: parseFloat(thighCm) || 61.0,
-        weight_kg: parseFloat(assessmentWeight) || weightKg,
+        arm_cm: armVal,
+        waist_cm: waistVal,
+        chest_cm: chestVal,
+        thigh_cm: thighVal,
+        weight_kg: weightVal,
       },
-      coach_feedback: "Fotos de Frente, Lado e Costas recebidas pelo Coach. Protocolo em análise de perimetria!",
+      coach_feedback: "Fotos de Frente, Lado e Costas recebidas pelo Coach Manoel. Protocolo em calibração!",
     };
 
     const existingAssessments = profile?.assessments || [];
     const updatedAssessments = [newEntry, ...existingAssessments];
 
     try {
+      // 1. Atualização via API
       const updated = await api.updateProfile({
         assessments: updatedAssessments,
         last_assessment_date: newEntry.date,
-        weight_kg: parseFloat(assessmentWeight) || weightKg,
+        weight_kg: weightVal,
       });
       setProfile(updated);
-      setShowAssessmentModal(false);
+
+      // 2. Insert no Supabase (assessments e sincronização de perimetria em profiles)
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // Atualiza perfil no Supabase
+          await supabase.from("profiles").upsert({
+            id: user.id,
+            weight_kg: weightVal,
+            last_assessment_date: newEntry.date,
+            arm_cm: armVal,
+            waist_cm: waistVal,
+            chest_cm: chestVal,
+            thigh_cm: thighVal,
+            updated_at: new Date().toISOString(),
+          });
+
+          // Insere registro na tabela assessments
+          await supabase.from("assessments").insert({
+            user_id: user.id,
+            user_email: user.email,
+            date: newEntry.date,
+            photos: [photoFront, photoSide, photoBack],
+            photo_front: photoFront,
+            photo_side: photoSide,
+            photo_back: photoBack,
+            measurements: newEntry.measurements,
+            notes: assessmentNotes,
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (errDb) {
+        console.warn("Aviso ao persistir avaliação no Supabase:", errDb);
+      }
+
+      // 3. Feedback visual de sucesso imediato para o aluno
+      setAssessmentFeedback({
+        type: "success",
+        text: "Avaliação física e fotos enviadas com sucesso ao Coach!",
+      });
+
       sendNotification(
         "Coach Manoel",
         "Avaliação de 20 dias recebida com sucesso! Em até 24h seu protocolo será calibrado.",
         "coach"
       );
-    } catch (e) {
+
+      // Fecha o modal suavemente após exibir o feedback de confirmação
+      setTimeout(() => {
+        setShowAssessmentModal(false);
+        setAssessmentFeedback(null);
+        setAssessmentSaving(false);
+      }, 1500);
+    } catch (e: any) {
       console.error("Error saving assessment:", e);
+      setAssessmentFeedback({
+        type: "error",
+        text: "Não foi possível enviar a avaliação. Tente novamente.",
+      });
+      setAssessmentSaving(false);
     }
   };
 
@@ -289,6 +423,20 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const daysSince = Math.floor(
     (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24)
   );
+
+  const isCoach =
+    supabaseRole === "coach" ||
+    persona === "coach" ||
+    Boolean(
+      currentUserEmail &&
+        [
+          "coach@vyra.club",
+          "mari@vyra.club",
+          "treinador@vyra.club",
+          "admin@vyra.club",
+          "headcoach@vyra.club",
+        ].includes(currentUserEmail.toLowerCase())
+    );
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300">
@@ -344,11 +492,26 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
               )}
             </div>
 
-            {/* Badges do Usuário: Selo de Veterano e Patente por Recorrência */}
+            {/* Badges do Usuário: Coroa (Campeão), Selo de Veterano e Patente */}
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 pt-0.5">
+              {/* Coroa: Estritamente condicionado ao Supabase (is_champion === true ou titles.includes('campeao')) */}
+              {(isChampion || (profile as any)?.is_champion === true || ((profile as any)?.titles && Array.isArray((profile as any).titles) && (profile as any).titles.includes("campeao"))) && (
+                <span
+                  id="profile-champion-crown"
+                  title="Campeão Oficial Vyra (Reconhecido no Banco de Dados)"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-black text-[10px] uppercase bg-gradient-to-r from-[#FF6A2A] via-[#E5A93C] to-[#D8B46A] text-[#121214] shadow-md shadow-[#FF6A2A]/25 border border-[#FFE4A0]/60 select-none animate-pulse"
+                >
+                  <Crown className="w-3.5 h-3.5 fill-[#121214] stroke-[2] shrink-0" />
+                  <span>CAMPEÃO</span>
+                </span>
+              )}
               {isVeteran && <VeteranBadge size="sm" />}
               <PatentBadge
-                level={getPatentInfo(consecutiveMonths, monthlyFeePaid).level}
+                level={
+                  (profile as any)?.patente_level !== undefined && (profile as any)?.patente_level !== null
+                    ? Number((profile as any).patente_level)
+                    : getPatentInfo(consecutiveMonths, monthlyFeePaid).level
+                }
                 showLabel={true}
                 size="sm"
                 isRevoked={!monthlyFeePaid}
@@ -497,19 +660,96 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         </div>
       )}
 
-      {/* SISTEMA DE PATENTES: Exibido no Perfil exclusivamente para o Coach */}
-      {persona === "coach" && (
-        <PatentRecurrenceCard
-          consecutiveMonths={consecutiveMonths}
-          monthlyFeePaid={monthlyFeePaid}
-          isVeteran={isVeteran}
-          onUpdateRecurrence={updateRecurrence}
-          onApplyVeteranCoupon={applyVeteranCoupon}
-        />
+      {/* SISTEMA DE GESTÃO: Exibido no Perfil exclusivamente para o Coach */}
+      {isCoach && (
+        <div className="space-y-4">
+          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#1A1A1E] via-[#151515] to-[#121214] border border-[#FF6A2A]/40 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-[#2B2B2F]">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-[#FF6A2A]/20 text-[#FF6A2A] border border-[#FF6A2A]/40 flex items-center justify-center shrink-0">
+                  <Shield className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#FF6A2A] bg-[#FF6A2A]/15 px-2.5 py-0.5 rounded-full border border-[#FF6A2A]/30">
+                      Visão do Coach
+                    </span>
+                    <span className="text-[10px] font-bold text-[#34C759] bg-[#34C759]/15 px-2 py-0.5 rounded-full border border-[#34C759]/30">
+                      Gestão de Alunos & Finanças
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-[#F5F5F7] mt-1">
+                    Painel de Controle do Coach
+                  </h3>
+                  <p className="text-xs text-[#9B9BA1] mt-0.5">
+                    Acompanhe a receita de assinaturas e prescreva treinos para a sua base de alunos.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  id="btn-coach-financial-dashboard"
+                  onClick={() => setShowFinancialModal(true)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-black bg-[#1D1D1F] border border-[#34C759]/40 text-[#34C759] hover:bg-[#34C759]/10 transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  <span>Dashboard Financeiro</span>
+                </button>
+                <button
+                  id="btn-coach-students-management"
+                  onClick={() => setShowStudentsModal(true)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-[#FF6A2A]/20 active:scale-95"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Gestão de Alunos</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Métricas Rápidas do Coach */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+              <div className="p-3 rounded-2xl bg-[#1D1D1F]/80 border border-[#2B2B2F] text-center">
+                <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">MRR Estimado</span>
+                <span className="text-base font-extrabold text-[#34C759] block mt-0.5">R$ 6.840,00</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#1D1D1F]/80 border border-[#2B2B2F] text-center">
+                <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Alunos Ativos</span>
+                <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">38 Alunos</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#1D1D1F]/80 border border-[#2B2B2F] text-center">
+                <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Taxa de Retenção</span>
+                <span className="text-base font-extrabold text-[#D8B46A] block mt-0.5">94.7%</span>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#1D1D1F]/80 border border-[#2B2B2F] text-center">
+                <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Prescrições Hoje</span>
+                <span className="text-base font-extrabold text-[#FF6A2A] block mt-0.5">4 Pendentes</span>
+              </div>
+            </div>
+          </div>
+
+          <PatentRecurrenceCard
+            consecutiveMonths={consecutiveMonths}
+            monthlyFeePaid={monthlyFeePaid}
+            isVeteran={isVeteran}
+            onUpdateRecurrence={updateRecurrence}
+            onApplyVeteranCoupon={applyVeteranCoupon}
+          />
+        </div>
       )}
 
+      {/* Modais de Gestão do Coach */}
+      <CoachFinancialModal
+        isOpen={showFinancialModal}
+        onClose={() => setShowFinancialModal(false)}
+      />
+      <CoachStudentsModal
+        isOpen={showStudentsModal}
+        onClose={() => setShowStudentsModal(false)}
+      />
+
       {/* Para Aluno com Personalização VIP de Cores (Por 5+ Estrelas OU Concedido pelo Coach) */}
-      {persona !== "coach" && (hasVipChatColors || profile?.vip_chat_unlocked) && (
+      {!isCoach && (hasVipChatColors || profile?.vip_chat_unlocked) && (
         <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#1C1808] via-[#14120A] to-[#121214] border border-[#FFD700]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl shadow-[#FFD700]/10">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/40 flex items-center justify-center shrink-0">
@@ -543,52 +783,105 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         </div>
       )}
 
-      {/* 20-Day Assessment Section (Fotos e Perimetria) */}
-      <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#34C759]/20 text-[#34C759] flex items-center justify-center">
-              <Camera className="w-4 h-4" />
+      {/* Formas de Pagamento & Cartões de Crédito (EXCLUSIVO DA VISÃO DO ALUNO) */}
+      {!isCoach && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#FF6A2A]/10 text-[#FF6A2A] border border-[#FF6A2A]/30 flex items-center justify-center shrink-0">
+              <CreditCard className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[#F5F5F7]">
-                Ciclo de 20 Dias: Fotos & Perimetria
-              </h3>
-              <p className="text-[11px] text-[#9B9BA1]">
-                Última atualização há {daysSince} dias ({profile?.last_assessment_date || "2026-04-10"})
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#34C759] bg-[#34C759]/15 px-2.5 py-0.5 rounded-full border border-[#34C759]/30">
+                  Stripe Segura & PCI-DSS
+                </span>
+                <span className="text-[10px] font-bold text-[#FF6A2A] bg-[#FF6A2A]/15 px-2 py-0.5 rounded-full border border-[#FF6A2A]/30">
+                  Assinatura / Cartão de Crédito
+                </span>
+              </div>
+              <h4 className="text-sm font-bold text-[#F5F5F7] mt-1">
+                Assinatura & Formas de Pagamento
+              </h4>
+              <p className="text-xs text-[#9B9BA1] mt-0.5">
+                Configure cartões para débito recorrente, renovações de planos e histórico de faturas.
               </p>
             </div>
           </div>
 
-          <button
-            id="open-new-assessment-btn"
-            onClick={() => setShowAssessmentModal(true)}
-            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40 hover:bg-[#34C759]/30 transition-all flex items-center gap-1.5"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Nova Avaliação</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              id="view-plans-btn"
+              onClick={() => setActiveView("paywall")}
+              className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#FF6A2A] hover:bg-[#FF9A62] text-white transition-all cursor-pointer shadow-lg shadow-[#FF6A2A]/20"
+            >
+              Ver Planos
+            </button>
+          </div>
         </div>
+      )}
 
-        {/* Current Measurements Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
-            <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Braço</span>
-            <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">39.5 cm</span>
+      {showSavedCardsModal && (
+        <SavedCardsModal
+          isOpen={showSavedCardsModal}
+          onClose={() => setShowSavedCardsModal(false)}
+        />
+      )}
+
+      {/* 20-Day Assessment Section (Fotos e Perimetria) - EXCLUSIVO DO ALUNO */}
+      {!isCoach && (
+        <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#34C759]/20 text-[#34C759] flex items-center justify-center">
+                <Camera className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#F5F5F7]">
+                  Ciclo de 20 Dias: Fotos & Perimetria
+                </h3>
+                <p className="text-[11px] text-[#9B9BA1]">
+                  Última atualização há {daysSince} dias ({profile?.last_assessment_date || "2026-04-10"})
+                </p>
+              </div>
+            </div>
+
+            <button
+              id="open-new-assessment-btn"
+              onClick={() => setShowAssessmentModal(true)}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40 hover:bg-[#34C759]/30 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nova Avaliação</span>
+            </button>
           </div>
-          <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
-            <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Cintura</span>
-            <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">82.0 cm</span>
+
+          {/* Current Measurements Summary (Valores Reais do Supabase / Contexto) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Braço</span>
+              <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
+                {profile?.right_arm_cm ?? profile?.arm_cm ?? armCm} cm
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Cintura</span>
+              <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
+                {profile?.waist_cm ?? waistCm} cm
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Tórax</span>
+              <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
+                {profile?.chest_cm ?? chestCm} cm
+              </span>
+            </div>
+            <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Coxa</span>
+              <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
+                {profile?.right_leg_cm ?? profile?.thigh_cm ?? thighCm} cm
+              </span>
+            </div>
           </div>
-          <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
-            <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Tórax</span>
-            <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">104.0 cm</span>
-          </div>
-          <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
-            <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Coxa</span>
-            <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">61.0 cm</span>
-          </div>
-        </div>
 
         {/* Assessment History */}
         {profile?.assessments && profile.assessments.length > 0 && (
@@ -657,6 +950,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           </div>
         )}
       </div>
+      )}
 
       {/* Assessment Modal (Fotos e Perimetria) */}
       {showAssessmentModal && (
@@ -818,20 +1112,55 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
               </div>
             </div>
 
+            {/* Feedback Visual para o Aluno */}
+            {assessmentFeedback && (
+              <div
+                id="assessment-feedback-banner"
+                className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200 ${
+                  assessmentFeedback.type === "success"
+                    ? "bg-[#34C759]/20 border border-[#34C759]/40 text-[#34C759]"
+                    : "bg-[#FF453A]/20 border border-[#FF453A]/40 text-[#FF453A]"
+                }`}
+              >
+                {assessmentFeedback.type === "success" ? (
+                  <Check className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{assessmentFeedback.text}</span>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-3 border-t border-[#2B2B2F]">
               <button
+                type="button"
                 id="cancel-assessment-btn"
                 onClick={() => setShowAssessmentModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#9B9BA1]"
+                disabled={assessmentSaving}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7] transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
+                type="button"
                 id="save-assessment-btn"
                 onClick={handleSaveAssessment}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-[#34C759] hover:bg-[#34C759]/90 text-[#0A0A0A] shadow-lg shadow-[#34C759]/20 font-black"
+                onPointerDown={handleSaveAssessment}
+                {...({ onPress: handleSaveAssessment } as any)}
+                disabled={assessmentSaving}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-[#34C759] hover:bg-[#34C759]/90 text-[#0A0A0A] shadow-lg shadow-[#34C759]/20 font-black cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Enviar ao Coach
+                {assessmentSaving ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin shrink-0" />
+                    <span>Enviando ao Coach...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <span>Enviar para o coach</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -904,50 +1233,6 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
               ? "Acesso de treinador verificado por credenciamento oficial e permissões do Supabase."
               : "Acesso aos painéis de moderação e treinador restrito exclusivamente a e-mails cadastrados e permissões no Supabase."}
           </span>
-        </div>
-      </div>
-
-      {/* Meu Protocolo Card (Consultar e Mudar) */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#151515] via-[#1A1A1E] to-[#121214] border border-[#2B2B2F] space-y-4 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/40 flex items-center justify-center shrink-0 shadow-lg shadow-[#D8B46A]/10">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm sm:text-base font-bold text-[#F5F5F7]">
-                  Meu Protocolo
-                </h3>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase border ${currentProtocol.accentBg}`}>
-                  {currentProtocol.name}
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/40">
-                  Prescrição Ativa
-                </span>
-              </div>
-              <p className="text-xs text-[#9B9BA1] mt-1 max-w-xl leading-relaxed">
-                {currentProtocol.desc}
-              </p>
-              <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-[#6E6E73]">
-                <span>Fase Atual: <strong className="text-[#F5F5F7]">{currentProtocol.phase}</strong></span>
-                <span>•</span>
-                <span>Responsável: <strong className="text-[#D8B46A]">{currentProtocol.coach}</strong></span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            id="open-my-protocol-btn"
-            onClick={() => {
-              setModalSelectedProtocol(selectedProtocolId);
-              setShowProtocolModal(true);
-            }}
-            className="px-4 py-2.5 rounded-xl text-xs font-black bg-[#D8B46A] hover:bg-[#E5C37A] text-[#0A0A0A] transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer shadow-lg shadow-[#D8B46A]/20 active:scale-95"
-          >
-            <Sliders className="w-4 h-4 stroke-[2.5]" />
-            <span>Meu Protocolo · Ver e Mudar</span>
-          </button>
         </div>
       </div>
 

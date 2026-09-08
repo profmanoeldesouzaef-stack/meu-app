@@ -281,7 +281,7 @@ export const PatentBadge: React.FC<{
         className={`inline-flex items-center gap-1 rounded-full font-bold text-[9px] px-2 py-0.5 bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] ${className}`}
       >
         <Shield className="w-2.5 h-2.5 text-[#6E6E73]" />
-        <span>{isActuallyRevoked ? "Inadimplente" : "Calouro"}</span>
+        <span>{isActuallyRevoked ? "Inadimplente" : "Iniciante"}</span>
       </span>
     );
   }

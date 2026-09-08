@@ -3,6 +3,7 @@ import { useApp } from "../context/AppContext";
 import { api, PlateAnalysisResult, PlateFoodItem } from "../api/client";
 import { Diet, FoodItem, MealIngredient } from "../types";
 import { AccessGate } from "../components/AccessGate";
+import { EmptyStatePaywall } from "../components/EmptyStatePaywall";
 import { getMealIngredients, getMealPrepInstructions } from "../utils/dietIngredients";
 import {
   UtensilsCrossed,
@@ -69,19 +70,41 @@ const COMMON_INGREDIENTS = [
 ];
 
 export const DietView: React.FC = () => {
-  const { t, lang, persona, subscription, anamnesisDone, photosDone } = useApp();
+  const {
+    t,
+    lang,
+    persona,
+    subscription,
+    anamnesisDone,
+    photosDone,
+    setActiveView,
+    currentUserEmail,
+  } = useApp();
   const [diet, setDiet] = useState<Diet | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const isCoach =
+    persona === "coach" ||
+    Boolean(
+      currentUserEmail &&
+        [
+          "coach@vyra.club",
+          "mari@vyra.club",
+          "treinador@vyra.club",
+          "admin@vyra.club",
+          "headcoach@vyra.club",
+          "cubocao@gmail.com",
+        ].includes(currentUserEmail.toLowerCase())
+    );
+
   // Access Gating for Student
-  if (persona === "student") {
-    if (!subscription.active) {
+  if (!isCoach && persona === "student") {
+    if (!subscription.active || (subscription as any)?.status === "inactive") {
       return (
-        <AccessGate
-          type="payment"
-          tabName="dieta"
-          title="Planejamento Alimentar Bloqueado"
-          description="O plano nutricional e o módulo 'O que posso comer' são liberados exclusivamente após a ativação da sua assinatura Vyra."
+        <EmptyStatePaywall
+          message="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
+          buttonText="Assinar Agora"
+          onGoToProfile={() => setActiveView("profile")}
         />
       );
     }
@@ -136,11 +159,15 @@ export const DietView: React.FC = () => {
   const [quickAddGrams, setQuickAddGrams] = useState(100);
   const [editingFoodId, setEditingFoodId] = useState<string | null>(null);
   const [plateLoggedSuccess, setPlateLoggedSuccess] = useState(false);
+  const [dietReleased, setDietReleased] = useState<boolean>(true);
 
   useEffect(() => {
     api
       .getDiet()
       .then((data) => {
+        if (data.diet_released !== undefined) {
+          setDietReleased(Boolean(data.diet_released));
+        }
         // Enriquecer alimentos prescritos com quantidades e modo de preparo caso não estejam populados
         const enrichedFoods = data.foods.map((food) => {
           const ingredients = food.ingredients && food.ingredients.length > 0
@@ -160,6 +187,16 @@ export const DietView: React.FC = () => {
       .catch((err) => console.error("Error loading diet:", err))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleToggleDietRelease = async () => {
+    try {
+      const next = !dietReleased;
+      setDietReleased(next);
+      await api.toggleDietRelease(next);
+    } catch (err) {
+      console.error("Erro ao alterar liberação da dieta:", err);
+    }
+  };
 
   const toggleMealExpand = (id: string) => {
     setExpandedMealIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -503,13 +540,31 @@ export const DietView: React.FC = () => {
       {/* Refeições Prescritas (Blocos com Botão de Expandir Ingredientes & Quantidades Recalculadas) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider flex items-center gap-2">
-            <UtensilsCrossed className="w-4 h-4 text-[#FF6A2A]" />
-            Refeições Prescritas ({diet.foods.length})
-          </h2>
-          <span className="text-[11px] text-[#6E6E73]">Toque em uma refeição para ver quantidades</span>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider flex items-center gap-2">
+              <UtensilsCrossed className="w-4 h-4 text-[#FF6A2A]" />
+              Refeições Prescritas {dietReleased ? `(${diet.foods.length})` : ""}
+            </h2>
+            {isCoach && (
+              <button
+                type="button"
+                onClick={handleToggleDietRelease}
+                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                  dietReleased
+                    ? "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/30 hover:bg-[#34C759]/25"
+                    : "bg-[#D8B46A]/15 text-[#D8B46A] border-[#D8B46A]/30 hover:bg-[#D8B46A]/25"
+                }`}
+              >
+                {dietReleased ? "Liberado pelo Coach (Bloquear)" : "Bloqueado (Liberar Dieta)"}
+              </button>
+            )}
+          </div>
+          {dietReleased && (
+            <span className="text-[11px] text-[#6E6E73]">Toque em uma refeição para ver quantidades</span>
+          )}
         </div>
 
+        {dietReleased ? (
         <div className="space-y-3">
           {diet.foods.map((food) => {
             const isExpanded = Boolean(expandedMealIds[food.id]);
@@ -670,6 +725,27 @@ export const DietView: React.FC = () => {
             );
           })}
         </div>
+        ) : (
+          <div className="p-8 sm:p-12 rounded-3xl bg-[#151515] border border-[#2B2B2F] text-center space-y-4 max-w-lg mx-auto shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="w-16 h-16 rounded-2xl bg-[#D8B46A]/15 text-[#D8B46A] flex items-center justify-center mx-auto border border-[#D8B46A]/30">
+              <Clock className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-extrabold text-[#F5F5F7] tracking-tight">
+                Aguardando resposta do coach
+              </h2>
+              <p className="text-sm text-[#9B9BA1] leading-relaxed">
+                Seu treinador está analisando suas respostas e montando o seu planejamento alimentar individualizado. Em breve suas refeições prescritas estarão disponíveis aqui.
+              </p>
+            </div>
+            <div className="pt-2">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1D1D1F] border border-[#2B2B2F] text-xs font-semibold text-[#D8B46A]">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Utilize "O que posso comer" e "Analisar prato" acima</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* AI Food Swap Modal */}

@@ -33,13 +33,15 @@ export default function Checkout() {
   const [pixModalVisible, setPixModalVisible] = useState(false);
   const [pixCode, setPixCode] = useState("");
 
-  // Mapeamento dos IDs da Stripe
+  // Mapeamento dos IDs da Stripe (Produção / Live)
   const stripePrices = {
-    test: "price_1UCUoSF7VqDt14kNlN81QRA1", 
+    test: "price_1UCUo4F7VqDt14kNAJolBpkp", 
     month: "price_1U9FMDF7VqDt14kN3LneAWDA", 
     quarter: "price_1U9FMDF7VqDt14kNZhtT1hIO", 
     semiannual: "price_1U9FMDF7VqDt14kNRVRuJWd0", 
-    year: "price_1U9FMDF7VqDt14kNu6fxBRkh", 
+    year: "price_1U9FMDF7VqDt14kNu6fxBRkh",
+    reset12: "price_1UDGQQF7VqDt14kNHfhR3RlZ",
+    single: "price_1UDGQQF7VqDt14kNHfhR3RlZ",
   };
 
   useEffect(() => {
@@ -78,7 +80,19 @@ export default function Checkout() {
 
   const confirm = async () => {
     setIsProcessing(true);
-    const selectedStripePriceId = stripePrices[cycle as keyof typeof stripePrices];
+    const selectedStripePriceId =
+      plan?.slug === "reset12"
+        ? "price_1UDGQQF7VqDt14kNHfhR3RlZ"
+        : stripePrices[cycle as keyof typeof stripePrices] || stripePrices.month;
+
+    const protocolName =
+      plan?.slug === "reset12"
+        ? "Vyra Reset"
+        : plan?.slug === "shape"
+        ? "Vyra Shape"
+        : plan?.slug === "force"
+        ? "Vyra Forge"
+        : plan?.name || "Vyra Training";
     
     try {
       const response = await fetch(`${SUPABASE_URL}/functions/v1/stripe-checkout`, {
@@ -91,7 +105,11 @@ export default function Checkout() {
           email: "aluno_teste@vyra.com.br", 
           userId: "00000000-0000-0000-0000-000000000000",
           priceId: selectedStripePriceId,
-          paymentMethod: paymentMethod
+          paymentMethod: paymentMethod,
+          selected_protocol: protocolName,
+          metadata: {
+            selected_protocol: protocolName,
+          },
         })
       });
 
@@ -127,7 +145,41 @@ export default function Checkout() {
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </Pressable>
 
+        {/* Alerta de Ambiente de Produção */}
+        <View style={{ backgroundColor: "rgba(245, 158, 11, 0.12)", borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.4)", borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg }}>
+          <Text style={{ color: "#FBBF24", fontWeight: "700", fontSize: fs.sm }}>
+            Atenção: Ambiente de Produção Ativo. Pagamentos reais serão processados.
+          </Text>
+          <Text style={{ color: "rgba(251, 191, 36, 0.8)", fontSize: fs.xs, marginTop: 4 }}>
+            Stripe Live conectado. Use o Plano de Teste (R$ 1,00) para validar o QR Code do PIX e os Webhooks em produção.
+          </Text>
+        </View>
+
         <Text style={styles.title}>{t("checkout.title")}</Text>
+
+        {/* Botão de Plano de Teste (R$ 1,00) */}
+        <View style={{ backgroundColor: "rgba(16, 185, 129, 0.12)", borderWidth: 1, borderColor: "rgba(16, 185, 129, 0.35)", borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flex: 1, marginRight: spacing.sm }}>
+            <Text style={{ color: "#34D399", fontWeight: "700", fontSize: fs.sm }}>Plano de Teste (R$ 1,00)</Text>
+            <Text style={{ color: "rgba(52, 211, 153, 0.8)", fontSize: fs.xs }}>Price ID: price_1UCUo4F7VqDt14kNAJolBpkp</Text>
+          </View>
+          <Pressable
+            onPress={() => {
+              setPlan({
+                name: "Plano de Teste (R$ 1,00)",
+                slug: "test",
+                description: "Plano de validação de R$ 1,00 no Stripe Live para teste de PIX e Webhooks.",
+                accent: "#10b981",
+                prices_brl: { test: 1 },
+                prices_usd: { test: 1 }
+              });
+              router.setParams({ slug: "test", cycle: "test" });
+            }}
+            style={{ backgroundColor: "#10b981", paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md }}
+          >
+            <Text style={{ color: "#0A0A0A", fontWeight: "700", fontSize: fs.xs }}>{slug === "test" || cycle === "test" ? "✓ Ativo" : "Testar R$ 1,00"}</Text>
+          </Pressable>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.section}>{t("checkout.summary")}</Text>

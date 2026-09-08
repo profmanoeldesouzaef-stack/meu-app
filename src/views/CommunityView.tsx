@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { ChatMessage } from "../types";
-import { getVotingUserId } from "../lib/supabaseClient";
+import { supabase, getVotingUserId } from "../lib/supabaseClient";
 import { VeteranBadge, PatentBadge, getPatentInfo } from "../lib/patents";
 import {
   MessageSquare,
@@ -29,6 +29,8 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
     chatNameColor,
     chatTextColor,
     hasVipChatColors,
+    currentUserName,
+    currentUserNickname,
   } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -70,32 +72,96 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!text.trim() || sending) return;
+  const handleSend = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const cleanText = text.trim().slice(0, 200);
+    if (!cleanText || sending) return;
 
     setSending(true);
+
+    const authorName =
+      persona === "coach"
+        ? "Coach Manoel"
+        : persona === "moderator"
+        ? "Moderador Vyra"
+        : currentUserNickname || currentUserName || "Aluno";
+
+    const currentPatentInfo = getPatentInfo(consecutiveMonths, monthlyFeePaid);
+    const tempId = `m${Date.now()}`;
+    const timestamp = new Date().toISOString();
+
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
+      author: authorName,
+      persona,
+      text: cleanText,
+      image: image || null,
+      likes: 0,
+      timestamp,
+      is_veteran: persona === "student" ? isVeteran : false,
+      patente_level:
+        persona === "student" && !currentPatentInfo.isRevoked
+          ? currentPatentInfo.level
+          : undefined,
+      consecutive_months:
+        persona === "student" ? consecutiveMonths : undefined,
+      name_color:
+        persona === "student" && hasVipChatColors ? chatNameColor : undefined,
+      text_color:
+        persona === "student" && hasVipChatColors ? chatTextColor : undefined,
+      has_liked: false,
+    };
+
+    // Atualização imediata para o usuário
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setText("");
+    setImage(null);
+
     try {
-      const authorName =
-        persona === "coach" ? "Coach Manoel" : persona === "moderator" ? "Moderador Vyra" : "Rafael M.";
-
-      const currentPatentInfo = getPatentInfo(consecutiveMonths, monthlyFeePaid);
-
+      // 1. Envio via API do backend
       const newMsg = await api.postChat({
         author: authorName,
         persona,
-        text: text.trim().slice(0, 200),
-        image: image || null,
-        is_veteran: persona === "student" ? isVeteran : false,
-        patente_level: persona === "student" && !currentPatentInfo.isRevoked ? currentPatentInfo.level : undefined,
-        consecutive_months: persona === "student" ? consecutiveMonths : undefined,
-        name_color: (persona === "student" && hasVipChatColors) ? chatNameColor : undefined,
-        text_color: (persona === "student" && hasVipChatColors) ? chatTextColor : undefined,
+        text: cleanText,
+        image: optimisticMsg.image,
+        is_veteran: optimisticMsg.is_veteran,
+        patente_level: optimisticMsg.patente_level,
+        consecutive_months: optimisticMsg.consecutive_months,
+        name_color: optimisticMsg.name_color,
+        text_color: optimisticMsg.text_color,
       });
 
-      setMessages((prev) => [...prev, newMsg]);
-      setText("");
-      setImage(null);
+      // 2. Persistência direta no Supabase com autor, texto e timestamp
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        await supabase.from("chat_messages").insert([
+          {
+            id: newMsg?.id || tempId,
+            author: authorName,
+            user_id: authData?.user?.id || null,
+            user_email: authData?.user?.email || currentUserEmail || null,
+            persona,
+            text: cleanText,
+            image: optimisticMsg.image,
+            likes: 0,
+            timestamp,
+            is_veteran: optimisticMsg.is_veteran,
+            patente_level: optimisticMsg.patente_level,
+            consecutive_months: optimisticMsg.consecutive_months,
+            name_color: optimisticMsg.name_color,
+            text_color: optimisticMsg.text_color,
+            created_at: timestamp,
+          },
+        ]);
+      } catch (errSupabase) {
+        console.warn("Aviso ao persistir mensagem no Supabase:", errSupabase);
+      }
+
+      if (newMsg?.id && newMsg.id !== tempId) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...newMsg, has_liked: false } : m))
+        );
+      }
     } catch (e) {
       console.error("Error sending message:", e);
     } finally {
@@ -340,10 +406,18 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
           <button
             id="send-chat-btn"
             type="submit"
+            onClick={handleSend}
+            onPointerDown={handleSend}
+            {...({ onPress: handleSend } as any)}
             disabled={!text.trim() || sending}
-            className="w-11 h-11 rounded-2xl bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white flex items-center justify-center disabled:opacity-40 hover:brightness-110 active:scale-95 transition-all shrink-0 shadow-lg shadow-[#FF6A2A]/20"
+            className="w-11 h-11 rounded-2xl bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white flex items-center justify-center disabled:opacity-40 hover:brightness-110 active:scale-95 transition-all shrink-0 shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
+            title="Enviar mensagem para a Comunidade"
           >
-            <Send className="w-5 h-5 ml-0.5" />
+            {sending ? (
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Send className="w-5 h-5 ml-0.5" />
+            )}
           </button>
         </div>
 

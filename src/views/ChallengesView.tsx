@@ -1,10 +1,15 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { supabase } from "../lib/supabase";
 import { getVotingUserId } from "../lib/supabaseClient";
 import { AccessGate } from "../components/AccessGate";
+import { EmptyStatePaywall } from "../components/EmptyStatePaywall";
 import { GaleriaPhotoUpload } from "../components/GaleriaPhotoUpload";
+import { ChallengeParticipationModal } from "../components/ChallengeParticipationModal";
+import { CoachChallengeEvaluationPanel } from "../components/CoachChallengeEvaluationPanel";
+import { ActiveChallenge, ChallengeEntry } from "../types";
+import { getChallengeEntries } from "../lib/storage";
 import {
   Trophy,
   Flame,
@@ -27,6 +32,9 @@ import {
   Camera,
   Award,
   Lock,
+  Crown,
+  Users,
+  CheckCircle2,
 } from "lucide-react";
 
 // Filtros de categoria
@@ -40,26 +48,47 @@ const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = "w-3.5 h-3
 );
 
 export const ChallengesView: React.FC = () => {
-  const { t, persona, subscription, setActiveView } = useApp();
+  const { t, persona, subscription, setActiveView, currentUserEmail } = useApp();
+
+  const isCoach =
+    persona === "coach" ||
+    Boolean(
+      currentUserEmail &&
+        [
+          "coach@vyra.club",
+          "mari@vyra.club",
+          "treinador@vyra.club",
+          "admin@vyra.club",
+          "headcoach@vyra.club",
+          "cubocao@gmail.com",
+        ].includes(currentUserEmail.toLowerCase())
+    );
 
   // Access Gating for Student
-  if (persona === "student" && !subscription.active) {
+  if (!isCoach && persona === "student" && (!subscription.active || (subscription as any)?.status === "inactive")) {
     return (
-      <AccessGate
-        type="payment"
-        tabName="desafios"
-        title="Desafios & Premiações Bloqueados"
-        description="Os desafios comunitários, transformações e premiações da Vyra são exclusivos para alunos assinantes. Ative seu plano para participar e concorrer aos prêmios."
+      <EmptyStatePaywall
+        message="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
+        buttonText="Assinar Agora"
+        onGoToProfile={() => setActiveView("profile")}
       />
     );
   }
 
-  const [tab, setTab] = useState<"active" | "hall">("active");
+  const [tab, setTab] = useState<"active" | "coach" | "hall">("active");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [items, setItems] = useState<any[]>([]);
   const [hall, setHall] = useState<any[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+
+  // Step 4: Engine de Desafios & Participação
+  const [activeChallenges, setActiveChallenges] = useState<ActiveChallenge[]>([]);
+  const [challengeEntries, setChallengeEntries] = useState<ChallengeEntry[]>([]);
+  const [participationModalOpen, setParticipationModalOpen] = useState(false);
+  const [selectedChallengeForParticipation, setSelectedChallengeForParticipation] =
+    useState<ActiveChallenge | null>(null);
+  const [selectedCoachChallengeId, setSelectedCoachChallengeId] = useState<string>("");
 
   // Simulação de data para testes de Coach / Administrador
   const [simulatedDay, setSimulatedDay] = useState<number | null>(null);
@@ -82,7 +111,34 @@ export const ChallengesView: React.FC = () => {
   const isDiaDeTransicao = diaAtual === ultimoDiaDoMes;
   // -------------------------------
 
+  const loadActiveChallenges = useCallback(async () => {
+    try {
+      const res = await fetch("/api/active-challenges");
+      if (res.ok) {
+        const data = await res.json();
+        setActiveChallenges(data);
+        if (data.length > 0 && !selectedCoachChallengeId) {
+          setSelectedCoachChallengeId(data[0].id);
+        }
+      }
+    } catch (err) {
+      console.warn("Erro ao buscar desafios ativos:", err);
+    }
+  }, [selectedCoachChallengeId]);
+
+  const loadEntries = useCallback(async () => {
+    try {
+      const entries = await getChallengeEntries();
+      setChallengeEntries(entries);
+    } catch (err) {
+      console.warn("Erro ao buscar entradas de desafios:", err);
+    }
+  }, []);
+
   const loadActive = async () => {
+    loadActiveChallenges();
+    loadEntries();
+
     try {
       const { data, error } = await supabase
         .from("challenge_photos")
@@ -337,6 +393,24 @@ export const ChallengesView: React.FC = () => {
               {hall.length}
             </span>
           </button>
+
+          {(isCoach || persona === "moderator") && (
+            <button
+              id="tab-coach"
+              onClick={() => setTab("coach")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                tab === "coach"
+                  ? "bg-[#D8B46A] text-black shadow-lg shadow-[#D8B46A]/20"
+                  : "bg-[#151515] text-[#D8B46A] hover:bg-[#D8B46A]/10 border border-[#D8B46A]/40"
+              }`}
+            >
+              <Crown className="w-3.5 h-3.5 fill-current" />
+              <span>Painel do Coach</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/30 font-black">
+                {challengeEntries.length}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Category Filters (when on active tab) */}
@@ -361,20 +435,162 @@ export const ChallengesView: React.FC = () => {
 
       {/* Tab: Active Challenges */}
       {tab === "active" && (
-        <div className="space-y-6">
-          {items.length === 0 ? (
-            <div className="p-12 rounded-3xl bg-[#151515] border border-[#2B2B2F] text-center space-y-3">
-              <Camera className="w-10 h-10 text-[#9B9BA1] mx-auto opacity-50" />
-              <h3 className="text-base font-bold text-[#F5F5F7]">
-                Nenhuma foto ativa no momento
-              </h3>
-              <p className="text-xs text-[#9B9BA1] max-w-md mx-auto">
-                {isFaseInscricao
-                  ? "As inscrições estão abertas! Publique sua transformação agora para concorrer à premiação."
-                  : "Aguarde a próxima fase de inscrições no dia 7 para enviar suas fotos."}
-              </p>
+        <div className="space-y-8">
+          {/* Desafios Oficiais Ativos - Cards Imersivos e Modernos */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider text-[#F5F5F7] flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#D8B46A]" />
+                  Desafios Ativos da Temporada
+                </h3>
+                <p className="text-xs text-[#9B9BA1]">
+                  Participe das disputas de transformação, envie suas fotos para o Supabase Storage e dispute o cinturão oficial Vyra.
+                </p>
+              </div>
             </div>
-          ) : (
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {activeChallenges.map((ch) => {
+                const isFinished = ch.status === "finished" || ch.status === "closed";
+                return (
+                  <div
+                    key={ch.id}
+                    className="relative overflow-hidden rounded-3xl bg-[#151515] border border-[#2B2B2F] hover:border-[#D8B46A]/60 transition-all shadow-2xl flex flex-col justify-between group"
+                  >
+                    {/* Imagem de Capa Imersiva com Gradiente */}
+                    <div className="relative h-44 w-full overflow-hidden bg-black">
+                      <img
+                        src={
+                          ch.banner_url ||
+                          "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=1200&q=80"
+                        }
+                        alt={ch.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#151515] via-[#151515]/50 to-transparent" />
+
+                      {/* Badges de Topo */}
+                      <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-1 rounded-full bg-black/70 text-[#D8B46A] border border-[#D8B46A]/40 text-[10px] font-black uppercase tracking-wider backdrop-blur-md flex items-center gap-1.5">
+                          <Flame className="w-3 h-3 text-[#FF6A2A]" />
+                          {ch.protocol || "Vyra Protocol"}
+                        </span>
+
+                        {isFinished ? (
+                          <span className="px-2.5 py-1 rounded-full bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40 text-[10px] font-bold backdrop-blur-md flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Finalizado
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-[#FF6A2A]/20 text-[#FF9A62] border border-[#FF6A2A]/40 text-[10px] font-bold backdrop-blur-md flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Inscrições Abertas
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Título sobre a imagem */}
+                      <div className="absolute bottom-3 left-4 right-4">
+                        <h4 className="text-lg font-black text-[#F5F5F7] tracking-tight leading-snug drop-shadow-md">
+                          {ch.title}
+                        </h4>
+                        {ch.subtitle && (
+                          <p className="text-xs font-semibold text-[#D8B46A] drop-shadow-sm">
+                            {ch.subtitle}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Conteúdo & Premiação */}
+                    <div className="p-5 space-y-4 flex-1 flex flex-col justify-between">
+                      <div className="space-y-3">
+                        <p className="text-xs text-[#9B9BA1] leading-relaxed line-clamp-2">
+                          {ch.description}
+                        </p>
+
+                        {/* Bloco de Premiação */}
+                        {ch.prize && (
+                          <div className="p-3 rounded-2xl bg-[#D8B46A]/10 border border-[#D8B46A]/30 flex items-start gap-2.5">
+                            <Crown className="w-4 h-4 text-[#D8B46A] shrink-0 mt-0.5" />
+                            <div className="text-xs space-y-0.5">
+                              <span className="font-bold text-[#D8B46A] block">Premiação Oficial:</span>
+                              <span className="text-[#F5F5F7] font-medium">{ch.prize}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Campeão se finalizado */}
+                        {ch.winner_name && (
+                          <div className="p-2.5 rounded-xl bg-[#34C759]/15 border border-[#34C759]/30 flex items-center gap-2 text-xs">
+                            <Crown className="w-4 h-4 text-[#34C759]" />
+                            <span className="text-[#34C759] font-bold">
+                              Campeão Declarado: <strong className="text-[#F5F5F7]">{ch.winner_name}</strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer do Card */}
+                      <div className="pt-3 border-t border-[#2B2B2F] flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-1.5 text-xs text-[#9B9BA1]">
+                          <Users className="w-3.5 h-3.5 text-[#D8B46A]" />
+                          <span>{ch.entries_count || 0} atletas inscritos</span>
+                        </div>
+
+                        {/* Botão Participar / Enviar Foto */}
+                        {isFinished ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-[#6E6E73] bg-[#1D1D1F] border border-[#2B2B2F] cursor-not-allowed"
+                          >
+                            Submissões Encerradas
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChallengeForParticipation(ch);
+                              setParticipationModalOpen(true);
+                            }}
+                            className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-[#D8B46A] hover:brightness-110 text-black active:scale-95 transition-all flex items-center gap-1.5 shadow-md shadow-[#D8B46A]/20 cursor-pointer"
+                          >
+                            <Camera className="w-3.5 h-3.5 fill-black" />
+                            <span>Participar / Enviar Foto</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Galeria da Comunidade e Votações */}
+          <div className="space-y-4 pt-4 border-t border-[#2B2B2F]">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black uppercase tracking-wider text-[#9B9BA1] flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#FF6A2A]" />
+                Galeria de Transformações dos Atletas
+              </h4>
+            </div>
+
+            {items.length === 0 ? (
+              <div className="p-12 rounded-3xl bg-[#151515] border border-[#2B2B2F] text-center space-y-3">
+                <Camera className="w-10 h-10 text-[#9B9BA1] mx-auto opacity-50" />
+                <h3 className="text-base font-bold text-[#F5F5F7]">
+                  Nenhuma foto ativa no momento
+                </h3>
+                <p className="text-xs text-[#9B9BA1] max-w-md mx-auto">
+                  {isFaseInscricao
+                    ? "As inscrições estão abertas! Publique sua transformação agora para concorrer à premiação."
+                    : "Aguarde a próxima fase de inscrições no dia 7 para enviar suas fotos."}
+                </p>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {items.map((c) => {
                 const beforeSrc =
@@ -452,7 +668,7 @@ export const ChallengesView: React.FC = () => {
                       )}
 
                       {/* Botão Encerrar para Coach / Moderador */}
-                      {(persona === "coach" || persona === "moderator") && (
+                      {(isCoach || persona === "moderator") && (
                         <button
                           id={`close-${c.id}`}
                           onClick={() => closeChallenge(c.id)}
@@ -468,7 +684,23 @@ export const ChallengesView: React.FC = () => {
               })}
             </div>
           )}
+          </div>
         </div>
+      )}
+
+      {/* Tab: Coach Evaluation Panel */}
+      {tab === "coach" && (
+        <CoachChallengeEvaluationPanel
+          challenges={activeChallenges}
+          entries={challengeEntries}
+          selectedChallengeId={selectedCoachChallengeId || activeChallenges[0]?.id || ""}
+          onSelectChallenge={(id) => setSelectedCoachChallengeId(id)}
+          onRefresh={() => {
+            loadActive();
+            loadEntries();
+            loadHall();
+          }}
+        />
       )}
 
       {/* Tab: Hall of Fame */}
@@ -599,6 +831,17 @@ export const ChallengesView: React.FC = () => {
         open={publishOpen}
         onClose={() => setPublishOpen(false)}
         onPublished={loadActive}
+      />
+
+      {/* Modal: Participação Oficial em Desafio com Upload Storage */}
+      <ChallengeParticipationModal
+        isOpen={participationModalOpen}
+        onClose={() => setParticipationModalOpen(false)}
+        challenge={selectedChallengeForParticipation || activeChallenges[0] || null}
+        onEntryCreated={() => {
+          loadActive();
+          loadEntries();
+        }}
       />
     </div>
   );

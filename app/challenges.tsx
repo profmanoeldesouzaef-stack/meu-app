@@ -7,6 +7,8 @@ import { useEffect, useState, useCallback } from "react";
 
 import { colors, radius, spacing, fs } from "@/src/theme/tokens";
 import { useApp } from "@/src/context/AppContext";
+import { useSubscription } from "@/src/hooks/useSubscription";
+import { PaywallGateMobile } from "@/src/components/PaywallGateMobile";
 import { api } from "@/src/api/client";
 import { supabase } from "@/src/lib/supabase"; 
 import * as ImagePicker from "expo-image-picker";
@@ -17,6 +19,19 @@ export default function Challenges() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t, persona } = useApp();
+  const { canAccess } = useSubscription();
+
+  // Bloqueio de Telas (Regra de Negócio Crítica: Paywall Guard)
+  if (!canAccess("challenges")) {
+    return (
+      <PaywallGateMobile
+        title="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
+        description="Libere seu acesso para visualizar seu treino e dieta."
+        onSubscribe={() => router.push("/(tabs)/profile")}
+        onGoBack={() => router.back()}
+      />
+    );
+  }
   const [tab, setTab] = useState<"active" | "hall">("active");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [items, setItems] = useState<any[]>([]);

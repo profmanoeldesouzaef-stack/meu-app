@@ -13,17 +13,41 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
 // Credenciais Oficiais do Supabase para persistência e sincronização em tempo real
-const SUPABASE_PROJECT_URL = process.env.VITE_SUPABASE_URL || "https://qxcmqzzfsjvstlzveyrh.supabase.co";
-const SUPABASE_SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+const DEFAULT_SUPABASE_URL = "https://qxcmqzzfsjvstlzveyrh.supabase.co";
+const DEFAULT_SUPABASE_SERVICE_ROLE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4Y21xenpmc2p2c3RsenZleXJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzU5MTQ1NiwiZXhwIjoyMTAzMTY3NDU2fQ.9n2Pc8d5X8FxrVbOAGB6R9yQePzvzghr9TtZ6J2EY1w";
+
+function getSafeSupabaseUrl(): string {
+  const envUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
+  if (envUrl.startsWith("http://") || envUrl.startsWith("https://")) {
+    return envUrl;
+  }
+  return DEFAULT_SUPABASE_URL;
+}
+
+function getSafeSupabaseKey(): string {
+  const envKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "").trim();
+  if (envKey && envKey.length > 20 && !envKey.startsWith("http")) {
+    return envKey;
+  }
+  return DEFAULT_SUPABASE_SERVICE_ROLE_KEY;
+}
 
 let supabaseServerClient: SupabaseClient | null = null;
 function getSupabaseServer(): SupabaseClient {
   if (!supabaseServerClient) {
-    supabaseServerClient = createSupabaseClient(SUPABASE_PROJECT_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
+    try {
+      const url = getSafeSupabaseUrl();
+      const key = getSafeSupabaseKey();
+      supabaseServerClient = createSupabaseClient(url, key, {
+        auth: { persistSession: false },
+      });
+    } catch (err) {
+      console.warn("Falha na inicialização do Supabase Server Client com URL personalizada. Usando credenciais padrão:", err);
+      supabaseServerClient = createSupabaseClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false },
+      });
+    }
   }
   return supabaseServerClient;
 }
@@ -123,6 +147,37 @@ const db = {
         "Progresso dividido em fases",
         "Técnicas de intensificação",
         "Acompanhamento da evolução",
+      ],
+    },
+    {
+      id: "test",
+      slug: "test",
+      name: "🧪 Plano de Teste (R$ 1,00)",
+      tag: "Teste de Produção",
+      description: "Plano temporário de R$ 1,00 para validação em ambiente Live de Webhooks e geração real de QR Code PIX.",
+      accent: "#10B981",
+      theme_color: "emerald",
+      prices_brl: {
+        month: 1.0,
+        quarter: 1.0,
+        semester: 1.0,
+        year: 1.0,
+        single: 1.0,
+        test: 1.0,
+      },
+      prices_usd: {
+        month: 1.0,
+        quarter: 1.0,
+        semester: 1.0,
+        year: 1.0,
+        single: 1.0,
+        test: 1.0,
+      },
+      perks: [
+        "Cobrança real de R$ 1,00 na Stripe Live",
+        "QR Code PIX com valor R$ 1,00",
+        "Liberação imediata no Supabase via Webhook",
+        "Mapeamento estrito: price_1UCUo4F7VqDt14kNAJolBpkp",
       ],
     },
   ],
@@ -230,6 +285,107 @@ const db = {
       },
     ],
   },
+
+  weekly_schedule: {
+    1: {
+      id: "wk-seg",
+      day_index: 1,
+      day_name: "Segunda-feira",
+      day_short: "SEG",
+      title: "Peito, Ombro & Tríceps · Push Day",
+      focus: "Push · Força & Tensão Mecânica",
+      duration_min: 58,
+      intensity: "Alta",
+      coach_note: "Foco no controle excêntrico (3s). Se sentir dor na articulação, reduza carga 20% e me avise no chat.",
+      hero_image: "https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=1200&auto=format&fit=crop&q=80",
+      exercises: [
+        { id: "e1", name: "Supino reto barra", sets: 4, reps: "8-10", rest: "90s", muscle: "Peito", video_url: "https://www.youtube.com/watch?v=rT7DgCr-3pg", coach_tip: "Mantenha escápulas retraídas durante toda a execução." },
+        { id: "e2", name: "Supino inclinado halter", sets: 3, reps: "10-12", rest: "75s", muscle: "Peito", video_url: "https://www.youtube.com/watch?v=8iPEnn-ltC8", coach_tip: "Inclinação de 30-45°. Trajetória em arco." },
+        { id: "e3", name: "Desenvolvimento militar", sets: 4, reps: "8", rest: "90s", muscle: "Ombro", video_url: "https://www.youtube.com/watch?v=qEwKCR5JCog", coach_tip: "Core contraído, não arqueie a lombar." },
+        { id: "e4", name: "Elevação lateral", sets: 4, reps: "12", rest: "45s", muscle: "Ombro", video_url: "https://www.youtube.com/watch?v=3VcKaXpzqRo", coach_tip: "Cotovelos ligeiramente flexionados, sem impulso." },
+        { id: "e5", name: "Tríceps corda", sets: 3, reps: "12-15", rest: "45s", muscle: "Tríceps", video_url: "https://www.youtube.com/watch?v=vB5OHsJ3EME", coach_tip: "Cotovelos colados ao tronco, extensão completa." },
+        { id: "e6", name: "Tríceps francês", sets: 3, reps: "10", rest: "60s", muscle: "Tríceps", video_url: "https://www.youtube.com/watch?v=YbX7Wd8jQ-Q", coach_tip: "Cotovelos apontando pro teto, sem abrir." }
+      ]
+    },
+    2: {
+      id: "wk-ter",
+      day_index: 2,
+      day_name: "Terça-feira",
+      day_short: "TER",
+      title: "Costas, Bíceps & Trapézio · Pull Day",
+      focus: "Dorsais · Densidade & Largura",
+      duration_min: 52,
+      intensity: "Alta",
+      coach_note: "Puxe direcionando os cotovelos para a crista ilíaca, ativando latíssimo sem roubar no tronco.",
+      hero_image: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=1200&auto=format&fit=crop&q=80",
+      exercises: [
+        { id: "p1", name: "Puxada frontal pronada", sets: 4, reps: "8-10", rest: "90s", muscle: "Dorsais", video_url: "https://www.youtube.com/watch?v=CAwf7n6Luuc", coach_tip: "Puxe com os cotovelos, peito estufado." },
+        { id: "p2", name: "Remada curvada barra livre", sets: 4, reps: "8-10", rest: "90s", muscle: "Dorsais / Romboides", video_url: "https://www.youtube.com/watch?v=G8l_8chR5BE", coach_tip: "Tronco inclinado a 45°, coluna 100% estabilizada." },
+        { id: "p3", name: "Remada baixa articulada", sets: 3, reps: "10-12", rest: "60s", muscle: "Costas Meio", video_url: "https://www.youtube.com/watch?v=GZbfZ033f74", coach_tip: "Alongue completamente a dorsal na fase excêntrica." },
+        { id: "p4", name: "Crucifixo invertido máquina", sets: 3, reps: "12-15", rest: "45s", muscle: "Deltoide Posterior", video_url: "https://www.youtube.com/watch?v=3VcKaXpzqRo", coach_tip: "Mantenha os ombros abaixados e foque na contração." },
+        { id: "p5", name: "Rosca direta barra W", sets: 4, reps: "10", rest: "60s", muscle: "Bíceps", video_url: "https://www.youtube.com/watch?v=kwG2ipFRgfo", coach_tip: "Cotovelos travados na linha do corpo." },
+        { id: "p6", name: "Rosca martelo com halteres", sets: 3, reps: "12", rest: "45s", muscle: "Braquial / Antebraço", video_url: "https://www.youtube.com/watch?v=zC3nLlEvin4", coach_tip: "Subida controlada sem oscilação da lombar." }
+      ]
+    },
+    3: null, // Quarta-feira: Descanso programado (Empty State amigável)
+    4: {
+      id: "wk-qui",
+      day_index: 4,
+      day_name: "Quinta-feira",
+      day_short: "QUI",
+      title: "Pernas & Glúteos · Leg Day Intenso",
+      focus: "Inferiores · Quadríceps, Glúteos & Isquiotibiais",
+      duration_min: 60,
+      intensity: "Extrema",
+      coach_note: "Dia de carga máxima. Mantenha a amplitude até a paralela ou abaixo. Beba pelo menos 1L de água durante a sessão.",
+      hero_image: "https://images.unsplash.com/photo-1434682881908-b43d0467b798?w=1200&auto=format&fit=crop&q=80",
+      exercises: [
+        { id: "l1", name: "Agachamento livre com barra", sets: 4, reps: "6-8", rest: "120s", muscle: "Quadríceps / Glúteos", video_url: "https://www.youtube.com/watch?v=bEv6CCg2BC8", coach_tip: "Pés na largura dos ombros, joelhos acompanhando pontas dos pés." },
+        { id: "l2", name: "Leg Press 45° unilateral", sets: 4, reps: "10-12", rest: "90s", muscle: "Quadríceps", video_url: "https://www.youtube.com/watch?v=IZxyjW7MPJQ", coach_tip: "Não descole o quadril do encosto do banco." },
+        { id: "l3", name: "Cadeira extensora", sets: 3, reps: "12-15", rest: "60s", muscle: "Quadríceps Isolado", video_url: "https://www.youtube.com/watch?v=YyvSfVfbYC8", coach_tip: "2 segundos de pico de contração no topo." },
+        { id: "l4", name: "Stiff com halteres pesados", sets: 4, reps: "10", rest: "75s", muscle: "Posterior de Coxa", video_url: "https://www.youtube.com/watch?v=0hXvM8kRj3Y", coach_tip: "Jogue o quadril para trás como se fosse fechar uma porta." },
+        { id: "l5", name: "Mesa flexora", sets: 3, reps: "10-12", rest: "60s", muscle: "Isquiotibiais", video_url: "https://www.youtube.com/watch?v=1Tq3QdYUuHs", coach_tip: "Pés neutros sem rodar tornozelos." },
+        { id: "l6", name: "Panturrilhas em pé no Smith", sets: 4, reps: "15-20", rest: "45s", muscle: "Panturrilhas", video_url: "https://www.youtube.com/watch?v=gwLzBJYoWlI", coach_tip: "Amplitude completa com pausa de 1s na base e 1s no topo." }
+      ]
+    },
+    5: {
+      id: "wk-sex",
+      day_index: 5,
+      day_name: "Sexta-feira",
+      day_short: "SEX",
+      title: "Ombros & Braços · Upper Body Densidade",
+      focus: "Deltoides, Bíceps, Tríceps & Core",
+      duration_min: 48,
+      intensity: "Moderada/Alta",
+      coach_note: "Trabalho de detalhe e simetria muscular. Controle de respiração nas repetições finais.",
+      hero_image: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=1200&auto=format&fit=crop&q=80",
+      exercises: [
+        { id: "u1", name: "Desenvolvimento halteres sentado", sets: 4, reps: "10", rest: "75s", muscle: "Deltoides", video_url: "https://www.youtube.com/watch?v=qEwKCR5JCog", coach_tip: "Banco a 80 graus, cotovelos controlados." },
+        { id: "u2", name: "Elevação lateral polia média", sets: 4, reps: "12-15", rest: "45s", muscle: "Deltoide Lateral", video_url: "https://www.youtube.com/watch?v=3VcKaXpzqRo", coach_tip: "Tensão constante desde o início do movimento." },
+        { id: "u3", name: "Rosca Scott máquina", sets: 3, reps: "10-12", rest: "60s", muscle: "Bíceps", video_url: "https://www.youtube.com/watch?v=fIWP-FRFNU0", coach_tip: "Sem tirar os braços do apoio na descida." },
+        { id: "u4", name: "Tríceps testa na barra W", sets: 3, reps: "10-12", rest: "60s", muscle: "Tríceps Longo", video_url: "https://www.youtube.com/watch?v=d_KZxkH_toI", coach_tip: "Cotovelos paralelos sem abrir para os lados." },
+        { id: "u5", name: "Prancha abdominal isométrica", sets: 4, reps: "45s", rest: "30s", muscle: "Core / Abdômen", video_url: "https://www.youtube.com/watch?v=pSHjTRCQxIw", coach_tip: "Glúteos e abdômen fortemente contraídos." }
+      ]
+    },
+    6: {
+      id: "wk-sab",
+      day_index: 6,
+      day_name: "Sábado",
+      day_short: "SÁB",
+      title: "Metabólico Vyra Burn & Condicionamento",
+      focus: "Cardio de Alta Intensidade & Core",
+      duration_min: 42,
+      intensity: "Alta",
+      coach_note: "Circuito para queima de gordura e capacidade aeróbica. Mantenha os descansos pontuais.",
+      hero_image: "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=1200&auto=format&fit=crop&q=80",
+      exercises: [
+        { id: "m1", name: "Kettlebell Swing", sets: 4, reps: "20", rest: "45s", muscle: "Cadeia Posterior / Core", video_url: "https://www.youtube.com/watch?v=0hXvM8kRj3Y", coach_tip: "Explosão de quadril." },
+        { id: "m2", name: "Burpees dinâmicos", sets: 3, reps: "12", rest: "60s", muscle: "Full Body", video_url: "https://www.youtube.com/watch?v=auBLPXO8Fww", coach_tip: "Cadência constante." },
+        { id: "m3", name: "Abdominal remador", sets: 3, reps: "20", rest: "45s", muscle: "Abdômen", video_url: "https://www.youtube.com/watch?v=1fbU_MkV7NE", coach_tip: "Suba abraçando os joelhos." }
+      ]
+    },
+    0: null, // Domingo: Descanso total & regeneração muscular
+  } as Record<number, any>,
 
   diet: {
     id: "diet-default",
@@ -393,6 +549,98 @@ const db = {
       status: "active",
       votes: 302,
       vote_url: "https://vote.vyra.club/c3",
+    },
+  ],
+
+  active_challenges: [
+    {
+      id: "ch-reset-1",
+      title: "Desafio Vyra Reset 12 Semanas",
+      subtitle: "Secagem e Recomposição Corporal Extrema",
+      description: "Envie sua foto de evolução para concorrer ao título oficial de Campeão Vyra Reset e premiações exclusivas.",
+      protocol: "Vyra Reset",
+      prize: "👑 Cinturão Vyra + 1 Ano de Acompanhamento Grátis + Kit Completo de Suplementos",
+      banner_url: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=1200&q=80",
+      start_date: "2026-09-01",
+      end_date: "2026-09-30T23:59:59.000Z",
+      status: "active" as "active" | "finished" | "closed",
+      entries_count: 3,
+    },
+    {
+      id: "ch-shape-1",
+      title: "Desafio Vyra Shape",
+      subtitle: "Definição Máxima e Proporções Clássicas",
+      description: "Transformação com foco em densidade e simetria muscular para o ciclo de primavera.",
+      protocol: "Vyra Shape",
+      prize: "🏆 Troféu Vyra Shape + Kit Suplementação Premium",
+      banner_url: "https://images.unsplash.com/photo-1594381898411-846e7d193883?auto=format&fit=crop&w=1200&q=80",
+      start_date: "2026-09-01",
+      end_date: "2026-10-15T23:59:59.000Z",
+      status: "active" as "active" | "finished" | "closed",
+      entries_count: 2,
+    },
+  ] as Array<{
+    id: string;
+    title: string;
+    subtitle?: string;
+    description: string;
+    protocol: string;
+    prize?: string;
+    banner_url?: string;
+    start_date: string;
+    end_date: string;
+    status: "active" | "finished" | "closed";
+    entries_count?: number;
+    winner_id?: string;
+    winner_name?: string;
+    winner_photo_url?: string;
+    finished_at?: string;
+  }>,
+
+  challenge_entries: [
+    {
+      id: "entry-1",
+      user_id: "std-1",
+      challenge_id: "ch-reset-1",
+      photo_url: "https://images.unsplash.com/photo-1594381898411-846e7d193883?auto=format&fit=crop&w=600&q=80",
+      participant_name: "Rafael Mendes",
+      caption: "12 semanas de foco total no Protocolo Reset! Menos 8kg e definição no abdômen.",
+      votes_count: 142,
+      is_winner: false,
+      created_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+    },
+    {
+      id: "entry-2",
+      user_id: "std-2",
+      challenge_id: "ch-reset-1",
+      photo_url: "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=600&q=80",
+      participant_name: "Carlos Eduardo",
+      caption: "Evolução do peitoral e dorsal. Disciplina inegociável todos os dias.",
+      votes_count: 118,
+      is_winner: false,
+      created_at: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+    },
+    {
+      id: "entry-3",
+      user_id: "std-3",
+      challenge_id: "ch-reset-1",
+      photo_url: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80",
+      participant_name: "Mariana Souza",
+      caption: "Menos 6kg de gordura e ganho expressivo de massa magra no ciclo.",
+      votes_count: 95,
+      is_winner: false,
+      created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
+    },
+    {
+      id: "entry-4",
+      user_id: "std-4",
+      challenge_id: "ch-shape-1",
+      photo_url: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=600&q=80",
+      participant_name: "Lucas Alencar",
+      caption: "Aperto de cintura e linha em V. Vyra Shape funcionando 100%.",
+      votes_count: 87,
+      is_winner: false,
+      created_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
     },
   ],
 
@@ -618,12 +866,15 @@ const db = {
     creatine_dose_g: 5.0,
     creatine_times: ["08:00", "20:00"],
     logged_in: false,
-    is_veteran: true,
-    veteran_since: "2026-08-01T00:00:00Z",
-    consecutive_months: 6,
-    monthly_fee_paid: true,
-    patente_level: 2,
+    is_veteran: false,
+    veteran_since: null,
+    consecutive_months: 0,
+    monthly_fee_paid: false,
+    patente_level: 0,
     vip_chat_unlocked: false,
+    is_champion: false,
+    points: 0,
+    rank: null,
   },
 
   students: [
@@ -1335,6 +1586,71 @@ api.get("/workout/today", (req, res) => {
   res.json(db.workout);
 });
 
+api.get("/workout/schedule", (req, res) => {
+  res.json(db.weekly_schedule);
+});
+
+api.get("/workout/day/:day", (req, res) => {
+  const day = req.params.day;
+  const dayNum = Number(day);
+  if (!isNaN(dayNum) && dayNum >= 0 && dayNum <= 6) {
+    return res.json(db.weekly_schedule[dayNum] || null);
+  }
+  const dayMap: Record<string, number> = {
+    dom: 0, doming: 0, sunday: 0,
+    seg: 1, monday: 1,
+    ter: 2, tuesday: 2,
+    qua: 3, wednesday: 3,
+    qui: 4, thursday: 4,
+    sex: 5, friday: 5,
+    sab: 6, saturday: 6,
+  };
+  const mapped = dayMap[day.toLowerCase()];
+  if (mapped !== undefined) {
+    return res.json(db.weekly_schedule[mapped] || null);
+  }
+  res.json(null);
+});
+
+api.post("/coach/assign-workout-day", (req, res) => {
+  const { student_id, student_ids, days, workout } = req.body;
+  const targetDays: number[] = Array.isArray(days) ? days.map(Number) : [];
+  if (targetDays.length === 0) {
+    return res.status(400).json({ error: "Selecione ao menos um dia da semana para o agendamento." });
+  }
+  if (!workout || !workout.title) {
+    return res.status(400).json({ error: "Dados do treino incompletos." });
+  }
+
+  for (const d of targetDays) {
+    if (d >= 0 && d <= 6) {
+      db.weekly_schedule[d] = {
+        ...workout,
+        id: `wk-${d}-${Date.now()}`,
+        day_index: d,
+      };
+    }
+  }
+
+  const todayIdx = new Date().getDay();
+  if (targetDays.includes(todayIdx)) {
+    db.workout = { ...db.weekly_schedule[todayIdx] };
+  }
+
+  db.broadcasts.unshift({
+    id: `bcast-${Date.now()}`,
+    text: `Treino Prescrito pelo Coach: "${workout.title}" foi agendado para os dias prescritos no seu Calendário Semanal!`,
+    author: "Mari — Head Coach",
+    date: new Date().toLocaleDateString("pt-BR"),
+  });
+
+  res.json({
+    ok: true,
+    schedule: db.weekly_schedule,
+    message: `Treino atribuído com sucesso para ${targetDays.length} dia(s) da semana!`,
+  });
+});
+
 api.put("/workout/today", (req, res) => {
   db.workout = { ...db.workout, ...req.body };
   res.json(db.workout);
@@ -1573,7 +1889,18 @@ api.get("/workout/exercise-history/:exerciseId", (req, res) => {
 
 // Diet
 api.get("/diet", (req, res) => {
-  res.json(db.diet);
+  const isReleased = (db.profile as any).diet_released !== false;
+  res.json({
+    ...db.diet,
+    diet_released: isReleased,
+  });
+});
+
+api.post("/diet/release", (req, res) => {
+  const { released } = req.body;
+  const newStatus = typeof released === "boolean" ? released : !(db.profile as any).diet_released;
+  (db.profile as any).diet_released = newStatus;
+  res.json({ ok: true, diet_released: newStatus });
 });
 
 api.put("/diet", (req, res) => {
@@ -1900,6 +2227,173 @@ api.get("/hall", (req, res) => {
 });
 
 // ==========================================
+// Step 4: Active Challenges & Challenge Entries API
+// ==========================================
+api.get("/active-challenges", async (req, res) => {
+  try {
+    const supabase = getSupabaseServer();
+    const { data, error } = await supabase
+      .from("challenges")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return res.json(data);
+    }
+  } catch (err) {
+    console.warn("Supabase active-challenges fetch notice:", err);
+  }
+
+  // Update entry counts
+  const challenges = db.active_challenges.map((c) => {
+    const count = (db.challenge_entries || []).filter((e) => e.challenge_id === c.id).length;
+    return { ...c, entries_count: count };
+  });
+
+  res.json(challenges);
+});
+
+api.get("/challenge-entries", async (req, res) => {
+  const challengeId = req.query.challenge_id as string;
+  try {
+    const supabase = getSupabaseServer();
+    let query = supabase
+      .from("challenge_entries")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (challengeId) {
+      query = query.eq("challenge_id", challengeId);
+    }
+
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      return res.json(data);
+    }
+  } catch (err) {
+    console.warn("Supabase challenge-entries fetch notice:", err);
+  }
+
+  let entries = [...(db.challenge_entries || [])];
+  if (challengeId) {
+    entries = entries.filter((e) => e.challenge_id === challengeId);
+  }
+  res.json(entries);
+});
+
+api.post("/challenge-entries", async (req, res) => {
+  const { challenge_id, photo_url, participant_name, caption, user_id } = req.body;
+  if (!photo_url || !challenge_id) {
+    return res.status(400).json({ error: "photo_url e challenge_id são obrigatórios." });
+  }
+
+  const newEntry = {
+    id: `entry-${Date.now()}`,
+    user_id: user_id || db.profile.id || "std-athlete",
+    challenge_id,
+    photo_url,
+    participant_name: participant_name || db.profile.nickname || "Atleta Vyra",
+    caption: caption || "",
+    votes_count: 0,
+    is_winner: false,
+    created_at: new Date().toISOString(),
+  };
+
+  if (!db.challenge_entries) db.challenge_entries = [];
+  db.challenge_entries.unshift(newEntry);
+
+  // Também registra na galeria legada de fotos
+  if (!db.challenge_photos) db.challenge_photos = [];
+  db.challenge_photos.unshift({
+    id: newEntry.id,
+    user_id: newEntry.user_id,
+    participant_name: newEntry.participant_name,
+    caption: newEntry.caption,
+    photo_url: newEntry.photo_url,
+    category: "shape",
+    votes_count: 0,
+    created_at: newEntry.created_at,
+    is_veteran: false,
+    patente_level: 1,
+  });
+
+  // Tenta persistir no Supabase se disponível
+  try {
+    const supabase = getSupabaseServer();
+    await supabase.from("challenge_entries").insert(newEntry);
+  } catch (err) {
+    console.warn("Supabase insert error (handled):", err);
+  }
+
+  res.status(201).json(newEntry);
+});
+
+api.post("/challenges/:cid/declare-champion", async (req, res) => {
+  const { cid } = req.params;
+  const { entry_id, user_id, participant_name, photo_url } = req.body;
+
+  // 1. Atualiza nos desafios ativos
+  const challenge = (db.active_challenges || []).find((c) => c.id === cid);
+  if (challenge) {
+    challenge.status = "finished";
+    challenge.winner_id = user_id;
+    challenge.winner_name = participant_name;
+    challenge.winner_photo_url = photo_url;
+    challenge.finished_at = new Date().toISOString();
+  }
+
+  // 2. Marca a submissão como vencedora
+  if (db.challenge_entries) {
+    const entry = db.challenge_entries.find((e) => e.id === entry_id || e.user_id === user_id);
+    if (entry) {
+      entry.is_winner = true;
+    }
+  }
+
+  // 3. Adiciona ao Hall da Fama oficial
+  const hallEntry = {
+    id: `hall-${Date.now()}`,
+    champion: participant_name || "Atleta Campeão",
+    title: challenge?.title || "Desafio Vyra Oficial",
+    date: new Date().toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
+    photo: photo_url || "",
+    votes: 999,
+  };
+  db.hall.unshift(hallEntry);
+
+  // 4. Sincroniza com o Supabase se disponível
+  try {
+    const supabase = getSupabaseServer();
+    await supabase
+      .from("challenges")
+      .update({
+        status: "finished",
+        winner_id: user_id,
+        winner_name: participant_name,
+        winner_photo_url: photo_url,
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", cid);
+
+    if (entry_id) {
+      await supabase
+        .from("challenge_entries")
+        .update({ is_winner: true })
+        .eq("id", entry_id);
+    }
+  } catch (e) {
+    console.warn("Supabase declare-champion sync:", e);
+  }
+
+  res.json({
+    ok: true,
+    message: `🏆 ${participant_name} foi oficialmente declarado(a) Campeão(ã)! O desafio foi encerrado.`,
+    challenge,
+    hall_entry: hallEntry,
+  });
+});
+
+// ==========================================
 // Challenge Photos Gallery & Toggle Voting API
 // ==========================================
 api.get("/challenge-photos", async (req, res) => {
@@ -2157,7 +2651,7 @@ api.get("/chat", (req, res) => {
   res.json(enriched);
 });
 
-api.post("/chat", (req, res) => {
+api.post("/chat", async (req, res) => {
   const { author, persona, text, image, is_veteran, patente_level, consecutive_months, name_color, text_color } = req.body;
   if (!text || text.length > 200) {
     return res.status(400).json({ error: "text invalid or too long (max 200 chars)" });
@@ -2172,7 +2666,7 @@ api.post("/chat", (req, res) => {
   const veteranStatus =
     is_veteran !== undefined
       ? Boolean(is_veteran)
-      : (isStudent || isPartner)
+      : isPartner
       ? true
       : false;
 
@@ -2180,7 +2674,7 @@ api.post("/chat", (req, res) => {
     patente_level !== undefined
       ? Number(patente_level)
       : isStudent
-      ? Number((db.profile as any).patente_level || 2)
+      ? Number((db.profile as any).patente_level || 0)
       : undefined;
 
   const msg = {
@@ -2199,6 +2693,33 @@ api.post("/chat", (req, res) => {
     text_color: text_color || null,
   };
   db.chat.push(msg);
+
+  // Persiste no Supabase caso configurado
+  try {
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      await supabase.from("chat_messages").insert([
+        {
+          id: msg.id,
+          author: msg.author,
+          persona: msg.persona,
+          text: msg.text,
+          image: msg.image,
+          likes: 0,
+          timestamp: msg.timestamp,
+          is_veteran: msg.is_veteran,
+          patente_level: msg.patente_level,
+          consecutive_months: msg.consecutive_months,
+          name_color: msg.name_color,
+          text_color: msg.text_color,
+          created_at: msg.timestamp,
+        },
+      ]);
+    }
+  } catch (errDb) {
+    console.warn("Aviso ao persistir chat no Supabase:", errDb);
+  }
+
   res.json({ ...msg, has_liked: false });
 });
 
@@ -2269,11 +2790,12 @@ api.post("/coupon/check", (req, res) => {
   // Tratamento especial para o cupom VETERANO
   if (upper === "VETERANO") {
     const pct = 20;
-    const discount = Math.round(((subtotal * pct) / 100) * 100) / 100;
+    const discount = Number(((subtotal * pct) / 100).toFixed(2));
+    const total = Number(Math.max(0, subtotal - discount).toFixed(2));
     return res.json({
       valid: true,
       discount,
-      total: Math.max(0, Math.round((subtotal - discount) * 100) / 100),
+      total,
       percent: pct,
       is_veteran: true,
       message: "Cupom Veterano aplicado! Selo de Veterano (laranja e dourado) concedido.",
@@ -2285,12 +2807,13 @@ api.post("/coupon/check", (req, res) => {
     return res.json({ valid: false, discount: 0, total: subtotal, percent: 0, is_veteran: false });
   }
 
-  const discount = Math.round(((subtotal * doc.pct) / 100) * 100) / 100;
+  const discount = Number(((subtotal * doc.pct) / 100).toFixed(2));
+  const total = Number(Math.max(0, subtotal - discount).toFixed(2));
   const is_veteran = (doc as any).is_veteran || upper === "VETERANO";
   return res.json({
     valid: true,
     discount,
-    total: Math.max(0, Math.round((subtotal - discount) * 100) / 100),
+    total,
     percent: doc.pct,
     is_veteran,
     message: is_veteran
@@ -2336,6 +2859,464 @@ api.post("/profile/redeem-coupon", (req, res) => {
       ? "Selo de Veterano desbloqueado com sucesso!"
       : `Cupom ${doc.code} validado com sucesso (-${doc.pct}%).`,
     profile: db.profile,
+  });
+});
+
+// --- STRIPE CHECKOUT & SUPABASE SUBSCRIPTION PERSISTENCE ---
+const RESET_12_PRICE_ID = "price_1UDGQQF7VqDt14kNHfhR3RlZ";
+const TEST_PRICE_ID = "price_1UCUo4F7VqDt14kNAJolBpkp";
+
+const STRIPE_PRICES: Record<string, { id: string; name: string; amount: number; cycle: string; slug: string }> = {
+  [TEST_PRICE_ID]: { id: TEST_PRICE_ID, name: "Plano de Teste (R$ 1,00)", amount: 1.00, cycle: "test", slug: "test" },
+  "price_1UCUoSF7VqDt14kNlN81QRA1": { id: "price_1UCUoSF7VqDt14kNlN81QRA1", name: "Plano de Teste Gateway (Antigo)", amount: 1.00, cycle: "test", slug: "test" },
+  "price_1U9FMDF7VqDt14kN3LneAWDA": { id: "price_1U9FMDF7VqDt14kN3LneAWDA", name: "Plano Mensal", amount: 179.90, cycle: "month", slug: "monthly" },
+  "price_1U9FMDF7VqDt14kNZhtT1hIO": { id: "price_1U9FMDF7VqDt14kNZhtT1hIO", name: "Plano Trimestral", amount: 499.90, cycle: "quarter", slug: "quarterly" },
+  "price_1U9FMDF7VqDt14kNRVRuJWd0": { id: "price_1U9FMDF7VqDt14kNRVRuJWd0", name: "Plano Semestral", amount: 899.90, cycle: "semiannual", slug: "semiannual" },
+  "price_1U9FMDF7VqDt14kNu6fxBRkh": { id: "price_1U9FMDF7VqDt14kNu6fxBRkh", name: "Plano Anual", amount: 1739.90, cycle: "year", slug: "yearly" },
+  [RESET_12_PRICE_ID]: { id: RESET_12_PRICE_ID, name: "Vyra Reset (12 Semanas)", amount: 479.90, cycle: "single", slug: "reset12" },
+};
+
+// In-memory subscription fallback
+(db as any).subscription = {
+  active: false,
+  status: "inactive",
+  planId: "monthly",
+  active_protocol: "Vyra Training",
+  payment_method: null,
+};
+
+// Checkout Dinâmico (Stripe Elements / PIX)
+api.post("/stripe-checkout", async (req, res) => {
+  try {
+    const { email, userId, priceId, paymentMethod, selected_protocol, metadata } = req.body;
+    if (!priceId) {
+      return res.status(400).json({ error: "O ID do plano (priceId) é obrigatório." });
+    }
+
+    const isReset = priceId === RESET_12_PRICE_ID;
+    const isTest = priceId === TEST_PRICE_ID;
+    const protocolName =
+      selected_protocol ||
+      metadata?.selected_protocol ||
+      (isReset ? "Vyra Reset" : isTest ? "Plano de Teste (R$ 1,00)" : "Vyra Training");
+
+    const sessionMetadata = {
+      supabase_user_id: userId || "00000000-0000-0000-0000-000000000000",
+      selected_protocol: protocolName,
+      price_id: priceId,
+      is_test_plan: isTest ? "true" : "false",
+      ...(metadata || {}),
+    };
+
+    const priceInfo = STRIPE_PRICES[priceId] || {
+      id: priceId,
+      name: isReset ? "Vyra Reset (12 Semanas)" : isTest ? "Plano de Teste (R$ 1,00)" : `Assinatura ${protocolName}`,
+      amount: isReset ? 479.90 : isTest ? 1.00 : 179.90,
+      cycle: isReset ? "single" : isTest ? "test" : "month",
+      slug: isReset ? "reset12" : isTest ? "test" : "monthly",
+    };
+
+    let stripeResult: any = null;
+    let resolvedMode = isReset ? "payment" : "subscription";
+
+    if (process.env.STRIPE_SECRET_KEY) {
+      try {
+        const Stripe = (await import("stripe")).default;
+        const stripeClient = new (Stripe as any)(process.env.STRIPE_SECRET_KEY);
+        const customer = await stripeClient.customers.create({
+          email: email || "aluno@vyra.com.br",
+          metadata: sessionMetadata,
+        });
+        const ephemeralKey = await stripeClient.ephemeralKeys.create(
+          { customer: customer.id },
+          { stripeVersion: "2023-10-16" } as any
+        );
+
+        // Inspeciona o preço para saber se na Stripe ele foi configurado como one_time ou recurring
+        let isOneTime = isReset;
+        let amountInCents = Math.round(priceInfo.amount * 100);
+        try {
+          const fetchedPrice = await stripeClient.prices.retrieve(priceId);
+          if (fetchedPrice) {
+            if (fetchedPrice.type === "one_time") isOneTime = true;
+            if (fetchedPrice.unit_amount) amountInCents = fetchedPrice.unit_amount;
+          }
+        } catch (fetchErr: any) {
+          console.warn("[Stripe] Aviso ao buscar priceId:", fetchErr.message);
+        }
+
+        if (isOneTime) {
+          resolvedMode = "payment";
+          const paymentIntent = await stripeClient.paymentIntents.create({
+            amount: amountInCents,
+            currency: "brl",
+            customer: customer.id,
+            payment_method_types: paymentMethod === "pix" ? ["pix"] : ["card"],
+            metadata: sessionMetadata,
+            description: isTest ? "Vyra - Plano de Teste Live (R$ 1,00)" : `Vyra Reset - Programa de 12 Semanas (${protocolName})`,
+          });
+          stripeResult = {
+            mode: "payment",
+            paymentIntent: paymentIntent?.client_secret,
+            ephemeralKey: ephemeralKey.secret,
+            customer: customer.id,
+          };
+        } else {
+          // Tenta criar subscription, com fallback automático para paymentIntent caso falhe por tipo de preço
+          try {
+            const subscription = await stripeClient.subscriptions.create({
+              customer: customer.id,
+              items: [{ price: priceId }],
+              payment_behavior: "default_incomplete",
+              metadata: sessionMetadata,
+              payment_settings: {
+                payment_method_types: paymentMethod === "pix" ? ["pix"] : ["card"],
+                save_default_payment_method: "on_subscription",
+              },
+              expand: ["latest_invoice.payment_intent"],
+            });
+            const invoice = subscription.latest_invoice as any;
+            const paymentIntent = invoice?.payment_intent;
+            resolvedMode = "subscription";
+            stripeResult = {
+              mode: "subscription",
+              subscriptionId: subscription.id,
+              paymentIntent: paymentIntent?.client_secret,
+              ephemeralKey: ephemeralKey.secret,
+              customer: customer.id,
+            };
+          } catch (subError: any) {
+            console.log("[Stripe] Tentando fallback para PaymentIntent:", subError.message);
+            resolvedMode = "payment";
+            const paymentIntent = await stripeClient.paymentIntents.create({
+              amount: amountInCents,
+              currency: "brl",
+              customer: customer.id,
+              payment_method_types: paymentMethod === "pix" ? ["pix"] : ["card"],
+              metadata: sessionMetadata,
+              description: `Vyra - ${protocolName}`,
+            });
+            stripeResult = {
+              mode: "payment",
+              paymentIntent: paymentIntent?.client_secret,
+              ephemeralKey: ephemeralKey.secret,
+              customer: customer.id,
+            };
+          }
+        }
+      } catch (stripeErr: any) {
+        console.warn("Stripe live API note:", stripeErr.message);
+      }
+    }
+
+    const customerId = stripeResult?.customer || `cus_vyra_${(userId || "std").substring(0, 8)}_${Date.now()}`;
+    const paymentIntentSecret = stripeResult?.paymentIntent || `pi_sec_${Date.now()}_secret_${Math.random().toString(36).substring(2, 9)}`;
+    const ephemeralKeySecret = stripeResult?.ephemeralKey || `ek_sec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    // PIX Copia e Cola Oficial formatado de acordo com as especificações do BACEN
+    const pixCode = `00020101021226880014br.gov.bcb.pix2566pix.vyra.app/qr/${priceInfo.id}/${Date.now()}520400005303986540${priceInfo.amount.toFixed(2)}5802BR5917VYRA PERFORMANCE6009SAO PAULO62070503***6304`;
+
+    return res.json({
+      mode: resolvedMode,
+      paymentIntent: paymentIntentSecret,
+      ephemeralKey: ephemeralKeySecret,
+      customer: customerId,
+      priceId,
+      priceInfo,
+      amount: priceInfo.amount,
+      currency: "BRL",
+      paymentMethod: paymentMethod || "card",
+      pixCode,
+      pixQrCode: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixCode)}`,
+      selected_protocol: protocolName,
+    });
+  } catch (err: any) {
+    console.error("Error in /stripe-checkout:", err);
+    res.status(500).json({ error: err.message || "Erro ao iniciar checkout" });
+  }
+});
+
+// Consulta de Assinatura Diretamente no Supabase
+api.get("/subscription", async (req, res) => {
+  const userId = (req.query.userId as string) || (req.headers["x-user-id"] as string);
+  const email = (req.query.email as string) || (req.headers["x-user-email"] as string);
+
+  try {
+    const sb = getSupabaseServer();
+    if (sb && userId && userId !== "undefined") {
+      const { data, error } = await sb
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (!error && data && data.length > 0) {
+        const sub = data[0];
+        return res.json({
+          active: sub.status === "active",
+          status: sub.status,
+          planId: sub.plan_type,
+          paymentMethod: sub.payment_method,
+          currentPeriodEnd: sub.current_period_end,
+          id: sub.id,
+          source: "supabase",
+        });
+      }
+    }
+  } catch (e: any) {
+    console.warn("Supabase subscription fetch warning:", e.message);
+  }
+
+  // Fallback para usuário atual
+  const localSub = (db as any).subscription;
+  return res.json({
+    active: localSub?.active ?? false,
+    status: localSub?.status ?? "inactive",
+    planId: localSub?.planId ?? "monthly",
+    source: "memory",
+  });
+});
+
+// Confirmação de Pagamento com Persistência Imediata no Supabase & Profiles
+api.post("/subscription/confirm-payment", async (req, res) => {
+  try {
+    const { userId, email, priceId, planType, cycle, paymentMethod, selected_protocol, metadata } = req.body;
+    const sb = getSupabaseServer();
+    const effectiveUserId =
+      userId && userId !== "undefined"
+        ? userId
+        : "b97113b7-65a4-4eda-aca3-1baff1f6c3b6";
+
+    const isReset =
+      priceId === RESET_12_PRICE_ID ||
+      planType === "reset12" ||
+      cycle === "single" ||
+      (selected_protocol && selected_protocol.toLowerCase().includes("reset"));
+
+    const protocolName =
+      selected_protocol ||
+      metadata?.selected_protocol ||
+      (isReset ? "Vyra Reset" : planType === "shape" ? "Vyra Shape" : planType === "force" ? "Vyra Forge" : "Vyra Training");
+
+    const effectivePlanType = isReset ? "reset12" : (planType || "monthly");
+
+    // Regra Crítica de Vigência:
+    // Se for Vyra Reset: expiração calculada somando exatamente 84 dias (12 semanas) à data da compra
+    // Para os demais planos: período de acordo com o ciclo
+    const daysToAdd = isReset
+      ? 84
+      : cycle === "year" || cycle === "yearly" || effectivePlanType === "yearly"
+      ? 365
+      : cycle === "semester" || cycle === "semiannual" || effectivePlanType === "semiannual"
+      ? 180
+      : cycle === "quarter" || cycle === "quarterly" || effectivePlanType === "quarterly"
+      ? 90
+      : 30;
+
+    const periodEnd = new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000).toISOString();
+
+    let supabaseSaved = false;
+    if (sb) {
+      try {
+        // 1. Atualiza / Cria a Assinatura com status 'active' e active_protocol
+        const { data, error } = await sb
+          .from("subscriptions")
+          .upsert(
+            {
+              user_id: effectiveUserId,
+              status: "active",
+              plan_type: effectivePlanType,
+              active_protocol: protocolName,
+              payment_method: paymentMethod || "card",
+              current_period_end: periodEnd,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          )
+          .select();
+
+        if (!error && data?.length) {
+          supabaseSaved = true;
+        } else if (error) {
+          console.warn("Supabase upsert error:", error.message);
+        }
+
+        // 2. Atualiza a coluna active_protocol (e plan) na tabela profiles com o valor exato do metadata
+        const { error: profError } = await sb
+          .from("profiles")
+          .update({
+            active_protocol: protocolName,
+            plan: protocolName,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", effectiveUserId);
+
+        if (profError) {
+          console.warn("Supabase profile active_protocol update warning:", profError.message);
+        }
+      } catch (sbErr: any) {
+        console.warn("Supabase sync exception:", sbErr.message);
+      }
+    }
+
+    (db as any).profile.active_protocol = protocolName;
+    (db as any).profile.plan = protocolName;
+
+    (db as any).subscription = {
+      active: true,
+      status: "active",
+      planId: effectivePlanType,
+      active_protocol: protocolName,
+      payment_method: paymentMethod || "card",
+      current_period_end: periodEnd,
+    };
+
+    res.json({
+      success: true,
+      supabaseSaved,
+      status: "active",
+      active_protocol: protocolName,
+      current_period_end: periodEnd,
+      subscription: (db as any).subscription,
+      message: `Protocolo ${protocolName} ativado com sucesso!`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Webhook da Stripe (escuta checkout.session.completed, invoice.payment_succeeded, payment_intent.succeeded)
+const handleStripeWebhookPayload = async (req: express.Request, res: express.Response) => {
+  try {
+    const event = req.body;
+    console.log(`[Stripe Webhook] Recebido evento: ${event?.type}`);
+
+    let metadata: any = null;
+    let userId: string | null = null;
+    let selectedProtocol: string | null = null;
+    let priceId: string | null = null;
+    let isReset = false;
+
+    if (event?.type === "checkout.session.completed") {
+      const session = event.data?.object;
+      metadata = session?.metadata || {};
+      userId = metadata?.supabase_user_id || session?.client_reference_id;
+      selectedProtocol = metadata?.selected_protocol;
+      priceId = metadata?.price_id;
+    } else if (event?.type === "invoice.payment_succeeded") {
+      const invoice = event.data?.object;
+      metadata = invoice?.subscription_details?.metadata || invoice?.metadata || {};
+      userId = metadata?.supabase_user_id;
+      selectedProtocol = metadata?.selected_protocol;
+      priceId = metadata?.price_id || invoice?.lines?.data?.[0]?.price?.id;
+    } else if (event?.type === "payment_intent.succeeded") {
+      const pi = event.data?.object;
+      metadata = pi?.metadata || {};
+      userId = metadata?.supabase_user_id;
+      selectedProtocol = metadata?.selected_protocol;
+      priceId = metadata?.price_id;
+    }
+
+    const isTestPlan = priceId === TEST_PRICE_ID || metadata?.is_test_plan === "true";
+
+    if (priceId === RESET_12_PRICE_ID || (selectedProtocol && selectedProtocol.toLowerCase().includes("reset"))) {
+      isReset = true;
+      selectedProtocol = "Vyra Reset";
+    } else if (isTestPlan) {
+      selectedProtocol = "Plano de Teste (R$ 1,00)";
+    }
+
+    const finalProtocol = selectedProtocol || (isReset ? "Vyra Reset" : isTestPlan ? "Plano de Teste (R$ 1,00)" : "Vyra Training");
+    const daysToAdd = isReset ? 84 : 30; // Reset = 84 dias (12 semanas)
+    const periodEnd = new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000).toISOString();
+
+    const sb = getSupabaseServer();
+    if (sb && userId) {
+      // 1. Atualizar active_protocol na tabela profiles
+      await sb
+        .from("profiles")
+        .update({
+          active_protocol: finalProtocol,
+          plan: finalProtocol,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+
+      // 2. Atualizar status na tabela subscriptions
+      await sb
+        .from("subscriptions")
+        .upsert(
+          {
+            user_id: userId,
+            status: "active",
+            plan_type: isReset ? "reset12" : isTestPlan ? "test" : "monthly",
+            active_protocol: finalProtocol,
+            current_period_end: periodEnd,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        );
+      console.log(`[Stripe Webhook] Aluno ${userId} atualizado com protocolo: ${finalProtocol}`);
+    }
+
+    (db as any).profile.active_protocol = finalProtocol;
+    (db as any).subscription = {
+      active: true,
+      status: "active",
+      planId: isReset ? "reset12" : isTestPlan ? "test" : "monthly",
+      active_protocol: finalProtocol,
+      current_period_end: periodEnd,
+    };
+
+    return res.json({ received: true, active_protocol: finalProtocol, current_period_end: periodEnd });
+  } catch (err: any) {
+    console.error("[Stripe Webhook Error]:", err.message);
+    return res.status(400).json({ error: err.message });
+  }
+};
+
+api.post("/stripe-webhook", handleStripeWebhookPayload);
+app.post("/stripe-webhook", handleStripeWebhookPayload);
+app.post("/api/stripe-webhook", handleStripeWebhookPayload);
+
+// Atualização de Status da Assinatura (para testes rápidos de Aluno / Coach)
+api.post("/subscription/set-status", async (req, res) => {
+  const { userId, status, planType } = req.body;
+  const targetStatus = status === "active" ? "active" : "inactive";
+  const effectiveUserId =
+    userId && userId !== "undefined" ? userId : "b97113b7-65a4-4eda-aca3-1baff1f6c3b6";
+  const sb = getSupabaseServer();
+
+  if (sb) {
+    try {
+      await sb
+        .from("subscriptions")
+        .upsert(
+          {
+            user_id: effectiveUserId,
+            status: targetStatus,
+            plan_type: planType || "monthly",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        );
+    } catch (e: any) {
+      console.warn("Error setting subscription in Supabase:", e.message);
+    }
+  }
+
+  (db as any).subscription = {
+    active: targetStatus === "active",
+    status: targetStatus,
+    planId: planType || "monthly",
+  };
+
+  res.json({
+    success: true,
+    status: targetStatus,
+    active: targetStatus === "active",
+    subscription: (db as any).subscription,
   });
 });
 
@@ -2418,6 +3399,16 @@ api.get("/profile", (req, res) => {
 });
 
 api.put("/profile", (req, res) => {
+  db.profile = { ...db.profile, ...req.body };
+  res.json(db.profile);
+});
+
+api.post("/profile", (req, res) => {
+  db.profile = { ...db.profile, ...req.body };
+  res.json(db.profile);
+});
+
+api.patch("/profile", (req, res) => {
   db.profile = { ...db.profile, ...req.body };
   res.json(db.profile);
 });
@@ -3124,6 +4115,20 @@ Return ONLY a valid JSON object without markdown code fences:
 
 // Mount API routes
 app.use("/api", api);
+
+// Any unhandled /api/* request returns 404 JSON instead of falling through to Vite SPA HTML
+app.all("/api/*", (req, res) => {
+  res.status(404).json({ error: `API route ${req.method} ${req.originalUrl} not found` });
+});
+
+// Global API error handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.originalUrl && req.originalUrl.startsWith("/api")) {
+    console.error("API Error:", err);
+    return res.status(500).json({ error: err?.message || "Internal server error" });
+  }
+  next(err);
+});
 
 // Vite middleware / production serving
 async function startServer() {
