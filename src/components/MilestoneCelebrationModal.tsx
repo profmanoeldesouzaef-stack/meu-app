@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Crown, Medal, Award, Sparkles, X, Check, ArrowRight, Palette } from "lucide-react";
+import { Crown, Medal, Award, X, Check, ArrowRight, Palette } from "lucide-react";
 import { VeteranBadge, PatentBadge, getStarEvolutionInfo } from "../lib/patents";
 
 export interface MilestoneCelebrationData {
@@ -106,7 +106,7 @@ export const MilestoneCelebrationModal: React.FC<MilestoneCelebrationModalProps>
           {data.type === "five_stars" ? (
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#FFE082] via-[#FFD700] to-[#FF8F00] p-1 flex items-center justify-center shadow-[0_0_35px_rgba(255,215,0,0.6)] ring-4 ring-[#FFF8E1]/80 animate-pulse">
               <div className="w-full h-full rounded-full bg-[#121008] flex items-center justify-center flex-col">
-                <Sparkles className="w-9 h-9 text-[#FFD700] fill-[#FFD700] animate-spin" style={{ animationDuration: "12s" }} />
+                <Medal className="w-9 h-9 text-[#FFD700] fill-[#FFD700]" />
                 <span className="text-[10px] font-black text-[#FFE082] mt-0.5 tracking-wider">
                   ★ EVOLUÍDA ★
                 </span>
@@ -136,7 +136,7 @@ export const MilestoneCelebrationModal: React.FC<MilestoneCelebrationModalProps>
         {/* Milestone Headers */}
         <div className="space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#1D1D1F] border border-[#2B2B2F] text-[#D8B46A]">
-            <Sparkles className="w-3 h-3" />
+            <Award className="w-3 h-3" />
             <span>
               {data.type === "five_stars"
                 ? "Evolução Estelar Desbloqueada"

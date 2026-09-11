@@ -12,7 +12,8 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Sparkles,
+  Activity,
+  Camera,
   Info,
   Trophy,
   X,
@@ -67,6 +68,8 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     trackWeightsEnabled,
     setActiveView,
     currentUserEmail,
+    workoutReleased,
+    setWorkoutReleased,
   } = useApp();
 
   const isCoach =
@@ -90,7 +93,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
         <EmptyStatePaywall
           message="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
           buttonText="Assinar Agora"
-          onGoToProfile={() => setActiveView("profile")}
+          onGoToProfile={() => setActiveView("paywall")}
         />
       );
     }
@@ -103,6 +106,30 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
           title="Complete sua Anamnese & Fotos para Liberar os Treinos"
           description="Para que o treinador monte sua periodização de treino com total segurança biomecânica e precisão para seu biotipo, você deve finalizar a anamnese e anexar suas fotografias corporais."
         />
+      );
+    }
+
+    if (!workoutReleased) {
+      return (
+        <div className="p-8 sm:p-12 rounded-3xl bg-[#151515] border border-[#2B2B2F] text-center space-y-4 max-w-lg mx-auto shadow-2xl animate-in fade-in zoom-in-95 my-12">
+          <div className="w-16 h-16 rounded-2xl bg-[#FF6A2A]/15 text-[#FF6A2A] flex items-center justify-center mx-auto border border-[#FF6A2A]/30">
+            <Clock className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-extrabold text-[#F5F5F7] tracking-tight">
+              Aguardando liberação do treino pelo coach
+            </h2>
+            <p className="text-sm text-[#9B9BA1] leading-relaxed">
+              Seu treinador está analisando sua anamnese e estruturando a sua periodização personalizada de treinos. Assim que for liberada pelo Coach, sua rotina diária e exercícios prescritos aparecerão aqui.
+            </p>
+          </div>
+          <div className="pt-2">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1D1D1F] border border-[#2B2B2F] text-xs font-semibold text-[#FF6A2A]">
+              <Activity className="w-3.5 h-3.5" />
+              <span>Anamnese registrada · Fila de Prescrição</span>
+            </div>
+          </div>
+        </div>
       );
     }
   }
@@ -1256,7 +1283,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
             onClick={() => onOpenFormChecker()}
             className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-[#FF6A2A] to-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shadow-lg shadow-[#FF6A2A]/20 transition-all flex items-center gap-1.5"
           >
-            <Sparkles className="w-4 h-4 stroke-[2.5]" />
+            <Activity className="w-4 h-4 stroke-[2.5]" />
             <span>{t("cta.analyze")}</span>
           </button>
         </div>
@@ -1411,7 +1438,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
                       title="Analisar execução deste exercício com IA"
                       className="p-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#D8B46A] hover:bg-[#D8B46A]/20 transition-colors"
                     >
-                      <Sparkles className="w-4 h-4" />
+                      <Activity className="w-4 h-4" />
                     </button>
 
                     {/* Botão Encolher / Expandir Bloco de Treino */}
@@ -1992,7 +2019,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
                   }}
                   className="w-full py-3 rounded-xl bg-[#D8B46A]/15 border border-[#D8B46A]/40 text-[#D8B46A] hover:bg-[#D8B46A]/25 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95"
                 >
-                  <Sparkles className="w-4 h-4 text-[#D8B46A]" />
+                  <Activity className="w-4 h-4 text-[#D8B46A]" />
                   <span>Analisar Minha Execução com IA (Câmera)</span>
                 </button>
               </div>
@@ -2053,7 +2080,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
                 onClick={handleFinishWorkout}
                 className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
               >
-                <Sparkles className="w-4 h-4" />
+                <Camera className="w-4 h-4" />
                 <span>Gerar Templates para Instagram (Fundo Transparente)</span>
               </button>
               <button

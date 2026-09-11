@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Calendar,
   AlertTriangle,
-  Sparkles,
   ExternalLink,
   ChevronDown,
   Loader2,

@@ -114,6 +114,12 @@ interface AppContextType {
   vipChatUnlocked: boolean;
   setVipChatUnlocked: (unlocked: boolean) => void;
   hasVipChatColors: boolean;
+  onboardingCompleted: boolean;
+  setOnboardingCompleted: (v: boolean) => void;
+  workoutReleased: boolean;
+  setWorkoutReleased: (v: boolean) => void;
+  dietReleased: boolean;
+  setDietReleased: (v: boolean) => void;
   milestoneCelebration: MilestoneCelebrationData | null;
   triggerMilestoneCelebration: (data: MilestoneCelebrationData) => void;
   dismissMilestoneCelebration: () => void;
@@ -290,8 +296,8 @@ const dict = {
     "login.subtitle": "Clube premium de treino e performance humana",
     "login.email": "E-mail",
     "login.password": "Senha",
-    "ana.title": "Anamnese Esportiva",
-    "ana.desc": "Mapeamento metabólico, objetivos e restrições para máxima precisão.",
+    "ana.title": "Anamnese Base do Aluno",
+    "ana.desc": "Dados biométricos e histórico base para calibração personalizada.",
     "ana.age": "Idade",
     "ana.gender": "Gênero",
     "ana.height": "Altura (cm)",
@@ -472,8 +478,8 @@ const dict = {
     "login.subtitle": "Premium human training & performance club",
     "login.email": "Email",
     "login.password": "Password",
-    "ana.title": "Sports Anamnesis",
-    "ana.desc": "Metabolic mapping, goals and restrictions for maximum precision.",
+    "ana.title": "Student Base Anamnesis",
+    "ana.desc": "Base biometric data and history for personalized coaching calibration.",
     "ana.age": "Age",
     "ana.gender": "Gender",
     "ana.height": "Height (cm)",
@@ -510,6 +516,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [subscription, setSubscriptionState] = useState<Subscription>({ active: false });
   const [activeView, setActiveView] = useState<ActiveView>("home");
   const [selectedPlan, setSelectedPlan] = useState<{ plan: Plan; cycle: BillingCycle } | null>(null);
+
+  const [onboardingCompleted, setOnboardingCompletedState] = useState<boolean>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const val = localStorage.getItem("vyra_onboarding_completed");
+        if (val !== null) return val === "true";
+        const an = localStorage.getItem("vyra_anamnesis");
+        if (an === "true") return true;
+      }
+    } catch {}
+    return true;
+  });
+
+  const [workoutReleased, setWorkoutReleasedState] = useState<boolean>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const val = localStorage.getItem("vyra_workout_released");
+        if (val !== null) return val === "true";
+      }
+    } catch {}
+    return true;
+  });
+
+  const [dietReleased, setDietReleasedState] = useState<boolean>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const val = localStorage.getItem("vyra_diet_released");
+        if (val !== null) return val === "true";
+      }
+    } catch {}
+    return true;
+  });
+
+  const setOnboardingCompleted = useCallback((v: boolean) => {
+    setOnboardingCompletedState(v);
+    localStorage.setItem("vyra_onboarding_completed", String(v));
+  }, []);
+
+  const setWorkoutReleased = useCallback((v: boolean) => {
+    setWorkoutReleasedState(v);
+    localStorage.setItem("vyra_workout_released", String(v));
+  }, []);
+
+  const setDietReleased = useCallback((v: boolean) => {
+    setDietReleasedState(v);
+    localStorage.setItem("vyra_diet_released", String(v));
+  }, []);
 
   // Community unread badge state (when clicked, disappears)
   const [unreadCommunityCount, setUnreadCommunityCount] = useState<number>(3);
@@ -995,13 +1048,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // 2. Consulta direta à tabela profiles do Supabase para verificar papel real e gamificação
+      let profileRecord: any = null;
       try {
         if (usuario.id) {
-          const { data: profileRecord, error } = await supabase
+          const { data: fetchedProfile, error } = await supabase
             .from("profiles")
-            .select("role, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank, consecutive_months, is_veteran, monthly_fee_paid, patente_level")
+            .select(
+              "role, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank, consecutive_months, is_veteran, monthly_fee_paid, patente_level, onboarding_completed, workout_released, diet_released, plan_active, plan_type"
+            )
             .eq("id", usuario.id)
             .maybeSingle();
+
+          profileRecord = fetchedProfile;
 
           // Sincronização do Nome e Apelido Reais com o banco de dados / metadados
           const realName =
@@ -1064,6 +1122,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const vet = Boolean(profileRecord.is_veteran);
             setIsVeteranState(vet);
             localStorage.setItem("vyra_is_veteran", String(vet));
+
+            const localObDone =
+              localStorage.getItem("vyra_onboarding_completed") !== "false";
+            const remoteObDone = Boolean(
+              (profileRecord as any)?.onboarding_completed === true ||
+              (profileRecord as any)?.anamnesis_done === true ||
+              (profileRecord?.weight_kg && profileRecord?.height_cm)
+            );
+            const obDone = detectedPersona !== "student" || localObDone || remoteObDone;
+            setOnboardingCompletedState(obDone);
+            localStorage.setItem("vyra_onboarding_completed", String(obDone));
+
+            const wkRel = (profileRecord as any)?.workout_released !== undefined
+              ? Boolean((profileRecord as any).workout_released)
+              : (detectedPersona !== "student");
+            setWorkoutReleasedState(wkRel);
+            localStorage.setItem("vyra_workout_released", String(wkRel));
+
+            const dtRel = (profileRecord as any)?.diet_released !== undefined
+              ? Boolean((profileRecord as any).diet_released)
+              : (detectedPersona !== "student");
+            setDietReleasedState(dtRel);
+            localStorage.setItem("vyra_diet_released", String(dtRel));
           } else {
             // Se o perfil ainda não existir ou for novo aluno sem registros, zera tudo
             setIsChampionState(false);
@@ -1078,6 +1159,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem("vyra_monthly_fee_paid", "false");
             setIsVeteranState(false);
             localStorage.setItem("vyra_is_veteran", "false");
+
+            const isStudent = detectedPersona === "student";
+            const localObDone =
+              localStorage.getItem("vyra_onboarding_completed") !== "false";
+            const obDone = !isStudent || localObDone;
+            setOnboardingCompletedState(obDone);
+            localStorage.setItem("vyra_onboarding_completed", String(obDone));
+            setWorkoutReleasedState(!isStudent);
+            localStorage.setItem("vyra_workout_released", isStudent ? "false" : "true");
+            setDietReleasedState(!isStudent);
+            localStorage.setItem("vyra_diet_released", isStudent ? "false" : "true");
           }
         }
       } catch (e) {
@@ -1087,9 +1179,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setPersonaState(detectedPersona);
       localStorage.setItem("vyra_persona", detectedPersona);
 
-      // 3. Sincronização direta da assinatura ativa com o Supabase
+      // 3. Sincronização direta da assinatura ativa com o Supabase (consulta se o usuário possui plan_active === true)
       try {
-        if (usuario.id) {
+        const isPlanActiveInProfile = Boolean(profileRecord?.plan_active === true);
+
+        if (isPlanActiveInProfile) {
+          const activeSub: Subscription = {
+            active: true,
+            status: "active",
+            planId: profileRecord?.plan_type || "active_protocol",
+            paymentMethod: "portal_web",
+            in_grace_period: false,
+            days_left_in_grace: 0,
+          };
+          setSubscriptionState(activeSub);
+          localStorage.setItem("vyra_sub", JSON.stringify(activeSub));
+        } else if (usuario.id) {
           const { data: subData } = await supabase
             .from("subscriptions")
             .select("*")
@@ -1099,13 +1204,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (subData && subData.length > 0) {
             const sub = subData[0];
-            const isActive = sub.status === "active";
+            const periodEndMs = sub.current_period_end ? new Date(sub.current_period_end).getTime() : NaN;
+            const nowMs = Date.now();
+            const isPastEnd = !isNaN(periodEndMs) && nowMs > periodEndMs;
+            let isActive = sub.status === "active";
+            let inGracePeriod = sub.status === "in_grace_period" || sub.in_grace_period === true;
+            let daysLeftInGrace = 0;
+            if (isPastEnd || sub.status === "past_due" || sub.status === "in_grace_period") {
+              const daysOverdue = !isNaN(periodEndMs) ? (nowMs - periodEndMs) / (1000 * 60 * 60 * 24) : 1;
+              if (daysOverdue <= 3) {
+                inGracePeriod = true;
+                isActive = true;
+                daysLeftInGrace = Math.max(1, 3 - Math.floor(daysOverdue));
+              } else {
+                inGracePeriod = false;
+                isActive = false;
+              }
+            }
+
             const newSub = {
               active: isActive,
-              status: sub.status,
+              status: inGracePeriod ? "in_grace_period" : sub.status,
               planId: sub.plan_type,
               paymentMethod: sub.payment_method,
               currentPeriodEnd: sub.current_period_end,
+              current_period_end: sub.current_period_end,
+              in_grace_period: inGracePeriod,
+              days_left_in_grace: daysLeftInGrace,
             };
             setSubscriptionState(newSub);
             localStorage.setItem("vyra_sub", JSON.stringify(newSub));
@@ -1116,11 +1241,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               try {
                 const apiSub = await api.getSubscription(usuario.id, userEmail);
                 if (apiSub) {
-                  setSubscriptionState({
+                  const subObj = {
                     active: apiSub.active,
                     status: apiSub.status,
                     planId: apiSub.planId,
-                  });
+                    currentPeriodEnd: apiSub.currentPeriodEnd || (apiSub as any).current_period_end,
+                    current_period_end: (apiSub as any).current_period_end || apiSub.currentPeriodEnd,
+                    in_grace_period: (apiSub as any).in_grace_period,
+                    days_left_in_grace: (apiSub as any).days_left_in_grace,
+                  };
+                  setSubscriptionState(subObj);
+                  localStorage.setItem("vyra_sub", JSON.stringify(subObj));
                 }
               } catch {}
             }
@@ -1569,6 +1700,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLoggedInState(false);
     setCurrentUserEmailState("");
     setPersonaState("student");
+    setOnboardingCompletedState(false);
+    setWorkoutReleasedState(false);
+    setDietReleasedState(false);
+    localStorage.removeItem("vyra_onboarding_completed");
+    localStorage.removeItem("vyra_workout_released");
+    localStorage.removeItem("vyra_diet_released");
     setActiveView("home");
   }, []);
 
@@ -1761,6 +1898,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         vipChatUnlocked,
         setVipChatUnlocked,
         hasVipChatColors,
+        onboardingCompleted,
+        setOnboardingCompleted,
+        workoutReleased,
+        setWorkoutReleased,
+        dietReleased,
+        setDietReleased,
         milestoneCelebration,
         triggerMilestoneCelebration,
         dismissMilestoneCelebration,

@@ -9,7 +9,6 @@ import {
   UtensilsCrossed,
   Plus,
   Minus,
-  Sparkles,
   Camera,
   RefreshCw,
   Check,
@@ -79,6 +78,8 @@ export const DietView: React.FC = () => {
     photosDone,
     setActiveView,
     currentUserEmail,
+    dietReleased: appDietReleased,
+    setDietReleased: setAppDietReleased,
   } = useApp();
   const [diet, setDiet] = useState<Diet | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,7 +105,7 @@ export const DietView: React.FC = () => {
         <EmptyStatePaywall
           message="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
           buttonText="Assinar Agora"
-          onGoToProfile={() => setActiveView("profile")}
+          onGoToProfile={() => setActiveView("paywall")}
         />
       );
     }
@@ -159,14 +160,24 @@ export const DietView: React.FC = () => {
   const [quickAddGrams, setQuickAddGrams] = useState(100);
   const [editingFoodId, setEditingFoodId] = useState<string | null>(null);
   const [plateLoggedSuccess, setPlateLoggedSuccess] = useState(false);
-  const [dietReleased, setDietReleased] = useState<boolean>(true);
+  const [dietReleased, setDietReleased] = useState<boolean>(() =>
+    appDietReleased !== undefined ? appDietReleased : true
+  );
+
+  useEffect(() => {
+    if (appDietReleased !== undefined) {
+      setDietReleased(appDietReleased);
+    }
+  }, [appDietReleased]);
 
   useEffect(() => {
     api
       .getDiet()
       .then((data) => {
         if (data.diet_released !== undefined) {
-          setDietReleased(Boolean(data.diet_released));
+          const isRel = Boolean(data.diet_released);
+          setDietReleased(isRel);
+          setAppDietReleased(isRel);
         }
         // Enriquecer alimentos prescritos com quantidades e modo de preparo caso não estejam populados
         const enrichedFoods = data.foods.map((food) => {
@@ -192,6 +203,7 @@ export const DietView: React.FC = () => {
     try {
       const next = !dietReleased;
       setDietReleased(next);
+      setAppDietReleased(next);
       await api.toggleDietRelease(next);
     } catch (err) {
       console.error("Erro ao alterar liberação da dieta:", err);
@@ -618,9 +630,9 @@ export const DietView: React.FC = () => {
                       id={`swap-food-btn-${food.id}`}
                       onClick={() => handleOpenSwap(food)}
                       className="px-3 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#D8B46A] hover:bg-[#D8B46A]/20 hover:border-[#D8B46A]/50 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                      title="Substituir alimento com IA"
+                      title="Substituir alimento"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <RefreshCw className="w-3.5 h-3.5" />
                       <span>Substituir</span>
                     </button>
 
@@ -740,7 +752,7 @@ export const DietView: React.FC = () => {
             </div>
             <div className="pt-2">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#1D1D1F] border border-[#2B2B2F] text-xs font-semibold text-[#D8B46A]">
-                <Sparkles className="w-3.5 h-3.5" />
+                <Flame className="w-3.5 h-3.5" />
                 <span>Utilize "O que posso comer" e "Analisar prato" acima</span>
               </div>
             </div>
@@ -755,7 +767,7 @@ export const DietView: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center">
-                  <Sparkles className="w-4 h-4" />
+                  <RefreshCw className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#F5F5F7]">{t("diet.ai_title")}</h3>
@@ -895,7 +907,7 @@ export const DietView: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4" />
+                    <Camera className="w-4 h-4" />
                     <span>{plateAnalysis ? "Reanalisar Prato com IA" : "Identificar Alimentos e Macros"}</span>
                   </>
                 )}
@@ -967,7 +979,7 @@ export const DietView: React.FC = () => {
                 {plateAnalysis.assessment && (
                   <div className="p-3 rounded-xl bg-[#0A0A0A] border border-[#2B2B2F] space-y-1">
                     <span className="text-[10px] font-bold text-[#D8B46A] uppercase tracking-wider flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" />
+                      <ChefHat className="w-3 h-3" />
                       Avaliação Nutricional da IA
                     </span>
                     <p className="text-xs text-[#E5E5EA] leading-relaxed">
@@ -1376,7 +1388,7 @@ export const DietView: React.FC = () => {
                     : "text-[#9B9BA1] hover:text-[#F5F5F7]"
                 }`}
               >
-                <Sparkles className="w-4 h-4" />
+                <Flame className="w-4 h-4" />
                 <span>💡 Sugestões por Objetivo</span>
               </button>
             </div>
@@ -1590,7 +1602,7 @@ export const DietView: React.FC = () => {
 
                                   {recipe.dica_chef && (
                                     <div className="p-3 rounded-xl bg-[#D8B46A]/10 border border-[#D8B46A]/20 text-xs text-[#D8B46A] flex items-start gap-2">
-                                      <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
+                                      <ChefHat className="w-4 h-4 shrink-0 mt-0.5" />
                                       <div>
                                         <strong className="block text-[11px] uppercase tracking-wider">
                                           Dica do Chef & Nutri:
@@ -1654,7 +1666,7 @@ export const DietView: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" />
+                      <UtensilsCrossed className="w-4 h-4" />
                       <span>Sugerir Refeições Saudáveis</span>
                     </>
                   )}

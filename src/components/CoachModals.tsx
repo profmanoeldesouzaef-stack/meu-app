@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Calendar,
-  Sparkles,
   ArrowUpRight,
   CreditCard,
   Search,

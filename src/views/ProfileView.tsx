@@ -14,7 +14,6 @@ import {
   Moon,
   Droplets,
   Zap,
-  Sparkles,
   Check,
   ChevronRight,
   LogOut,
@@ -38,6 +37,7 @@ import {
   Users,
   DollarSign,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { SavedCardsModal } from "../components/SavedCardsModal";
 import { CoachFinancialModal, CoachStudentsModal } from "../components/CoachModals";
@@ -80,12 +80,16 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
-  // Profile form state
+  // Profile form state (Anamnese Inicial Base)
   const [fullName, setFullName] = useState("");
   const [nickname, setNickname] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80");
-  const [heightCm, setHeightCm] = useState(182);
-  const [weightKg, setWeightKg] = useState(81.1);
+  const [heightCm, setHeightCm] = useState<number | string>("");
+  const [weightKg, setWeightKg] = useState<number | string>("");
+  const [age, setAge] = useState<number | string>("");
+  const [primaryGoal, setPrimaryGoal] = useState("");
+  const [dietaryRestrictions, setDietaryRestrictions] = useState("");
+  const [medicalHistory, setMedicalHistory] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showSavedCardsModal, setShowSavedCardsModal] = useState(false);
@@ -93,25 +97,19 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const [showStudentsModal, setShowStudentsModal] = useState(false);
   const [supabaseRole, setSupabaseRole] = useState<string | null>(null);
 
-  // 20-day assessment state
+  // 20-day assessment state (Biometria & Perimetria do Ciclo)
   const [showAssessmentModal, setShowAssessmentModal] = useState(false);
   const [assessmentSaving, setAssessmentSaving] = useState(false);
   const [assessmentFeedback, setAssessmentFeedback] = useState<{ text: string; type: "success" | "error" } | null>(null);
-  const [armCm, setArmCm] = useState("39.5");
-  const [waistCm, setWaistCm] = useState("82.0");
-  const [chestCm, setChestCm] = useState("104.0");
-  const [thighCm, setThighCm] = useState("61.0");
-  const [assessmentWeight, setAssessmentWeight] = useState("81.1");
+  const [armCm, setArmCm] = useState("");
+  const [waistCm, setWaistCm] = useState("");
+  const [chestCm, setChestCm] = useState("");
+  const [thighCm, setThighCm] = useState("");
+  const [assessmentWeight, setAssessmentWeight] = useState("");
   const [assessmentNotes, setAssessmentNotes] = useState("");
-  const [photoFront, setPhotoFront] = useState<string>(
-    "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=500&auto=format&fit=crop&q=80"
-  );
-  const [photoSide, setPhotoSide] = useState<string>(
-    "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=500&auto=format&fit=crop&q=80"
-  );
-  const [photoBack, setPhotoBack] = useState<string>(
-    "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=500&auto=format&fit=crop&q=80"
-  );
+  const [photoFront, setPhotoFront] = useState<string>("");
+  const [photoSide, setPhotoSide] = useState<string>("");
+  const [photoBack, setPhotoBack] = useState<string>("");
 
   // Protocols Catalogue
   const PROTOCOLS = [
@@ -201,6 +199,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   };
 
   useEffect(() => {
+    setEditingProfile(false);
     // Busca no Supabase diretamente
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -221,12 +220,38 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 setWeightKg(data.weight_kg);
                 setAssessmentWeight(String(data.weight_kg));
               }
+              if (data.age) setAge(data.age);
+              if (data.primary_goal || data.goal) setPrimaryGoal(data.primary_goal || data.goal);
+              if (data.dietary_restrictions) setDietaryRestrictions(data.dietary_restrictions);
+              if (data.medical_history) setMedicalHistory(data.medical_history);
               if (data.arm_cm || data.right_arm_cm) setArmCm(String(data.arm_cm || data.right_arm_cm));
               if (data.waist_cm) setWaistCm(String(data.waist_cm));
               if (data.chest_cm) setChestCm(String(data.chest_cm));
               if (data.thigh_cm || data.right_leg_cm) setThighCm(String(data.thigh_cm || data.right_leg_cm));
             }
           });
+
+        supabase
+          .from("student_onboarding")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle()
+          .then(
+            ({ data: obData }) => {
+              if (obData) {
+                if (obData.age) setAge(obData.age);
+                if (obData.height_cm) setHeightCm(obData.height_cm);
+                if (obData.weight_kg) {
+                  setWeightKg(obData.weight_kg);
+                  setAssessmentWeight(String(obData.weight_kg));
+                }
+                if (obData.primary_goal) setPrimaryGoal(obData.primary_goal);
+                if (obData.dietary_restrictions) setDietaryRestrictions(obData.dietary_restrictions);
+                if (obData.medical_history) setMedicalHistory(obData.medical_history);
+              }
+            },
+            () => {}
+          );
       }
     });
 
@@ -235,28 +260,43 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
       .then((data) => {
         setProfile(data);
         const pendingName = localStorage.getItem("vyra_pending_fullname");
-        setFullName(pendingName || data.full_name || data.nickname || "Aluno Vyra");
-        setNickname(data.nickname);
+        if (pendingName || data.full_name) setFullName(pendingName || data.full_name || "");
+        if (data.nickname) setNickname(data.nickname);
         if (data.avatar_url) setAvatarUrl(data.avatar_url);
         if (data.height_cm) setHeightCm(data.height_cm);
-        if (data.weight_kg) setWeightKg(data.weight_kg);
-
-        if (localStorage.getItem("vyra_open_profile_edit") === "true" || localStorage.getItem("vyra_is_new_user") === "true") {
-          setEditingProfile(true);
-          localStorage.removeItem("vyra_open_profile_edit");
+        if (data.weight_kg) {
+          setWeightKg(data.weight_kg);
+          setAssessmentWeight(String(data.weight_kg));
         }
+        if ((data as any).age) setAge((data as any).age);
+        if ((data as any).primary_goal || (data as any).goal) setPrimaryGoal((data as any).primary_goal || (data as any).goal);
+        if ((data as any).dietary_restrictions) setDietaryRestrictions((data as any).dietary_restrictions);
+        if ((data as any).medical_history) setMedicalHistory((data as any).medical_history);
+        if (data.right_arm_cm || data.arm_cm) setArmCm(String(data.right_arm_cm || data.arm_cm));
+        if (data.waist_cm) setWaistCm(String(data.waist_cm));
+        if (data.chest_cm) setChestCm(String(data.chest_cm));
+        if (data.right_leg_cm || data.thigh_cm) setThighCm(String(data.right_leg_cm || data.thigh_cm));
+
+        // Limpa quaisquer flags residuais para não forçar a edição automática ao entrar no perfil
+        localStorage.removeItem("vyra_open_profile_edit");
+        localStorage.removeItem("vyra_is_new_user");
+        setEditingProfile(false);
       })
       .catch((e) => {
         console.error("Error loading profile:", e);
-        if (localStorage.getItem("vyra_open_profile_edit") === "true" || localStorage.getItem("vyra_is_new_user") === "true") {
-          setEditingProfile(true);
-        }
+        localStorage.removeItem("vyra_open_profile_edit");
+        localStorage.removeItem("vyra_is_new_user");
+        setEditingProfile(false);
       });
   }, []);
 
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
+      const numHeight = heightCm !== "" && heightCm !== undefined && heightCm !== null ? parseInt(String(heightCm)) : null;
+      const numWeight = weightKg !== "" && weightKg !== undefined && weightKg !== null ? parseFloat(String(weightKg)) : null;
+      const numAge = age !== "" && age !== undefined && age !== null ? parseInt(String(age)) : null;
+
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         await supabase.from("profiles").upsert({
@@ -264,18 +304,44 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           full_name: fullName,
           nickname,
           avatar_url: avatarUrl,
-          height_cm: heightCm,
-          weight_kg: weightKg,
+          height_cm: numHeight,
+          weight_kg: numWeight,
+          age: numAge,
+          goal: primaryGoal,
+          primary_goal: primaryGoal,
+          dietary_restrictions: dietaryRestrictions,
+          medical_history: medicalHistory,
           updated_at: new Date().toISOString(),
         });
+
+        try {
+          await supabase.from("student_onboarding").upsert({
+            user_id: user.id,
+            full_name: fullName,
+            nickname,
+            age: numAge,
+            weight_kg: numWeight,
+            height_cm: numHeight,
+            primary_goal: primaryGoal,
+            dietary_restrictions: dietaryRestrictions,
+            medical_history: medicalHistory,
+            updated_at: new Date().toISOString(),
+          });
+        } catch {
+          // ignore if table doesn't exist
+        }
       }
 
       const updated = await api.updateProfile({
         full_name: fullName,
         nickname,
         avatar_url: avatarUrl,
-        height_cm: heightCm,
-        weight_kg: weightKg,
+        height_cm: numHeight as any,
+        weight_kg: numWeight as any,
+        age: numAge as any,
+        primary_goal: primaryGoal,
+        dietary_restrictions: dietaryRestrictions,
+        medical_history: medicalHistory,
       });
       setProfile(updated);
       setEditingProfile(false);
@@ -320,19 +386,19 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
     setAssessmentSaving(true);
     setAssessmentFeedback(null);
 
-    const weightVal = parseFloat(assessmentWeight) || weightKg || 80.0;
-    const armVal = parseFloat(armCm) || 39.5;
-    const waistVal = parseFloat(waistCm) || 82.0;
-    const chestVal = parseFloat(chestCm) || 104.0;
-    const thighVal = parseFloat(thighCm) || 61.0;
+    const weightVal = assessmentWeight !== "" ? parseFloat(assessmentWeight) : (weightKg !== "" && weightKg !== undefined ? parseFloat(String(weightKg)) : null);
+    const armVal = armCm !== "" ? parseFloat(armCm) : null;
+    const waistVal = waistCm !== "" ? parseFloat(waistCm) : null;
+    const chestVal = chestCm !== "" ? parseFloat(chestCm) : null;
+    const thighVal = thighCm !== "" ? parseFloat(thighCm) : null;
 
     const newEntry: any = {
       id: `ass-${Date.now()}`,
       date: new Date().toISOString().split("T")[0],
-      photos: [photoFront, photoSide, photoBack],
-      photo_front: photoFront,
-      photo_side: photoSide,
-      photo_back: photoBack,
+      photos: [photoFront, photoSide, photoBack].filter(Boolean),
+      photo_front: photoFront || undefined,
+      photo_side: photoSide || undefined,
+      photo_back: photoBack || undefined,
       notes: assessmentNotes,
       measurements: {
         arm_cm: armVal,
@@ -341,7 +407,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         thigh_cm: thighVal,
         weight_kg: weightVal,
       },
-      coach_feedback: "Fotos de Frente, Lado e Costas recebidas pelo Coach Manoel. Protocolo em calibração!",
+      coach_feedback: "Atualização do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
     };
 
     const existingAssessments = profile?.assessments || [];
@@ -349,11 +415,17 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
 
     try {
       // 1. Atualização via API
-      const updated = await api.updateProfile({
+      const profilePatch: Record<string, any> = {
         assessments: updatedAssessments,
         last_assessment_date: newEntry.date,
-        weight_kg: weightVal,
-      });
+      };
+      if (weightVal !== null) profilePatch.weight_kg = weightVal;
+      if (armVal !== null) profilePatch.right_arm_cm = armVal;
+      if (waistVal !== null) profilePatch.waist_cm = waistVal;
+      if (chestVal !== null) profilePatch.chest_cm = chestVal;
+      if (thighVal !== null) profilePatch.right_leg_cm = thighVal;
+
+      const updated = await api.updateProfile(profilePatch);
       setProfile(updated);
 
       // 2. Insert no Supabase (assessments e sincronização de perimetria em profiles)
@@ -361,26 +433,28 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           // Atualiza perfil no Supabase
-          await supabase.from("profiles").upsert({
+          const profileDbUpdate: Record<string, any> = {
             id: user.id,
-            weight_kg: weightVal,
             last_assessment_date: newEntry.date,
-            arm_cm: armVal,
-            waist_cm: waistVal,
-            chest_cm: chestVal,
-            thigh_cm: thighVal,
             updated_at: new Date().toISOString(),
-          });
+          };
+          if (weightVal !== null) profileDbUpdate.weight_kg = weightVal;
+          if (armVal !== null) profileDbUpdate.arm_cm = armVal;
+          if (waistVal !== null) profileDbUpdate.waist_cm = waistVal;
+          if (chestVal !== null) profileDbUpdate.chest_cm = chestVal;
+          if (thighVal !== null) profileDbUpdate.thigh_cm = thighVal;
+
+          await supabase.from("profiles").upsert(profileDbUpdate);
 
           // Insere registro na tabela assessments
           await supabase.from("assessments").insert({
             user_id: user.id,
             user_email: user.email,
             date: newEntry.date,
-            photos: [photoFront, photoSide, photoBack],
-            photo_front: photoFront,
-            photo_side: photoSide,
-            photo_back: photoBack,
+            photos: [photoFront, photoSide, photoBack].filter(Boolean),
+            photo_front: photoFront || null,
+            photo_side: photoSide || null,
+            photo_back: photoBack || null,
             measurements: newEntry.measurements,
             notes: assessmentNotes,
             created_at: new Date().toISOString(),
@@ -393,7 +467,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
       // 3. Feedback visual de sucesso imediato para o aluno
       setAssessmentFeedback({
         type: "success",
-        text: "Avaliação física e fotos enviadas com sucesso ao Coach!",
+        text: "Ciclo de 20 Dias atualizado! Seus dados foram enviados com sucesso ao Coach.",
       });
 
       sendNotification(
@@ -419,10 +493,12 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   };
 
   // 20-day calculation
-  const lastDate = profile?.last_assessment_date || "2026-04-10";
-  const daysSince = Math.floor(
-    (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24)
+  const lastDate = profile?.last_assessment_date || new Date().toISOString().split("T")[0];
+  const daysSince = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24))
   );
+  const isAssessmentDue = daysSince >= 20;
 
   const isCoach =
     supabaseRole === "coach" ||
@@ -589,13 +665,13 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">URL da Foto de Perfil</label>
+              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Idade (anos)</label>
               <input
-                id="edit-avatarurl-input"
-                type="text"
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://..."
+                id="edit-age-input"
+                type="number"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="Ex: 26"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
               />
             </div>
@@ -607,35 +683,85 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                   id="edit-height-input"
                   type="number"
                   value={heightCm}
-                  onChange={(e) => setHeightCm(parseInt(e.target.value) || 180)}
+                  onChange={(e) => setHeightCm(e.target.value)}
+                  placeholder="Ex: 180"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Peso (kg)</label>
+                <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Peso Base (kg)</label>
                 <input
                   id="edit-weight-input"
                   type="number"
                   step="0.1"
                   value={weightKg}
-                  onChange={(e) => setWeightKg(parseFloat(e.target.value) || 80)}
+                  onChange={(e) => setWeightKg(e.target.value)}
+                  placeholder="Ex: 80.0"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
                 />
               </div>
             </div>
 
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Objetivo Principal</label>
+              <input
+                id="edit-goal-input"
+                type="text"
+                value={primaryGoal}
+                onChange={(e) => setPrimaryGoal(e.target.value)}
+                placeholder="Ex: Hipertrofia, Queima de Gordura, Definição, Saúde..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Restrições Alimentares / Alergias</label>
+              <input
+                id="edit-dietary-input"
+                type="text"
+                value={dietaryRestrictions}
+                onChange={(e) => setDietaryRestrictions(e.target.value)}
+                placeholder="Ex: Nenhuma, Intolerância a lactose, Glúten..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">Histórico de Lesões / Observações Médicas</label>
+              <input
+                id="edit-medical-input"
+                type="text"
+                value={medicalHistory}
+                onChange={(e) => setMedicalHistory(e.target.value)}
+                placeholder="Ex: Nenhuma, dor no ombro direito, lombar..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-[#9B9BA1] mb-1">URL da Foto de Perfil</label>
+              <input
+                id="edit-avatarurl-input"
+                type="text"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[#F5F5F7] text-sm focus:outline-none focus:border-[#FF6A2A]"
+              />
+            </div>
+
             {/* Aviso de Hidratação e Creatina definida pelo Coach */}
-            <div className="p-3.5 rounded-2xl bg-[#1D1D1F]/80 border border-[#2B2B2F] flex items-start gap-3">
+            <div className="sm:col-span-2 p-3.5 rounded-2xl bg-[#1D1D1F]/80 border border-[#2B2B2F] flex items-start gap-3">
               <div className="w-7 h-7 rounded-lg bg-[#FF6A2A]/10 text-[#FF9A62] flex items-center justify-center shrink-0 mt-0.5">
-                <Sparkles className="w-4 h-4" />
+                <FileText className="w-4 h-4" />
               </div>
               <div className="space-y-0.5">
                 <p className="text-xs font-bold text-[#F5F5F7]">
-                  Metas de Hidratação & Creatina Prescritas pelo Coach
+                  Anamnese Base Oficial do Aluno
                 </p>
                 <p className="text-[11px] text-[#9B9BA1] leading-relaxed">
-                  Sua meta diária de água e dose de creatina são ajustadas exclusivamente pelo seu Coach no protocolo oficial e acompanhadas na tela de Início (padrão automático: 2500 ml e 5g).
+                  Estes dados foram cadastrados no seu início na Vyra e servem como parâmetro permanente para o Coach ajustar seus volumes de treino e metas diárias.
                 </p>
               </div>
             </div>
@@ -643,6 +769,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
 
           <div className="flex justify-end gap-2 pt-2">
             <button
+              type="button"
               id="edit-profile-cancel-btn"
               onClick={() => setEditingProfile(false)}
               className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7]"
@@ -650,9 +777,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
               Cancelar
             </button>
             <button
+              type="button"
               id="edit-profile-save-btn"
               onClick={handleSaveProfile}
-              className="px-5 py-2 rounded-xl text-xs font-bold bg-[#FF6A2A] hover:bg-[#FF9A62] text-white shadow-lg shadow-[#FF6A2A]/20"
+              className="px-5 py-2 rounded-xl text-xs font-bold bg-[#FF6A2A] hover:bg-[#FF9A62] text-white shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
             >
               {saving ? "Salvando..." : "Salvar Dados"}
             </button>
@@ -732,6 +860,8 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             consecutiveMonths={consecutiveMonths}
             monthlyFeePaid={monthlyFeePaid}
             isVeteran={isVeteran}
+            activeProtocol={profile?.active_protocol || subscription.active_protocol}
+            planType={subscription.planId}
             onUpdateRecurrence={updateRecurrence}
             onApplyVeteranCoupon={applyVeteranCoupon}
           />
@@ -830,17 +960,17 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
       {/* 20-Day Assessment Section (Fotos e Perimetria) - EXCLUSIVO DO ALUNO */}
       {!isCoach && (
         <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#2B2B2F]">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-[#34C759]/20 text-[#34C759] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-[#34C759]/20 text-[#34C759] flex items-center justify-center shrink-0">
                 <Camera className="w-4 h-4" />
               </div>
               <div>
                 <h3 className="text-sm font-bold text-[#F5F5F7]">
-                  Ciclo de 20 Dias: Fotos & Perimetria
+                  Ciclo Periódico de 20 Dias: Fotos & Perimetria
                 </h3>
                 <p className="text-[11px] text-[#9B9BA1]">
-                  Última atualização há {daysSince} dias ({profile?.last_assessment_date || "2026-04-10"})
+                  Última aferição há {daysSince} dias ({profile?.last_assessment_date || "Recente"})
                 </p>
               </div>
             </div>
@@ -848,37 +978,78 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             <button
               id="open-new-assessment-btn"
               onClick={() => setShowAssessmentModal(true)}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40 hover:bg-[#34C759]/30 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40 hover:bg-[#34C759]/30 transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Nova Avaliação</span>
+              <span>Atualizar Ciclo (20 Dias)</span>
             </button>
           </div>
+
+          {/* Banner do Ciclo de 20 Dias: Vencido vs Em Andamento */}
+          {isAssessmentDue ? (
+            <div className="p-4 rounded-2xl bg-[#FF453A]/15 border border-[#FF453A]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#FF453A]/20 text-[#FF453A] flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#FF453A] bg-[#FF453A]/20 px-2.5 py-0.5 rounded-full border border-[#FF453A]/30">
+                    CICLO DE 20 DIAS VENCIDO ({daysSince}/20 dias)
+                  </span>
+                  <h4 className="text-sm font-bold text-white mt-1">
+                    Atualização Biométrica & Fotos Obrigatória
+                  </h4>
+                  <p className="text-xs text-[#E5E5EA]">
+                    Seu ciclo de 20 dias expirou! Envie novas fotos e medidas para o Coach calibrar seu treino e plano alimentar.
+                  </p>
+                </div>
+              </div>
+              <button
+                id="assessment-due-btn"
+                onClick={() => setShowAssessmentModal(true)}
+                className="px-4 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-[#FF6A2A] to-[#FF453A] text-white hover:brightness-110 shadow-lg shadow-[#FF453A]/30 cursor-pointer shrink-0 active:scale-95 transition-all"
+              >
+                Atualizar Agora
+              </button>
+            </div>
+          ) : (
+            <div className="p-3.5 rounded-2xl bg-[#34C759]/10 border border-[#34C759]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-[#34C759] shrink-0" />
+                <p className="text-xs text-[#F5F5F7]">
+                  Ciclo de 20 Dias em andamento: <strong className="text-[#34C759]">Dia {daysSince} de 20</strong> ({20 - daysSince} dias restantes até a próxima atualização periódica).
+                </p>
+              </div>
+              <span className="text-[10px] text-[#9B9BA1]">
+                Base ativa: {lastDate}
+              </span>
+            </div>
+          )}
 
           {/* Current Measurements Summary (Valores Reais do Supabase / Contexto) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
               <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Braço</span>
               <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
-                {profile?.right_arm_cm ?? profile?.arm_cm ?? armCm} cm
+                {profile?.right_arm_cm ?? profile?.arm_cm ?? (armCm ? `${armCm} cm` : "—")}
               </span>
             </div>
             <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
               <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Cintura</span>
               <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
-                {profile?.waist_cm ?? waistCm} cm
+                {profile?.waist_cm ?? (waistCm ? `${waistCm} cm` : "—")}
               </span>
             </div>
             <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
               <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Tórax</span>
               <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
-                {profile?.chest_cm ?? chestCm} cm
+                {profile?.chest_cm ?? (chestCm ? `${chestCm} cm` : "—")}
               </span>
             </div>
             <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
               <span className="text-[10px] font-bold text-[#9B9BA1] uppercase">Coxa</span>
               <span className="text-base font-extrabold text-[#F5F5F7] block mt-0.5">
-                {profile?.right_leg_cm ?? profile?.thigh_cm ?? thighCm} cm
+                {profile?.right_leg_cm ?? profile?.thigh_cm ?? (thighCm ? `${thighCm} cm` : "—")}
               </span>
             </div>
           </div>
@@ -906,42 +1077,48 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                   </div>
 
                   <p className="text-[11px] text-[#9B9BA1]">
-                    Peso: {item.measurements?.weight_kg || item.weight_kg}kg · Braço: {item.measurements?.arm_cm || item.right_arm_cm}cm · Cintura: {item.measurements?.waist_cm || item.waist_cm}cm
+                    Peso: {item.measurements?.weight_kg || item.weight_kg ? `${item.measurements?.weight_kg || item.weight_kg}kg` : "—"} · Braço: {item.measurements?.arm_cm || item.right_arm_cm ? `${item.measurements?.arm_cm || item.right_arm_cm}cm` : "—"} · Cintura: {item.measurements?.waist_cm || item.waist_cm ? `${item.measurements?.waist_cm || item.waist_cm}cm` : "—"}
                   </p>
 
                   {/* 3 Photos Thumbnails */}
                   {(item.photos || item.photo_front) && (
                     <div className="grid grid-cols-3 gap-2 pt-1">
-                      <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
-                        <img
-                          src={item.photo_front || (item.photos && item.photos[0]) || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=400&auto=format&fit=crop&q=80"}
-                          alt="Frente"
-                          className="w-full h-full object-cover"
-                        />
-                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
-                          Frente
-                        </span>
-                      </div>
-                      <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
-                        <img
-                          src={item.photo_side || (item.photos && item.photos[1]) || "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&auto=format&fit=crop&q=80"}
-                          alt="Lado"
-                          className="w-full h-full object-cover"
-                        />
-                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
-                          Lado
-                        </span>
-                      </div>
-                      <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
-                        <img
-                          src={item.photo_back || (item.photos && item.photos[2]) || "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=400&auto=format&fit=crop&q=80"}
-                          alt="Costas"
-                          className="w-full h-full object-cover"
-                        />
-                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
-                          Costas
-                        </span>
-                      </div>
+                      {item.photo_front && (
+                        <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
+                          <img
+                            src={item.photo_front}
+                            alt="Frente"
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
+                            Frente
+                          </span>
+                        </div>
+                      )}
+                      {item.photo_side && (
+                        <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
+                          <img
+                            src={item.photo_side}
+                            alt="Lado"
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
+                            Lado
+                          </span>
+                        </div>
+                      )}
+                      {item.photo_back && (
+                        <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
+                          <img
+                            src={item.photo_back}
+                            alt="Costas"
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
+                            Costas
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -952,14 +1129,14 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
       </div>
       )}
 
-      {/* Assessment Modal (Fotos e Perimetria) */}
+      {/* Assessment Modal (Fotos e Perimetria do Ciclo de 20 Dias) */}
       {showAssessmentModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#151515] border border-[#2B2B2F] rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95">
+          <div className="bg-[#151515] border border-[#2B2B2F] rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
               <div className="flex items-center gap-2">
                 <Ruler className="w-5 h-5 text-[#34C759]" />
-                <h3 className="text-base font-bold text-[#F5F5F7]">Atualização de 20 Dias</h3>
+                <h3 className="text-base font-bold text-[#F5F5F7]">Atualização Periódica de 20 Dias</h3>
               </div>
               <button
                 id="close-assessment-modal-btn"
@@ -971,7 +1148,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             </div>
 
             <p className="text-xs text-[#9B9BA1]">
-              Insira suas medidas corporais e anexe as fotos de frente, costas e perfil para o Coach avaliar a evolução do shape.
+              Preencha com suas medidas atuais e envie fotos de frente, lado e costas para o Coach avaliar a evolução do shape no ciclo de 20 dias.
             </p>
 
             {/* Perimetry Inputs */}
@@ -981,9 +1158,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 <input
                   type="number"
                   step="0.1"
+                  placeholder="Ex: 81.0"
                   value={assessmentWeight}
                   onChange={(e) => setAssessmentWeight(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7]"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#34C759]"
                 />
               </div>
               <div>
@@ -991,9 +1169,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 <input
                   type="number"
                   step="0.1"
+                  placeholder="Ex: 39.5"
                   value={armCm}
                   onChange={(e) => setArmCm(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7]"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#34C759]"
                 />
               </div>
               <div>
@@ -1001,9 +1180,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 <input
                   type="number"
                   step="0.1"
+                  placeholder="Ex: 82.0"
                   value={waistCm}
                   onChange={(e) => setWaistCm(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7]"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#34C759]"
                 />
               </div>
               <div>
@@ -1011,19 +1191,31 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 <input
                   type="number"
                   step="0.1"
+                  placeholder="Ex: 104.0"
                   value={chestCm}
                   onChange={(e) => setChestCm(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7]"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#34C759]"
                 />
               </div>
-              <div>
+              <div className="col-span-2 sm:col-span-1">
                 <label className="block text-[11px] font-bold text-[#9B9BA1] mb-1">Coxa Medial (cm)</label>
                 <input
                   type="number"
                   step="0.1"
+                  placeholder="Ex: 61.0"
                   value={thighCm}
                   onChange={(e) => setThighCm(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7]"
+                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#34C759]"
+                />
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[11px] font-bold text-[#9B9BA1] mb-1">Observações para o Coach</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Senti facilidade no treino de pernas..."
+                  value={assessmentNotes}
+                  onChange={(e) => setAssessmentNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-sm text-[#F5F5F7] focus:outline-none focus:border-[#34C759]"
                 />
               </div>
             </div>
@@ -1034,14 +1226,21 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 Fotos do Ciclo de 20 Dias (Frente, Lado e Costas)
               </label>
               <p className="text-[11px] text-[#9B9BA1]">
-                Envie as 3 fotos padronizadas para geração das avaliações e relatórios do Coach.
+                Envie as 3 fotos padronizadas para calibração do treino e plano alimentar pelo Coach.
               </p>
 
               <div className="grid grid-cols-3 gap-2.5 pt-1">
                 {/* 1. Frente */}
                 <div className="flex flex-col items-center bg-[#1D1D1F] border border-[#2B2B2F] rounded-2xl p-2.5 text-center relative group">
-                  <div className="w-full h-28 rounded-xl overflow-hidden bg-black/40 mb-2 relative border border-[#3A3A40]">
-                    <img src={photoFront} alt="Frente" className="w-full h-full object-cover" />
+                  <div className="w-full h-28 rounded-xl overflow-hidden bg-black/40 mb-2 relative border border-[#3A3A40] flex items-center justify-center">
+                    {photoFront ? (
+                      <img src={photoFront} alt="Frente" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-center p-2">
+                        <Camera className="w-6 h-6 text-[#9B9BA1] mx-auto mb-1" />
+                        <span className="text-[9px] text-[#9B9BA1] block font-medium">Foto Frente</span>
+                      </div>
+                    )}
                     <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-black/70 text-[9px] font-bold text-[#34C759]">
                       1. Frente
                     </span>
@@ -1051,7 +1250,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                     className="w-full py-1.5 rounded-lg bg-[#2B2B2F] hover:bg-[#3A3A40] text-[10px] font-bold text-[#F5F5F7] cursor-pointer flex items-center justify-center gap-1 transition-colors"
                   >
                     <Upload className="w-3 h-3" />
-                    <span>Trocar</span>
+                    <span>{photoFront ? "Trocar" : "Anexar"}</span>
                     <input
                       id="upload-front-photo"
                       type="file"
@@ -1064,8 +1263,15 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
 
                 {/* 2. Lado */}
                 <div className="flex flex-col items-center bg-[#1D1D1F] border border-[#2B2B2F] rounded-2xl p-2.5 text-center relative group">
-                  <div className="w-full h-28 rounded-xl overflow-hidden bg-black/40 mb-2 relative border border-[#3A3A40]">
-                    <img src={photoSide} alt="Lado" className="w-full h-full object-cover" />
+                  <div className="w-full h-28 rounded-xl overflow-hidden bg-black/40 mb-2 relative border border-[#3A3A40] flex items-center justify-center">
+                    {photoSide ? (
+                      <img src={photoSide} alt="Lado" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-center p-2">
+                        <Camera className="w-6 h-6 text-[#9B9BA1] mx-auto mb-1" />
+                        <span className="text-[9px] text-[#9B9BA1] block font-medium">Foto Lado</span>
+                      </div>
+                    )}
                     <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-black/70 text-[9px] font-bold text-[#D8B46A]">
                       2. Lado
                     </span>
@@ -1075,7 +1281,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                     className="w-full py-1.5 rounded-lg bg-[#2B2B2F] hover:bg-[#3A3A40] text-[10px] font-bold text-[#F5F5F7] cursor-pointer flex items-center justify-center gap-1 transition-colors"
                   >
                     <Upload className="w-3 h-3" />
-                    <span>Trocar</span>
+                    <span>{photoSide ? "Trocar" : "Anexar"}</span>
                     <input
                       id="upload-side-photo"
                       type="file"
@@ -1088,8 +1294,15 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
 
                 {/* 3. Costas */}
                 <div className="flex flex-col items-center bg-[#1D1D1F] border border-[#2B2B2F] rounded-2xl p-2.5 text-center relative group">
-                  <div className="w-full h-28 rounded-xl overflow-hidden bg-black/40 mb-2 relative border border-[#3A3A40]">
-                    <img src={photoBack} alt="Costas" className="w-full h-full object-cover" />
+                  <div className="w-full h-28 rounded-xl overflow-hidden bg-black/40 mb-2 relative border border-[#3A3A40] flex items-center justify-center">
+                    {photoBack ? (
+                      <img src={photoBack} alt="Costas" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-center p-2">
+                        <Camera className="w-6 h-6 text-[#9B9BA1] mx-auto mb-1" />
+                        <span className="text-[9px] text-[#9B9BA1] block font-medium">Foto Costas</span>
+                      </div>
+                    )}
                     <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-black/70 text-[9px] font-bold text-[#0A84FF]">
                       3. Costas
                     </span>
@@ -1099,7 +1312,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                     className="w-full py-1.5 rounded-lg bg-[#2B2B2F] hover:bg-[#3A3A40] text-[10px] font-bold text-[#F5F5F7] cursor-pointer flex items-center justify-center gap-1 transition-colors"
                   >
                     <Upload className="w-3 h-3" />
-                    <span>Trocar</span>
+                    <span>{photoBack ? "Trocar" : "Anexar"}</span>
                     <input
                       id="upload-back-photo"
                       type="file"
@@ -1145,8 +1358,6 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 type="button"
                 id="save-assessment-btn"
                 onClick={handleSaveAssessment}
-                onPointerDown={handleSaveAssessment}
-                {...({ onPress: handleSaveAssessment } as any)}
                 disabled={assessmentSaving}
                 className="px-5 py-2 rounded-xl text-xs font-bold bg-[#34C759] hover:bg-[#34C759]/90 text-[#0A0A0A] shadow-lg shadow-[#34C759]/20 font-black cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1158,7 +1369,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
                 ) : (
                   <>
                     <Check className="w-3.5 h-3.5 shrink-0" />
-                    <span>Enviar para o coach</span>
+                    <span>Enviar para o Coach</span>
                   </>
                 )}
               </button>
@@ -1167,28 +1378,102 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         </div>
       )}
 
-      {/* Anamnesis Card */}
-      <div className="p-5 rounded-2xl bg-[#151515] border border-[#2B2B2F] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#D8B46A]/15 text-[#D8B46A] flex items-center justify-center">
-            <FileText className="w-5 h-5" />
+      {/* Anamnese Base do Aluno (Ficha Inicial Cadastrada) - EXCLUSIVO DO ALUNO */}
+      {!isCoach && (
+        <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#2B2B2F]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#FF6A2A]/15 text-[#FF6A2A] border border-[#FF6A2A]/30 flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#FF6A2A] bg-[#FF6A2A]/15 px-2.5 py-0.5 rounded-full border border-[#FF6A2A]/30">
+                    Ficha Inicial
+                  </span>
+                  <span className="text-[10px] font-bold text-[#34C759] bg-[#34C759]/15 px-2 py-0.5 rounded-full border border-[#34C759]/30">
+                    Base Oficial
+                  </span>
+                </div>
+                <h4 className="text-base font-bold text-[#F5F5F7] mt-1">
+                  Anamnese Base do Aluno
+                </h4>
+                <p className="text-xs text-[#9B9BA1]">
+                  Dados cadastrais e clínicos registrados na anamnese inicial, utilizados pelo Coach para calibrar seus treinos e macros.
+                </p>
+              </div>
+            </div>
+
+            <button
+              id="edit-base-anamnesis-btn"
+              onClick={() => setEditingProfile(true)}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] hover:border-[#FF6A2A] transition-all flex items-center justify-center gap-1.5 cursor-pointer self-start sm:self-auto shrink-0"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+              <span>Editar Anamnese Base</span>
+            </button>
           </div>
-          <div>
-            <h4 className="text-sm font-bold text-[#F5F5F7]">{t("ana.title")}</h4>
-            <p className="text-xs text-[#9B9BA1]">
-              {anamnesisDone ? "Anamnese completa e ativa" : "Pendente de preenchimento"}
-            </p>
+
+          {/* Grid com os dados da Anamnese Inicial */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Nome Completo</span>
+              <span className="text-sm font-bold text-[#F5F5F7] block mt-1 truncate">
+                {fullName || (profile as any)?.full_name || "—"}
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Como prefere ser chamado</span>
+              <span className="text-sm font-bold text-[#F5F5F7] block mt-1 truncate">
+                @{nickname || profile?.nickname || "—"}
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Idade</span>
+              <span className="text-sm font-bold text-[#F5F5F7] block mt-1">
+                {age || (profile as any)?.age ? `${age || (profile as any)?.age} anos` : "—"}
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Peso Base</span>
+              <span className="text-sm font-bold text-[#F5F5F7] block mt-1">
+                {weightKg || profile?.weight_kg ? `${weightKg || profile?.weight_kg} kg` : "—"}
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Altura</span>
+              <span className="text-sm font-bold text-[#F5F5F7] block mt-1">
+                {heightCm || profile?.height_cm ? `${heightCm || profile?.height_cm} cm` : "—"}
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Objetivo Principal</span>
+              <span className="text-sm font-bold text-[#FF9A62] block mt-1 truncate">
+                {primaryGoal || (profile as any)?.primary_goal || (profile as any)?.goal || "—"}
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] sm:col-span-2 md:col-span-1">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Restrições Alimentares</span>
+              <span className="text-sm font-medium text-[#F5F5F7] block mt-1 line-clamp-2">
+                {dietaryRestrictions || (profile as any)?.dietary_restrictions || "Nenhuma"}
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] sm:col-span-2 md:col-span-2">
+              <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">Histórico de Lesões / Observações Médicas</span>
+              <span className="text-sm font-medium text-[#F5F5F7] block mt-1 line-clamp-2">
+                {medicalHistory || (profile as any)?.medical_history || "Nenhuma lesão"}
+              </span>
+            </div>
           </div>
         </div>
-
-        <button
-          id="profile-anamnesis-btn"
-          onClick={() => setActiveView("anamnesis")}
-          className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] hover:border-[#D8B46A] transition-colors"
-        >
-          {anamnesisDone ? "Atualizar" : "Preencher agora"}
-        </button>
-      </div>
+      )}
 
       {/* Acesso & Governança da Conta */}
       <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-3">
@@ -1416,7 +1701,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             <div className="flex items-center justify-between border-b border-[#2B2B2F] pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center">
-                  <Sparkles className="w-5 h-5" />
+                  <Award className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-[#F5F5F7]">

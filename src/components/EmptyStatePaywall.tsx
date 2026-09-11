@@ -1,6 +1,6 @@
 import React from "react";
 import { useApp } from "../context/AppContext";
-import { Lock, ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
+import { Lock, ArrowRight, ShieldCheck } from "lucide-react";
 
 interface EmptyStatePaywallProps {
   onGoToProfile?: () => void;
@@ -19,7 +19,7 @@ export const EmptyStatePaywall: React.FC<EmptyStatePaywallProps> = ({
     if (onGoToProfile) {
       onGoToProfile();
     } else {
-      setActiveView("profile");
+      setActiveView("paywall");
     }
   };
 
@@ -37,7 +37,7 @@ export const EmptyStatePaywall: React.FC<EmptyStatePaywallProps> = ({
         {/* Badge & Mensagem Oficial Obrigatória */}
         <div className="space-y-3">
           <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border bg-[#FF6A2A]/15 text-[#FF9A62] border-[#FF6A2A]/30">
-            <Sparkles className="w-3 h-3 text-[#FF9A62]" />
+            <ShieldCheck className="w-3 h-3 text-[#FF9A62]" />
             <span>Acesso Restrito · Alunos Vyra</span>
           </span>
 

@@ -5,7 +5,6 @@ import { supabase } from "../lib/supabase";
 import { getVotingUserId } from "../lib/supabaseClient";
 import { AccessGate } from "../components/AccessGate";
 import { EmptyStatePaywall } from "../components/EmptyStatePaywall";
-import { GaleriaPhotoUpload } from "../components/GaleriaPhotoUpload";
 import { ChallengeParticipationModal } from "../components/ChallengeParticipationModal";
 import { CoachChallengeEvaluationPanel } from "../components/CoachChallengeEvaluationPanel";
 import { ActiveChallenge, ChallengeEntry } from "../types";
@@ -28,7 +27,6 @@ import {
   ShieldCheck,
   AlertCircle,
   Filter,
-  Sparkles,
   Camera,
   Award,
   Lock,
@@ -70,7 +68,7 @@ export const ChallengesView: React.FC = () => {
       <EmptyStatePaywall
         message="Assinatura Inativa. Libere seu acesso para visualizar seu treino e dieta."
         buttonText="Assinar Agora"
-        onGoToProfile={() => setActiveView("profile")}
+        onGoToProfile={() => setActiveView("paywall")}
       />
     );
   }
@@ -80,7 +78,6 @@ export const ChallengesView: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [hall, setHall] = useState<any[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [publishOpen, setPublishOpen] = useState(false);
 
   // Step 4: Engine de Desafios & Participação
   const [activeChallenges, setActiveChallenges] = useState<ActiveChallenge[]>([]);
@@ -441,7 +438,7 @@ export const ChallengesView: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-[#F5F5F7] flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#D8B46A]" />
+                  <Trophy className="w-4 h-4 text-[#D8B46A]" />
                   Desafios Ativos da Temporada
                 </h3>
                 <p className="text-xs text-[#9B9BA1]">
@@ -568,123 +565,6 @@ export const ChallengesView: React.FC = () => {
               })}
             </div>
           </div>
-
-          {/* Galeria da Comunidade e Votações */}
-          <div className="space-y-4 pt-4 border-t border-[#2B2B2F]">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-black uppercase tracking-wider text-[#9B9BA1] flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#FF6A2A]" />
-                Galeria de Transformações dos Atletas
-              </h4>
-            </div>
-
-            {items.length === 0 ? (
-              <div className="p-12 rounded-3xl bg-[#151515] border border-[#2B2B2F] text-center space-y-3">
-                <Camera className="w-10 h-10 text-[#9B9BA1] mx-auto opacity-50" />
-                <h3 className="text-base font-bold text-[#F5F5F7]">
-                  Nenhuma foto ativa no momento
-                </h3>
-                <p className="text-xs text-[#9B9BA1] max-w-md mx-auto">
-                  {isFaseInscricao
-                    ? "As inscrições estão abertas! Publique sua transformação agora para concorrer à premiação."
-                    : "Aguarde a próxima fase de inscrições no dia 7 para enviar suas fotos."}
-                </p>
-              </div>
-            ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {items.map((c) => {
-                const beforeSrc =
-                  (typeof c.before_image === "object" && c.before_image?.uri
-                    ? c.before_image.uri
-                    : c.before_image || c.photo_url) || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=400&auto=format&fit=crop&q=80";
-                const afterSrc =
-                  (typeof c.after_image === "object" && c.after_image?.uri
-                    ? c.after_image.uri
-                    : c.after_image || c.photo_url || beforeSrc) || "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&auto=format&fit=crop&q=80";
-
-                return (
-                  <div
-                    key={c.id}
-                    className="p-4 rounded-3xl bg-[#151515] border border-[#2B2B2F] hover:border-[#FF6A2A]/40 transition-all flex flex-col justify-between space-y-3 shadow-xl group"
-                  >
-                    {/* Before & After Images */}
-                    <div className="relative rounded-2xl overflow-hidden bg-black/40 border border-[#2B2B2F] aspect-video flex">
-                      <div className="w-1/2 h-full relative border-r border-[#2B2B2F]/60">
-                        <img
-                          src={beforeSrc}
-                          alt="Antes"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <span className="absolute bottom-1.5 left-1.5 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/70 text-[#9B9BA1] backdrop-blur-sm">
-                          Antes
-                        </span>
-                      </div>
-                      <div className="w-1/2 h-full relative">
-                        <img
-                          src={afterSrc}
-                          alt="Depois"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <span className="absolute bottom-1.5 right-1.5 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#FF6A2A]/85 text-white backdrop-blur-sm">
-                          Depois
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Info */}
-                    <div className="space-y-1">
-                      <h4
-                        className="text-sm font-bold text-[#F5F5F7] truncate"
-                        title={c.title}
-                      >
-                        {c.title}
-                      </h4>
-                      <p className="text-xs text-[#9B9BA1] font-semibold">{c.author}</p>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="pt-2 border-t border-[#2B2B2F] flex items-center justify-between gap-2 flex-wrap">
-                      {/* Like Button */}
-                      <button
-                        id={`like-${c.id}`}
-                        onClick={() => like(c.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] hover:border-[#FF6A2A]/40 text-[#F5F5F7] text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                      >
-                        <Heart className="w-3.5 h-3.5 text-[#FF6A2A] fill-[#FF6A2A]" />
-                        <span>{c.likes}</span>
-                      </button>
-
-                      {/* Botão de WhatsApp só aparece a partir do dia 26 (Fase de Votação Externa) */}
-                      {isFaseVotacaoExterna && (
-                        <button
-                          id={`share-${c.id}`}
-                          onClick={() => pedirVotos(c.author, c.vote_url)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#25D366] bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#25D366] text-xs font-extrabold transition-all active:scale-95 cursor-pointer shadow-sm shadow-[#25D366]/20"
-                          title="Compartilhar no WhatsApp pedindo votos no post do Instagram"
-                        >
-                          <WhatsAppIcon className="w-3.5 h-3.5" />
-                          <span>Pedir Votos</span>
-                        </button>
-                      )}
-
-                      {/* Botão Encerrar para Coach / Moderador */}
-                      {(isCoach || persona === "moderator") && (
-                        <button
-                          id={`close-${c.id}`}
-                          onClick={() => closeChallenge(c.id)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-[#D8B46A]/40 bg-[#D8B46A]/10 text-[#D8B46A] text-xs font-bold hover:bg-[#D8B46A]/20 transition-all cursor-pointer"
-                        >
-                          <Trophy className="w-3 h-3 text-[#D8B46A]" />
-                          <span>Encerrar</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          </div>
         </div>
       )}
 
@@ -786,11 +666,11 @@ export const ChallengesView: React.FC = () => {
               {isFaseInscricao && (
                 <button
                   id="fase-inscricao-publish-btn"
-                  onClick={() => setPublishOpen(true)}
+                  onClick={() => setParticipationModalOpen(true)}
                   className="w-full py-3 px-6 rounded-2xl bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white font-extrabold text-sm flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-[#FF6A2A]/25 cursor-pointer"
                 >
                   <UploadCloud className="w-4 h-4" />
-                  <span>Publicar Transformação</span>
+                  <span>Inscrever Transformação no Desafio</span>
                 </button>
               )}
 
@@ -824,13 +704,6 @@ export const ChallengesView: React.FC = () => {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={loadActive}
-      />
-
-      {/* Modal: Publicar Transformação */}
-      <PublishPhotoModal
-        open={publishOpen}
-        onClose={() => setPublishOpen(false)}
-        onPublished={loadActive}
       />
 
       {/* Modal: Participação Oficial em Desafio com Upload Storage */}
@@ -1023,30 +896,6 @@ const NewChallengeModal: React.FC<NewChallengeModalProps> = ({
         </form>
       </div>
     </div>
-  );
-};
-
-// --- MODAL: PUBLICAR TRANSFORMAÇÃO (ALUNO) ---
-interface PublishPhotoModalProps {
-  open: boolean;
-  onClose: () => void;
-  onPublished: () => void;
-}
-
-const PublishPhotoModal: React.FC<PublishPhotoModalProps> = ({
-  open,
-  onClose,
-  onPublished,
-}) => {
-  if (!open) return null;
-
-  return (
-    <GaleriaPhotoUpload
-      isOpen={open}
-      onClose={onClose}
-      onPhotoUploaded={onPublished}
-      onToast={(msg) => alert(msg)}
-    />
   );
 };
 

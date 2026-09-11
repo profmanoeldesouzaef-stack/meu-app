@@ -2,7 +2,6 @@ import React from "react";
 import {
   Award,
   Shield,
-  Sparkles,
   Flame,
   CheckCircle2,
   AlertTriangle,
@@ -113,9 +112,17 @@ export const PATENTS: PatentDefinition[] = [
   },
 ];
 
+export interface ProgressionOptions {
+  activeProtocol?: string;
+  planType?: string;
+  hasContinuousPlan?: boolean;
+  daysCompleted?: number;
+}
+
 export function getPatentInfo(
   consecutiveMonths: number = 0,
-  monthlyFeePaid: boolean = true
+  monthlyFeePaid: boolean = true,
+  options?: ProgressionOptions
 ): {
   level: number;
   patent: PatentDefinition | null;
@@ -123,6 +130,7 @@ export function getPatentInfo(
   monthsToNext: number;
   isRevoked: boolean;
   activeMonths: number;
+  qualifiesForFirstStar: boolean;
 } {
   // Regra clara de negócio: se não estiver pagando a mensalidade em dia, perde a patente!
   if (!monthlyFeePaid) {
@@ -133,19 +141,48 @@ export function getPatentInfo(
       monthsToNext: 3,
       isRevoked: true,
       activeMonths: 0,
+      qualifiesForFirstStar: false,
     };
   }
 
   const safeMonths = Math.max(0, consecutiveMonths);
 
+  // Regra da Primeira Estrela (Gamificação Reset 12 Semanas):
+  // A 1ª estrela/insígnia de progressão NÃO é concedida no início.
+  // Ela só é liberada após a conclusão dos 3 meses (84 dias completos)
+  // E mediante a renovação/migração ativa para um dos planos contínuos (Vyra Shape ou Vyra Forge).
+  const isContinuous =
+    options?.hasContinuousPlan ||
+    (options?.activeProtocol
+      ? options.activeProtocol.toLowerCase().includes("shape") ||
+        options.activeProtocol.toLowerCase().includes("forge") ||
+        options.activeProtocol.toLowerCase().includes("force")
+      : false) ||
+    (options?.planType
+      ? ["shape", "force", "forge", "monthly", "quarterly", "semiannual", "yearly"].includes(
+          options.planType.toLowerCase()
+        )
+      : false);
+
+  const isResetOnly =
+    options?.activeProtocol?.toLowerCase().includes("reset") ||
+    options?.planType === "reset12";
+
+  // Se o aluno ainda está estritamente no Reset inicial ou não atingiu 3 meses / 84 dias completos,
+  // ou se atingiu 3 meses mas ainda não migrou para um plano contínuo (Shape/Forge):
+  const qualifiesForFirstStar =
+    safeMonths >= 3 && (!isResetOnly || isContinuous);
+
   let current: PatentDefinition | null = null;
   let next: PatentDefinition | null = PATENTS[0];
 
-  for (let i = PATENTS.length - 1; i >= 0; i--) {
-    if (safeMonths >= PATENTS[i].minMonths) {
-      current = PATENTS[i];
-      next = i + 1 < PATENTS.length ? PATENTS[i + 1] : null;
-      break;
+  if (qualifiesForFirstStar) {
+    for (let i = PATENTS.length - 1; i >= 0; i--) {
+      if (safeMonths >= PATENTS[i].minMonths) {
+        current = PATENTS[i];
+        next = i + 1 < PATENTS.length ? PATENTS[i + 1] : null;
+        break;
+      }
     }
   }
 
@@ -158,21 +195,50 @@ export function getPatentInfo(
     monthsToNext,
     isRevoked: false,
     activeMonths: safeMonths,
+    qualifiesForFirstStar,
   };
 }
 
-export function getStarEvolutionInfo(consecutiveMonths: number = 0) {
+export function getStarEvolutionInfo(
+  consecutiveMonths: number = 0,
+  options?: ProgressionOptions
+) {
   const totalMonths = Math.max(0, consecutiveMonths);
-  const evolvedStars = Math.floor(totalMonths / 5);
-  const singleStars = totalMonths % 5;
-  const hasFiveStarsReached = totalMonths >= 5;
+
+  // Regra da Primeira Estrela:
+  // Se ainda não concluiu 3 meses (84 dias) ou se ainda está apenas no plano Reset sem migrar para Shape/Forge,
+  // nenhuma estrela é atribuída!
+  const isContinuous =
+    options?.hasContinuousPlan ||
+    (options?.activeProtocol
+      ? options.activeProtocol.toLowerCase().includes("shape") ||
+        options.activeProtocol.toLowerCase().includes("forge") ||
+        options.activeProtocol.toLowerCase().includes("force")
+      : false) ||
+    (options?.planType
+      ? ["shape", "force", "forge", "monthly", "quarterly", "semiannual", "yearly"].includes(
+          options.planType.toLowerCase()
+        )
+      : false);
+
+  const isResetOnly =
+    options?.activeProtocol?.toLowerCase().includes("reset") ||
+    options?.planType === "reset12";
+
+  const qualifies = totalMonths >= 3 && (!isResetOnly || isContinuous);
+
+  const effectiveMonths = qualifies ? totalMonths : 0;
+  const evolvedStars = Math.floor(effectiveMonths / 5);
+  const singleStars = effectiveMonths % 5;
+  const hasFiveStarsReached = effectiveMonths >= 5;
 
   return {
-    totalMonths,
-    totalStars: totalMonths,
+    totalMonths: effectiveMonths,
+    totalStars: effectiveMonths,
     evolvedStars,
     singleStars,
     hasFiveStarsReached,
+    qualifiesForFirstStar: qualifies,
   };
 }
 
@@ -246,6 +312,8 @@ export const PatentBadge: React.FC<{
   level?: number;
   months?: number;
   isPaid?: boolean;
+  activeProtocol?: string;
+  planType?: string;
   size?: "xs" | "sm" | "md" | "lg";
   showTooltip?: boolean;
   showLabel?: boolean;
@@ -255,13 +323,18 @@ export const PatentBadge: React.FC<{
   level,
   months = 0,
   isPaid = true,
+  activeProtocol,
+  planType,
   size = "sm",
   showTooltip = true,
   showLabel = false,
   isRevoked: propIsRevoked,
   className = "",
 }) => {
-  const info = getPatentInfo(months, propIsRevoked ? false : isPaid);
+  const info = getPatentInfo(months, propIsRevoked ? false : isPaid, {
+    activeProtocol,
+    planType,
+  });
   const patent =
     level !== undefined
       ? PATENTS.find((p) => p.level === level) || null
@@ -276,7 +349,7 @@ export const PatentBadge: React.FC<{
         title={
           isActuallyRevoked
             ? "Mensalidade inativa: Patente revogada. Ao reativar, reinicia do zero."
-            : "Sem patente ainda (Requer 3 meses de mensalidade ativa)"
+            : "Sem patente ainda (Requer conclusão de 84 dias + migração para plano contínuo Vyra Shape/Forge)"
         }
         className={`inline-flex items-center gap-1 rounded-full font-bold text-[9px] px-2 py-0.5 bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] ${className}`}
       >
@@ -287,7 +360,10 @@ export const PatentBadge: React.FC<{
   }
 
   const effectiveMonths = months > 0 ? months : patent.minMonths;
-  const starInfo = getStarEvolutionInfo(effectiveMonths);
+  const starInfo = getStarEvolutionInfo(effectiveMonths, {
+    activeProtocol,
+    planType,
+  });
 
   const sizeClasses = {
     xs: "px-1.5 py-0.5 text-[9px] gap-1",
@@ -360,12 +436,16 @@ export const PatentRecurrenceCard: React.FC<{
   consecutiveMonths: number;
   monthlyFeePaid: boolean;
   isVeteran: boolean;
+  activeProtocol?: string;
+  planType?: string;
   onUpdateRecurrence: (months: number, isPaid: boolean) => void;
   onApplyVeteranCoupon: (code: string) => { success: boolean; message: string };
 }> = ({
   consecutiveMonths,
   monthlyFeePaid,
   isVeteran,
+  activeProtocol,
+  planType,
   onUpdateRecurrence,
   onApplyVeteranCoupon,
 }) => {
@@ -373,7 +453,10 @@ export const PatentRecurrenceCard: React.FC<{
   const [couponMsg, setCouponMsg] = React.useState<{ text: string; ok: boolean } | null>(null);
   const [showSimulator, setShowSimulator] = React.useState(false);
 
-  const patentInfo = getPatentInfo(consecutiveMonths, monthlyFeePaid);
+  const patentInfo = getPatentInfo(consecutiveMonths, monthlyFeePaid, {
+    activeProtocol,
+    planType,
+  });
 
   const handleRedeemCoupon = (e: React.FormEvent) => {
     e.preventDefault();
@@ -436,7 +519,7 @@ export const PatentRecurrenceCard: React.FC<{
                 <input
                   id="veteran-coupon-input"
                   type="text"
-                  placeholder="Cupom (ex: VETERANO)"
+                  placeholder="Digite seu cupom"
                   value={couponInput}
                   onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
                   className="px-3.5 py-2 rounded-xl bg-[#0D0D0F] border border-[#2B2B2F] text-xs font-bold text-[#F5F5F7] placeholder-[#6E6E73] focus:outline-none focus:border-[#D8B46A] uppercase"
@@ -570,10 +653,10 @@ export const PatentRecurrenceCard: React.FC<{
           <div className="p-3.5 rounded-2xl bg-[#0D0D0E] border border-[#2B2B2F] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div className="space-y-0.5">
               <span className="text-[10px] font-black uppercase tracking-wider text-[#D8B46A] block">
-                Regra de Fidelidade Recorrente
+                Regra de Patentes e Primeira Estrela
               </span>
               <p className="text-[#9B9BA1]">
-                A cada <strong>3 meses consecutivos</strong> de mensalidade paga, o aluno sobe de patente. Caso interrompa o pagamento, perde a patente e recomeça do zero ao reativar.
+                A primeira estrela/insígnia é conquistada após a conclusão dos 3 meses (84 dias completos) e mediante renovação/migração ativa para um plano contínuo (Vyra Shape ou Forge). A cada <strong>3 meses consecutivos</strong> de assinatura ativa, o aluno sobe de patente.
               </p>
             </div>
             {patentInfo.nextPatent && (

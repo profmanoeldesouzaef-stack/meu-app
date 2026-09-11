@@ -23,7 +23,6 @@ import {
   Star,
   Check,
   AlertCircle,
-  Sparkles,
 } from "lucide-react";
 
 interface SavedCardsModalProps {
@@ -301,7 +300,7 @@ export const SavedCardsModal: React.FC<SavedCardsModalProps> = ({
             <form onSubmit={handleSaveCard} className="space-y-4 animate-in fade-in">
               <div className="flex items-center justify-between pb-2 border-b border-[#2B2B2F]">
                 <h3 className="text-xs font-bold text-[#FF9A62] uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
+                  <CreditCard className="w-4 h-4" />
                   Cadastrar Novo Cartão de Crédito
                 </h3>
                 <button

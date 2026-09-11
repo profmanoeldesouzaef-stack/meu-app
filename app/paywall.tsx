@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -18,6 +18,13 @@ export default function Paywall() {
   const [plans, setPlans] = useState<any[]>([]);
   const [cycle, setCycle] = useState<Cycle>("quarter");
   const [selected, setSelected] = useState<string>("reset12");
+
+  const handleSubscribeExternal = (planSlug?: string) => {
+    const targetUrl = planSlug 
+      ? `https://vyratraining.com?plan=${planSlug}` 
+      : "https://vyratraining.com";
+    Linking.openURL(targetUrl);
+  };
 
   useEffect(() => {
     api.plans().then(setPlans).catch(() => {});
@@ -112,6 +119,13 @@ export default function Paywall() {
       </ScrollView>
 
       <View style={[styles.stickyBar, { paddingBottom: insets.bottom + spacing.md }]}>
+        <View style={styles.officialNotice}>
+          <Ionicons name="shield-checkmark" size={14} color={colors.gold} style={{ marginRight: 6 }} />
+          <Text style={styles.officialNoticeText}>
+            A assinatura e ativação dos protocolos são realizadas de forma segura em nosso portal oficial.
+          </Text>
+        </View>
+
         {!anamnesisDone && (
           <View testID="anamnesis-warn" style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", padding: spacing.sm, borderRadius: radius.md, backgroundColor: "rgba(216,180,106,0.12)", borderWidth: 1, borderColor: "rgba(216,180,106,0.4)", marginBottom: spacing.sm }}>
             <Ionicons name="alert-circle" size={16} color={colors.gold} />
@@ -123,14 +137,14 @@ export default function Paywall() {
         )}
         <Pressable
           testID="paywall-continue"
-          disabled={!chosen || !anamnesisDone}
-          onPress={() =>
-            router.push({ pathname: "/checkout", params: { slug: chosen.slug, cycle } })
-          }
-          style={({ pressed }) => [styles.cta, { opacity: !anamnesisDone ? 0.4 : pressed ? 0.85 : 1 }]}
+          disabled={!chosen}
+          onPress={() => handleSubscribeExternal(chosen?.slug)}
+          style={({ pressed }) => [styles.cta, { opacity: pressed ? 0.85 : 1 }]}
         >
-          <Text style={styles.ctaText}>{t("cta.continue")}</Text>
-          <Ionicons name="arrow-forward" size={18} color={colors.text} />
+          <Text style={styles.ctaText}>
+            {chosen?.slug === "reset12" ? "Começar Agora" : "Assinar Plano"}
+          </Text>
+          <Ionicons name="open-outline" size={18} color={colors.text} />
         </Pressable>
       </View>
     </View>
@@ -138,6 +152,23 @@ export default function Paywall() {
 }
 
 const styles = StyleSheet.create({
+  officialNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(216,180,106,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(216,180,106,0.25)",
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  officialNoticeText: {
+    color: colors.textDim,
+    fontSize: fs.xs || 11,
+    flex: 1,
+    lineHeight: 15,
+  },
   back: {
     width: 40, height: 40, borderRadius: 20,
     borderWidth: 1, borderColor: colors.border,

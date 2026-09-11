@@ -9,7 +9,7 @@ import {
   RefreshCw,
   AlertCircle,
   Clock,
-  Sparkles,
+  Award,
   ArrowRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -291,7 +291,7 @@ export const FinanceCRMTableWeb: React.FC = () => {
                 {/* Protocolo */}
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[#9B9BA1] text-[11px] flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#D8B46A]" />
+                    <Award className="w-3.5 h-3.5 text-[#D8B46A]" />
                     Protocolo:
                   </span>
                   <span className="font-bold text-[#F5F5F7] truncate max-w-[180px]">

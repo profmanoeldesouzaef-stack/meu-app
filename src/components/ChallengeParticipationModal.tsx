@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import * as ImagePicker from "expo-image-picker";
 import {
   Camera,
@@ -6,11 +6,17 @@ import {
   X,
   Check,
   Loader2,
-  Sparkles,
   Trophy,
   AlertCircle,
   Image as ImageIcon,
   CheckCircle2,
+  ShieldCheck,
+  FileText,
+  Lock,
+  Award,
+  AlertTriangle,
+  ArrowRight,
+  BookOpen,
 } from "lucide-react";
 import { ActiveChallenge, ChallengeEntry } from "../types";
 import { uploadToChallengePhotosBucket, saveChallengeEntry } from "../lib/storage";
@@ -29,12 +35,30 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
   challenge,
   onEntryCreated,
 }) => {
-  const { currentUserEmail } = useApp();
+  const { currentUserEmail, currentUserName, currentUserNickname } = useApp();
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [participantName, setParticipantName] = useState(
-    currentUserEmail ? currentUserEmail.split("@")[0] : "Atleta Vyra"
+    currentUserName || (currentUserEmail ? currentUserEmail.split("@")[0] : "Atleta Vyra")
   );
+
+  // Verificação de aceite prévio no localStorage
+  const checkIsAccepted = (chId?: string) => {
+    try {
+      if (typeof window !== "undefined") {
+        if (chId && localStorage.getItem(`vyra_challenge_accepted_${chId}`) === "true") {
+          return true;
+        }
+        return localStorage.getItem("vyra_challenge_terms_accepted") === "true";
+      }
+    } catch {}
+    return false;
+  };
+
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState<boolean>(() => checkIsAccepted(challenge?.id));
+  const [termsCheckbox, setTermsCheckbox] = useState<boolean>(false);
+  const [activeStep, setActiveStep] = useState<"terms" | "upload">("terms");
+
   const [isPicking, setIsPicking] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStep, setUploadStep] = useState<string | null>(null);
@@ -42,7 +66,37 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
   const [successEntry, setSuccessEntry] = useState<ChallengeEntry | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Sincroniza passo quando modal abre ou desafio muda
+  useEffect(() => {
+    if (isOpen && challenge) {
+      const alreadyAccepted = checkIsAccepted(challenge.id);
+      setHasAcceptedTerms(alreadyAccepted);
+      setActiveStep(alreadyAccepted ? "upload" : "terms");
+      setTermsCheckbox(alreadyAccepted);
+      setErrorMsg(null);
+    }
+  }, [isOpen, challenge?.id]);
+
   if (!isOpen || !challenge) return null;
+
+  const athleteIdentifier =
+    currentUserName ||
+    (currentUserNickname ? `@${currentUserNickname}` : null) ||
+    (currentUserEmail ? currentUserEmail.split("@")[0] : "Atleta Vyra");
+
+  const handleAcceptTerms = () => {
+    if (!termsCheckbox) return;
+    try {
+      if (challenge) {
+        localStorage.setItem(`vyra_challenge_accepted_${challenge.id}`, "true");
+      }
+      localStorage.setItem("vyra_challenge_terms_accepted", "true");
+      localStorage.setItem("vyra_challenge_terms_accepted_at", new Date().toISOString());
+    } catch {}
+
+    setHasAcceptedTerms(true);
+    setActiveStep("upload");
+  };
 
   const handlePickFromGallery = async () => {
     try {
@@ -158,7 +212,7 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
       const entry = await saveChallengeEntry({
         challenge_id: challenge.id,
         user_id: currentUserEmail || "std-me",
-        participant_name: participantName.trim() || "Atleta Vyra",
+        participant_name: participantName.trim() || athleteIdentifier,
         caption: caption.trim() || `Evolução para o ${challenge.title}`,
         photo_url: finalPhotoUrl,
       });
@@ -183,8 +237,11 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-lg bg-[#141414] border border-[#2B2B2F] rounded-3xl p-6 sm:p-7 space-y-5 shadow-2xl animate-in zoom-in-95 my-auto">
+    <div
+      id="challenge-participation-modal"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+    >
+      <div className="w-full max-w-lg bg-[#141414] border border-[#2B2B2F] rounded-3xl p-6 sm:p-7 space-y-5 shadow-2xl animate-in zoom-in-95 my-auto relative">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#2B2B2F] pb-4">
           <div className="flex items-center gap-2.5">
@@ -192,7 +249,9 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
               <Trophy className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-[#F5F5F7]">Participar do Desafio</h3>
+              <h3 className="text-base font-bold text-[#F5F5F7]">
+                {activeStep === "terms" ? "Regulamento & Aceite" : "Participar do Desafio"}
+              </h3>
               <p className="text-xs text-[#D8B46A] font-semibold truncate max-w-xs sm:max-w-sm">
                 {challenge.title}
               </p>
@@ -251,8 +310,125 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
               Concluir & Ver Minha Foto
             </button>
           </div>
+        ) : activeStep === "terms" ? (
+          /* --- TELA DE ACEITE DO DESAFIO --- */
+          <div className="space-y-4 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#D8B46A]/15 text-[#D8B46A] border border-[#D8B46A]/30 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Termo Obrigatório de Consentimento</span>
+              </span>
+            </div>
+
+            <p className="text-xs text-[#9B9BA1] leading-relaxed">
+              Para garantir a idoneidade do ranking e a segurança de todos os atletas, leia e confirme o regulamento antes de enviar suas fotos:
+            </p>
+
+            {/* Cláusulas do Termo */}
+            <div className="p-3.5 rounded-2xl bg-[#0D0D0E] border border-[#26262B] space-y-3 text-xs max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-[#2B2B2F]">
+              <div className="space-y-1">
+                <h5 className="font-bold text-[#F5F5F7] flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-[#D8B46A]" />
+                  1. Autenticidade Visual das Fotos
+                </h5>
+                <p className="text-[11px] text-[#9B9BA1]">
+                  As fotos devem ser 100% reais do seu próprio corpo, sem uso de filtros de edição, retoques de imagem ou alterações por IA. Poses nítidas com boa iluminação.
+                </p>
+              </div>
+
+              <div className="space-y-1 border-t border-[#26262B] pt-2.5">
+                <h5 className="font-bold text-[#F5F5F7] flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 text-[#D8B46A]" />
+                  2. Autorização de Exibição e Apuração
+                </h5>
+                <p className="text-[11px] text-[#9B9BA1]">
+                  Você autoriza a exibição de suas fotos de evolução no painel da comunidade Vyra e na cédula de votação oficial do júri técnico e dos alunos.
+                </p>
+              </div>
+
+              <div className="space-y-1 border-t border-[#26262B] pt-2.5">
+                <h5 className="font-bold text-[#F5F5F7] flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-[#FF9A62]" />
+                  3. Fair Play e Desclassificação
+                </h5>
+                <p className="text-[11px] text-[#9B9BA1]">
+                  É estritamente vedada a compra de votos, automações ou bots na votação. Qualquer tentativa de manipulação causará desclassificação sumária.
+                </p>
+              </div>
+
+              <div className="space-y-1 border-t border-[#26262B] pt-2.5">
+                <h5 className="font-bold text-[#F5F5F7] flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-[#34C759]" />
+                  4. Saúde Física e Segurança
+                </h5>
+                <p className="text-[11px] text-[#9B9BA1]">
+                  Declaro que meus resultados foram construídos por treinos consistentes e plano alimentar equilibrado, respeitando minha saúde.
+                </p>
+              </div>
+            </div>
+
+            {/* Checkbox de Aceite */}
+            <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] hover:border-[#D8B46A]/50 transition-all cursor-pointer select-none">
+              <input
+                type="checkbox"
+                id="challenge-agree-checkbox"
+                checked={termsCheckbox}
+                onChange={(e) => setTermsCheckbox(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded text-[#D8B46A] border-[#2B2B2F] bg-black accent-[#D8B46A] cursor-pointer"
+              />
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-[#F5F5F7] block leading-snug">
+                  Li, compreendi e concordo integralmente com as regras e autorizo o uso das minhas fotos para o desafio.
+                </span>
+                <span className="text-[10px] text-[#9B9BA1] block">
+                  Aceite nominal registrado para <strong>{athleteIdentifier}</strong>.
+                </span>
+              </div>
+            </label>
+
+            {/* Botões do Aceite */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#2B2B2F]">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-[#9B9BA1] hover:text-[#F5F5F7] cursor-pointer"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                id="challenge-confirm-terms-btn"
+                disabled={!termsCheckbox}
+                onClick={handleAcceptTerms}
+                className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+                  termsCheckbox
+                    ? "bg-[#D8B46A] text-black hover:brightness-110 active:scale-95 shadow-lg shadow-[#D8B46A]/20"
+                    : "bg-[#2B2B2F] text-[#6E6E73] cursor-not-allowed"
+                }`}
+              >
+                <span>Aceitar e Continuar</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          /* --- ETAPA DE ENVIO DA FOTO --- */
+          <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in">
+            {/* Banner de Aceite Concluído */}
+            <div className="p-2.5 rounded-xl bg-[#34C759]/10 border border-[#34C759]/30 flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-[#34C759]">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-bold text-[11px]">Termo de aceite do desafio validado</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveStep("terms")}
+                className="text-[10px] font-bold text-[#D8B46A] hover:underline cursor-pointer shrink-0"
+              >
+                Rever Regras
+              </button>
+            </div>
+
             {errorMsg && (
               <div className="p-3 rounded-xl bg-[#FF453A]/15 border border-[#FF453A]/30 text-xs text-[#FF453A] flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -263,7 +439,7 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
             {/* Foto Picker com expo-image-picker */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-[#9B9BA1] block uppercase tracking-wider">
-                Foto da sua Transformação
+                Foto da sua Transformação *
               </label>
 
               {selectedImageUri ? (
@@ -382,6 +558,7 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
               </button>
               <button
                 type="submit"
+                id="challenge-submit-entry-btn"
                 disabled={isUploading || !selectedImageUri}
                 className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
                   isUploading || !selectedImageUri
@@ -396,7 +573,7 @@ export const ChallengeParticipationModal: React.FC<ChallengeParticipationModalPr
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Award className="w-3.5 h-3.5" />
                     <span>Enviar Participação</span>
                   </>
                 )}

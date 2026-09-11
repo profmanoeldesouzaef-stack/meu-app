@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, Check, Sparkles, MessageSquare, Palette } from "lucide-react";
+import { X, Check, MessageSquare, Palette } from "lucide-react";
 import { CHAT_NAME_COLOR_PRESETS, CHAT_TEXT_COLOR_PRESETS } from "../lib/patents";
 
 interface ChatColorPickerModalProps {

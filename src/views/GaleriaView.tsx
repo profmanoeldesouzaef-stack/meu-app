@@ -8,7 +8,6 @@ import { VeteranBadge, PatentBadge } from "../lib/patents";
 import {
   Heart,
   Trophy,
-  Sparkles,
   Search,
   Plus,
   X,
@@ -306,7 +305,7 @@ export const GaleriaView: React.FC<{ embedded?: boolean }> = ({ embedded = false
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-20 right-6 z-50 bg-[#1D1D1F] border border-[#FF6A2A]/50 text-[#F5F5F7] px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-200">
-          <Sparkles className="w-4 h-4 text-[#FF6A2A]" />
+          <Trophy className="w-4 h-4 text-[#FF6A2A]" />
           <span className="text-xs font-bold">{toastMessage}</span>
         </div>
       )}

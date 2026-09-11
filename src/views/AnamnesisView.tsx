@@ -8,7 +8,6 @@ import {
   Camera,
   Upload,
   ArrowLeft,
-  Sparkles,
   ShieldCheck,
   Activity,
   Heart,
@@ -198,7 +197,7 @@ export const AnamnesisView: React.FC = () => {
           {/* Goals & Activity */}
           <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
             <h3 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#D8B46A]" />
+              <Activity className="w-4 h-4 text-[#D8B46A]" />
               Objetivos & Rotina
             </h3>
 

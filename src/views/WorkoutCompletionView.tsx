@@ -6,7 +6,6 @@ import {
   Download,
   Share2,
   Check,
-  Sparkles,
   ArrowLeft,
   Eye,
   Camera,
@@ -937,7 +936,7 @@ export const WorkoutCompletionView: React.FC = () => {
         {/* Feedback Alert if copied */}
         {copyFeedback && (
           <div className="mt-4 p-3.5 rounded-2xl bg-[#34C759]/15 border border-[#34C759]/40 text-[#34C759] text-xs font-bold flex items-center gap-2 animate-in fade-in">
-            <Sparkles className="w-4 h-4 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{copyFeedback}</span>
           </div>
         )}

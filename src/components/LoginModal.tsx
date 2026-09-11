@@ -4,6 +4,16 @@ import { VyraLogo } from "./VyraLogo";
 import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, UserPlus, LogIn } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
+const Alert = {
+  alert: (title: string, message?: string) => {
+    const fullMsg = message ? `${title}: ${message}` : title;
+    console.error(`[Alert] ${title}:`, message);
+    if (typeof window !== "undefined") {
+      window.alert(fullMsg);
+    }
+  },
+};
+
 export const LoginModal: React.FC = () => {
   const {
     t,
@@ -95,13 +105,16 @@ export const LoginModal: React.FC = () => {
     e.preventDefault();
     setFeedback(null);
 
-    const cleanEmail = email.trim().toLowerCase();
-    if (!validateEmail(cleanEmail)) {
+    // 1. Sanitização Rigorosa dos Inputs
+    const sanitizedEmail = email.trim().toLowerCase();
+    const sanitizedPassword = password.trim();
+
+    if (!validateEmail(sanitizedEmail)) {
       setFeedback({ text: "Por favor, insira um e-mail válido.", type: "error" });
       return;
     }
 
-    if (password.length < 6) {
+    if (sanitizedPassword.length < 6) {
       setFeedback({
         text: "A senha deve conter no mínimo 6 caracteres por segurança.",
         type: "error",
@@ -113,149 +126,190 @@ export const LoginModal: React.FC = () => {
 
     try {
       if (isSignUp) {
-        // Fluxo de Cadastro estrito com Supabase Auth
-        const cleanName = fullName.trim() || cleanEmail.split("@")[0];
-        const cleanNickname = nickname.trim() || cleanName.split(" ")[0] || cleanName;
-
+        // Chamada Real do signUp
         const { data, error } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
+          email: email.trim().toLowerCase(),
+          password: password.trim(),
           options: {
             data: {
-              full_name: cleanName,
-              name: cleanName,
-              nickname: cleanNickname,
-              display_name: cleanNickname,
-              // Gamificação inicializada estritamente com valores base
-              points: 0,
-              rank: null,
-              is_champion: false,
-              is_veteran: false,
-              consecutive_months: 0,
-              patente_level: 0,
+              full_name: fullName,
+              nickname: nickname,
             },
           },
         });
 
+        console.log('Tentativa de cadastro:', { data, error });
+
+        // Bloqueio de Falso Positivo: NUNCA exiba mensagem de sucesso se houver error ou se data.user vier nulo.
         if (error) {
+          Alert.alert('Erro no Cadastro', error.message);
           setFeedback({
-            text: error.message || "Erro ao criar conta. Verifique os dados e tente novamente.",
+            text: error.message || "Erro no Cadastro",
             type: "error",
           });
           setLoading(false);
           return;
         }
 
-        // Garante sincronização imediata na tabela profiles
-        if (data?.user) {
-          try {
-            await supabase.from("profiles").upsert(
-              {
-                id: data.user.id,
-                email: cleanEmail,
-                full_name: cleanName,
-                name: cleanName,
-                nickname: cleanNickname,
-                role: "student",
-                is_coach: false,
-                is_champion: false,
-                points: 0,
-                rank: null,
-                consecutive_months: 0,
-                is_veteran: false,
-                monthly_fee_paid: false,
-                patente_level: 0,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "id" }
-            );
-          } catch (e) {
-            console.warn("Aviso ao inicializar perfil:", e);
-          }
-        }
-
-        // Atualiza os estados de nome e apelido imediatamente
-        setCurrentUserName(cleanName);
-        setCurrentUserNickname(cleanNickname);
-        localStorage.setItem("vyra_user_name", cleanName);
-        localStorage.setItem("vyra_user_nickname", cleanNickname);
-
-        // Se a sessão não foi aberta diretamente (ex: confirmação pendente), tenta logar com as credenciais
-        let activeAuthUser = data?.user;
-        if (!data?.session) {
-          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password,
+        if (!data || !data.user) {
+          const errMsg = "Não foi possível criar o usuário no Supabase Auth. Nenhum usuário retornado.";
+          Alert.alert('Erro no Cadastro', errMsg);
+          setFeedback({
+            text: errMsg,
+            type: "error",
           });
-
-          if (signInErr || !signInData?.user) {
-            setFeedback({
-              text: "Conta criada com sucesso! Entre com seu e-mail e senha cadastrados.",
-              type: "success",
-            });
-            setIsSignUp(false);
-            setLoading(false);
-            return;
-          }
-          activeAuthUser = signInData.user;
+          setLoading(false);
+          return;
         }
 
-        if (activeAuthUser) {
+        // Se o Supabase retornar identities vazio com email confirmation ativo, o email já existe
+        if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          const errMsg = "Este e-mail já está cadastrado no Supabase. Faça login com suas credenciais.";
+          Alert.alert('Erro no Cadastro', errMsg);
+          setFeedback({
+            text: errMsg,
+            type: "error",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Auto-Confirmação / Bypass no Supabase (se aplicável):
+        // Se houver erro de foreign key ou constraint na tabela profiles, capture e trate para não abortar a criação do usuário.
+        try {
+          if (data.user.id) {
+            const { error: profileErr } = await supabase
+              .from("profiles")
+              .update({
+                full_name: fullName.trim() || undefined,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", data.user.id);
+
+            if (profileErr) {
+              console.warn("Aviso ao atualizar profiles (não impeditivo):", profileErr);
+            }
+          }
+        } catch (profileCatchErr) {
+          console.warn("Erro de foreign key/constraint em profiles capturado (não aborta criação do usuário):", profileCatchErr);
+        }
+
+        const userFullName = fullName.trim() || data.user.email?.split("@")[0] || "Aluno";
+        const userNickname = nickname.trim() || userFullName.split(" ")[0] || "Aluno";
+
+        setCurrentUserName(userFullName);
+        setCurrentUserNickname(userNickname);
+        localStorage.setItem("vyra_user_name", userFullName);
+        localStorage.setItem("vyra_user_nickname", userNickname);
+
+        if (data.session) {
           await definirPerfil({
-            ...activeAuthUser,
+            ...data.user,
             user_metadata: {
-              ...activeAuthUser.user_metadata,
-              full_name: cleanName,
-              name: cleanName,
-              nickname: cleanNickname,
-              display_name: cleanNickname,
+              ...data.user.user_metadata,
+              full_name: userFullName,
+              nickname: userNickname,
+              name: userFullName,
+              display_name: userNickname,
             },
             raw_user_meta_data: {
-              ...activeAuthUser.raw_user_meta_data,
-              full_name: cleanName,
-              name: cleanName,
-              nickname: cleanNickname,
-              display_name: cleanNickname,
+              ...((data.user as any).raw_user_meta_data || data.user.user_metadata),
+              full_name: userFullName,
+              nickname: userNickname,
+              name: userFullName,
+              display_name: userNickname,
             },
           });
+
+          localStorage.setItem("vyra_logged_in", "true");
+          localStorage.setItem("vyra_user_email", email.trim().toLowerCase());
+          localStorage.setItem("vyra_pending_fullname", userFullName);
+          localStorage.setItem("vyra_pending_nickname", userNickname);
+          loginWithEmail(email.trim().toLowerCase());
+          setActiveView("profile");
+          setFeedback({
+            text: "Conta criada e autenticada com sucesso! Bem-vindo ao VYRA.",
+            type: "success",
+          });
+        } else {
+          setFeedback({
+            text: "Cadastro realizado no Supabase com sucesso! Verifique seu e-mail para confirmação ou acesse com sua senha.",
+            type: "success",
+          });
+          setIsSignUp(false);
+        }
+      } else {
+        // 2. Limpeza Prévia de Sessão Conflitante:
+        // Antes de invocar signInWithPassword, force um logout local limpo para eliminar tokens expirados ou estados zumbis no storage
+        try {
+          await supabase.auth.signOut();
+        } catch (signOutErr) {
+          console.warn("Aviso na limpeza prévia de sessão:", signOutErr);
         }
 
-        // Conecta o usuário e o direciona para o aplicativo
-        loginWithEmail(cleanEmail);
-        localStorage.setItem("vyra_is_new_user", "true");
-        localStorage.setItem("vyra_open_profile_edit", "true");
-        localStorage.setItem("vyra_logged_in", "true");
-        localStorage.setItem("vyra_pending_fullname", cleanName);
-        localStorage.setItem("vyra_pending_nickname", cleanNickname);
-        setActiveView("profile");
-        setFeedback({
-          text: "Conta criada e sincronizada com sucesso! Bem-vindo ao VYRA.",
-          type: "success",
-        });
-      } else {
-        // Fluxo de Login estrito com Supabase Auth (sem mock, sem fallback de bypass)
+        // 3. Diagnóstico Exato de Erros com Feedback Visual:
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
+          email: sanitizedEmail,
+          password: sanitizedPassword,
         });
 
         if (error || !data?.user) {
+          const rawMessage = error?.message || "";
+          const lowerMsg = rawMessage.toLowerCase();
+          const errorCode = (error as any)?.code || "";
+
+          let displayError = rawMessage || "Erro ao conectar com o serviço de autenticação.";
+
+          if (lowerMsg.includes("email not confirmed") || errorCode === "email_not_confirmed") {
+            displayError = "Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada ou contate o suporte.";
+          } else if (
+            lowerMsg.includes("invalid login credentials") ||
+            lowerMsg.includes("invalid_credentials") ||
+            lowerMsg.includes("invalid credentials") ||
+            errorCode === "invalid_credentials"
+          ) {
+            displayError = "E-mail ou senha incorretos. Confira os dados digitados.";
+          }
+
           setFeedback({
-            text: "E-mail ou senha incorretos. Tente novamente ou crie uma conta.",
+            text: displayError,
             type: "error",
           });
           setLoading(false);
           return;
         }
 
-        // Sucesso comprovado no Supabase: sincroniza dados reais
-        await definirPerfil(data.user);
-        const res = loginWithEmail(cleanEmail);
-        setFeedback({ text: res.message, type: "success" });
+        // 4. Persistência e Transição de Tela Segura:
+        // Ao confirmar data.session, garanta que o estado global de autenticação seja atualizado
+        // imediatamente antes da navegação para evitar loops de redirecionamento de volta à tela de login.
+        if (data.session) {
+          localStorage.setItem("vyra_logged_in", "true");
+          localStorage.setItem("vyra_user_email", sanitizedEmail);
+          await definirPerfil(data.user);
+          const res = loginWithEmail(sanitizedEmail);
+          setFeedback({ text: res.message, type: "success" });
+        } else {
+          // Fallback caso autenticado com user válido
+          localStorage.setItem("vyra_logged_in", "true");
+          localStorage.setItem("vyra_user_email", sanitizedEmail);
+          await definirPerfil(data.user);
+          const res = loginWithEmail(sanitizedEmail);
+          setFeedback({ text: res.message, type: "success" });
+        }
       }
     } catch (err: any) {
+      const rawMessage = err?.message || "E-mail ou senha incorretos. Confira os dados digitados.";
+      const lowerMsg = rawMessage.toLowerCase();
+      let displayError = rawMessage;
+
+      if (lowerMsg.includes("email not confirmed")) {
+        displayError = "Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada ou contate o suporte.";
+      } else if (lowerMsg.includes("invalid login credentials") || lowerMsg.includes("invalid_credentials")) {
+        displayError = "E-mail ou senha incorretos. Confira os dados digitados.";
+      }
+
       setFeedback({
-        text: "E-mail ou senha incorretos. Tente novamente ou crie uma conta.",
+        text: displayError,
         type: "error",
       });
     } finally {

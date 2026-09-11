@@ -135,6 +135,15 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
 }
 
+export const supabase: SupabaseClient =
+  getSupabaseClient() ||
+  createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  });
+
 // ID de usuário padrão compatível com a chave estrangeira auth.users do Supabase
 export const DEFAULT_VOTING_USER_ID = "b97113b7-65a4-4eda-aca3-1baff1f6c3b6";
 

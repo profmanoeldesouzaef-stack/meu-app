@@ -6,7 +6,6 @@ import {
   ClipboardCheck,
   Camera,
   ArrowRight,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
@@ -91,7 +90,7 @@ export const AccessGate: React.FC<AccessGateProps> = ({
                   <AlertCircle className="w-4 h-4 text-[#FF9A62]" />
                 )}
                 <span className="font-semibold text-[#F5F5F7]">
-                  1. Questionário de Anamnese Esportiva
+                  1. Anamnese Base do Aluno
                 </span>
               </div>
               <span
@@ -134,7 +133,7 @@ export const AccessGate: React.FC<AccessGateProps> = ({
           {type === "payment" ? (
             <button
               id="gate-activate-plan-btn"
-              onClick={() => setActiveView("profile")}
+              onClick={() => setActiveView("paywall")}
               className="w-full py-3.5 px-6 rounded-2xl font-black text-sm bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 active:scale-[0.99] shadow-xl shadow-[#FF6A2A]/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>Assinar Agora</span>
@@ -143,11 +142,11 @@ export const AccessGate: React.FC<AccessGateProps> = ({
           ) : (
             <button
               id="gate-complete-anamnesis-btn"
-              onClick={() => setActiveView("anamnesis")}
+              onClick={() => setActiveView("profile")}
               className="w-full py-3.5 px-6 rounded-2xl font-black text-sm bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 active:scale-[0.99] shadow-xl shadow-[#FF6A2A]/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <ClipboardCheck className="w-4 h-4" />
-              <span>Preencher Anamnese & Anexar Fotos</span>
+              <span>Conferir Anamnese Base & Fotos</span>
             </button>
           )}
         </div>

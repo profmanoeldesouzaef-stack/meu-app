@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import {
-  Sparkles,
+  Activity,
   X,
   CheckCircle2,
   AlertTriangle,
@@ -111,7 +111,7 @@ export const FormCheckerModal: React.FC<FormCheckerModalProps> = ({
         <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#FF6A2A] to-[#D8B46A] text-[#0A0A0A] flex items-center justify-center font-bold">
-              <Sparkles className="w-5 h-5 stroke-[2.5]" />
+              <Activity className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <h3 className="text-lg font-black text-[#F5F5F7] tracking-tight">
@@ -218,7 +218,7 @@ export const FormCheckerModal: React.FC<FormCheckerModalProps> = ({
             </>
           ) : (
             <>
-              <Sparkles className="w-4 h-4 stroke-[2.5]" />
+              <Activity className="w-4 h-4 stroke-[2.5]" />
               <span>{t("form.run")}</span>
             </>
           )}

@@ -27,7 +27,8 @@ import {
   X,
   ToggleLeft,
   ToggleRight,
-  Sparkles,
+  Bot,
+  Crown,
   Save,
   Search,
   Users,
@@ -65,8 +66,15 @@ import { VeteranBadge } from "../lib/patents";
 export const CoachDashboardView: React.FC = () => {
   const { t, lang, currentUserEmail, setInviteData, setActiveView, setVipChatUnlocked } = useApp();
   const [activeTab, setActiveTab] = useState<
-    "overview" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
+    "overview" | "pending_students" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
   >("overview");
+
+  // Pending Students state (Onboarding anamnesis & release queue)
+  const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
+  const [loadingPending, setLoadingPending] = useState<boolean>(false);
+  const [releasingId, setReleasingId] = useState<string | null>(null);
+  const [pendingFilter, setPendingFilter] = useState<"all" | "workout" | "diet">("all");
+  const [pendingSearchQuery, setPendingSearchQuery] = useState<string>("");
 
   // Protocol state (Hydration & Creatine for student)
   const [studentWaterTarget, setStudentWaterTarget] = useState<number>(2500);
@@ -196,7 +204,8 @@ export const CoachDashboardView: React.FC = () => {
       api.getChallenges().catch(() => []),
       api.getWorkoutLibrary().catch(() => []),
       api.getCoachGuidelines().catch(() => []),
-    ]).then(([kp, rd, cp, pt, wk, dt, stds, chEvt, chItems, wLib, cGuidelines]) => {
+      api.getPendingStudents().catch(() => []),
+    ]).then(([kp, rd, cp, pt, wk, dt, stds, chEvt, chItems, wLib, cGuidelines, pStds]) => {
       setKpis(kp);
       setRadar(rd);
       setCoupons(cp);
@@ -205,6 +214,7 @@ export const CoachDashboardView: React.FC = () => {
       if (wk) setWorkout(wk);
       if (dt) setDiet(dt);
       if (cGuidelines && cGuidelines.length > 0) setActiveGuidelines(cGuidelines);
+      if (pStds) setPendingStudents(pStds);
       if (chEvt) {
         setChallengeEvent(chEvt);
         setEvtTitle(chEvt.title || "");
@@ -227,6 +237,79 @@ export const CoachDashboardView: React.FC = () => {
       }
     });
   }, []);
+
+  const loadPendingStudents = async () => {
+    setLoadingPending(true);
+    try {
+      const data = await api.getPendingStudents();
+      setPendingStudents(data);
+    } catch (err) {
+      console.error("Erro ao carregar alunos pendentes:", err);
+    } finally {
+      setLoadingPending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "pending_students") {
+      loadPendingStudents();
+    }
+  }, [activeTab]);
+
+  const handleReleaseWorkout = async (studentId: string) => {
+    setReleasingId(`workout-${studentId}`);
+    try {
+      await api.releaseStudentWorkout(studentId);
+      setPendingStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, workout_released: true } : s))
+      );
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, workout_released: true } : s))
+      );
+      showNotification("Treino liberado com sucesso para o aluno!");
+    } catch (err) {
+      console.error("Erro ao liberar treino:", err);
+      showNotification("Erro ao liberar treino do aluno.");
+    } finally {
+      setReleasingId(null);
+    }
+  };
+
+  const handleReleaseDiet = async (studentId: string) => {
+    setReleasingId(`diet-${studentId}`);
+    try {
+      await api.releaseStudentDiet(studentId);
+      setPendingStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, diet_released: true } : s))
+      );
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, diet_released: true } : s))
+      );
+      showNotification("Dieta liberada com sucesso para o aluno!");
+    } catch (err) {
+      console.error("Erro ao liberar dieta:", err);
+      showNotification("Erro ao liberar dieta do aluno.");
+    } finally {
+      setReleasingId(null);
+    }
+  };
+
+  const handleSimulatePendingStudent = async () => {
+    try {
+      const res = await api.simulatePendingStudent();
+      const newStd = res.student;
+      await loadPendingStudents();
+      if (newStd) {
+        setStudents((prev) => [newStd, ...prev]);
+        showNotification(`Aluno simulado adicionado à fila: ${newStd.name}`);
+      } else {
+        showNotification("Aluno simulado adicionado à fila!");
+      }
+    } catch (err) {
+      console.error("Erro ao simular aluno pendente:", err);
+      showNotification("Erro ao simular aluno.");
+    }
+  };
 
   const selectedStudent = students.find((s) => s.id === selectedStudentId) || students[0] || null;
 
@@ -759,7 +842,16 @@ export const CoachDashboardView: React.FC = () => {
 
   const tabs = [
     { id: "overview", label: t("coach.overview"), icon: TrendingUp },
-    { id: "ai_chat", label: "Conversar com IA (Metodologia)", icon: Sparkles },
+    {
+      id: "pending_students",
+      label: `Alunos Pendentes ${
+        pendingStudents.filter((s) => !s.workout_released || !s.diet_released).length > 0
+          ? `(${pendingStudents.filter((s) => !s.workout_released || !s.diet_released).length})`
+          : ""
+      }`,
+      icon: UserCheck,
+    },
+    { id: "ai_chat", label: "Conversar com IA (Metodologia)", icon: Bot },
     { id: "invite", label: "Convidar Alunos (Link VIP)", icon: Link2 },
     { id: "challenges", label: "Desafios & Votação", icon: Trophy },
     { id: "workouts", label: t("coach.workouts"), icon: Dumbbell },
@@ -824,6 +916,373 @@ export const CoachDashboardView: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Tab: Alunos Pendentes (Anamnese Obrigatória & Fila de Liberação) */}
+      {activeTab === "pending_students" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Header Banner */}
+          <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#1A1A1E] via-[#151515] to-[#121214] border border-[#D8B46A]/30 space-y-4 relative overflow-hidden shadow-2xl">
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#D8B46A]/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black tracking-widest text-[#D8B46A] uppercase bg-[#D8B46A]/15 px-3 py-1 rounded-full border border-[#D8B46A]/30 flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    FILA DE ANAMNESE OBRIGATÓRIA
+                  </span>
+                  <span className="text-xs font-bold text-[#9B9BA1] bg-[#2B2B2F] px-2.5 py-0.5 rounded-full">
+                    {pendingStudents.length} {pendingStudents.length === 1 ? "aluno registrado" : "alunos registrados"}
+                  </span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-[#F5F5F7] tracking-tight">
+                  Alunos Aguardando Liberação do Coach
+                </h2>
+                <p className="text-sm text-[#9B9BA1] max-w-2xl">
+                  Novos alunos que completaram a anamnese inicial obrigatória. Os treinos e dietas permanecem travados no app do aluno até você clicar em liberar ou prescrever um protocolo personalizado.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={loadPendingStudents}
+                  disabled={loadingPending}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#2B2B2F] hover:bg-[#3A3A3F] text-[#F5F5F7] flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  title="Atualizar lista"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingPending ? "animate-spin" : ""}`} />
+                  <span>Atualizar</span>
+                </button>
+                <button
+                  onClick={handleSimulatePendingStudent}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#D8B46A] hover:bg-[#E5C17B] text-[#0A0A0A] flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-[#D8B46A]/20"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Simular Aluno com Anamnese</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <div className="p-4 rounded-2xl bg-[#111113] border border-[#2B2B2F] flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-[#9B9BA1]">Total na Fila</span>
+                  <p className="text-2xl font-black text-[#F5F5F7]">{pendingStudents.length}</p>
+                </div>
+                <Users className="w-6 h-6 text-[#D8B46A]" />
+              </div>
+              <div className="p-4 rounded-2xl bg-[#111113] border border-[#2B2B2F] flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-[#9B9BA1]">Treino Pendente</span>
+                  <p className="text-2xl font-black text-[#FF6A2A]">
+                    {pendingStudents.filter((s) => !s.workout_released).length}
+                  </p>
+                </div>
+                <Dumbbell className="w-6 h-6 text-[#FF6A2A]" />
+              </div>
+              <div className="p-4 rounded-2xl bg-[#111113] border border-[#2B2B2F] flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-[#9B9BA1]">Dieta Pendente</span>
+                  <p className="text-2xl font-black text-[#34C759]">
+                    {pendingStudents.filter((s) => !s.diet_released).length}
+                  </p>
+                </div>
+                <UtensilsCrossed className="w-6 h-6 text-[#34C759]" />
+              </div>
+            </div>
+          </div>
+
+          {/* Filters and Search Toolbar */}
+          <div className="p-4 rounded-2xl bg-[#151515] border border-[#2B2B2F] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+              <span className="text-xs font-bold text-[#9B9BA1] flex items-center gap-1 shrink-0">
+                <Filter className="w-3.5 h-3.5" /> Filtrar:
+              </span>
+              <button
+                onClick={() => setPendingFilter("all")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                  pendingFilter === "all"
+                    ? "bg-[#D8B46A] text-[#0A0A0A]"
+                    : "bg-[#202024] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+              >
+                Todos ({pendingStudents.length})
+              </button>
+              <button
+                onClick={() => setPendingFilter("workout")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                  pendingFilter === "workout"
+                    ? "bg-[#FF6A2A] text-white"
+                    : "bg-[#202024] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+              >
+                Treino Pendente ({pendingStudents.filter((s) => !s.workout_released).length})
+              </button>
+              <button
+                onClick={() => setPendingFilter("diet")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                  pendingFilter === "diet"
+                    ? "bg-[#34C759] text-white"
+                    : "bg-[#202024] text-[#9B9BA1] hover:text-[#F5F5F7]"
+                }`}
+              >
+                Dieta Pendente ({pendingStudents.filter((s) => !s.diet_released).length})
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="w-4 h-4 text-[#9B9BA1] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={pendingSearchQuery}
+                onChange={(e) => setPendingSearchQuery(e.target.value)}
+                placeholder="Buscar por nome, objetivo, restrição..."
+                className="w-full sm:w-64 pl-9 pr-3 py-1.5 rounded-xl bg-[#202024] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#9B9BA1] focus:outline-none focus:border-[#D8B46A]"
+              />
+            </div>
+          </div>
+
+          {/* Student Cards List */}
+          {pendingStudents.length === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
+              <div className="w-16 h-16 rounded-full bg-[#34C759]/10 border border-[#34C759]/30 flex items-center justify-center mx-auto text-[#34C759]">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-black text-[#F5F5F7]">Fila Zerada!</h3>
+                <p className="text-xs text-[#9B9BA1] max-w-md mx-auto">
+                  Não há alunos com anamnese aguardando liberação neste momento. Todos os protocolos foram liberados.
+                </p>
+              </div>
+              <button
+                onClick={handleSimulatePendingStudent}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#D8B46A] hover:bg-[#E5C17B] text-[#0A0A0A] inline-flex items-center gap-2 cursor-pointer shadow-lg shadow-[#D8B46A]/20"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Simular Aluno com Anamnese Pendente</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pendingStudents
+                .filter((s) => {
+                  if (pendingFilter === "workout") return !s.workout_released;
+                  if (pendingFilter === "diet") return !s.diet_released;
+                  return true;
+                })
+                .filter((s) => {
+                  if (!pendingSearchQuery.trim()) return true;
+                  const q = pendingSearchQuery.toLowerCase();
+                  return (
+                    (s.name || "").toLowerCase().includes(q) ||
+                    (s.nickname || "").toLowerCase().includes(q) ||
+                    (s.email || "").toLowerCase().includes(q) ||
+                    (s.primary_goal || s.goal || "").toLowerCase().includes(q) ||
+                    (s.dietary_restrictions || s.restrictions || "").toLowerCase().includes(q) ||
+                    (s.medical_history || "").toLowerCase().includes(q)
+                  );
+                })
+                .map((student) => {
+                  const isWorkoutReleased = Boolean(student.workout_released);
+                  const isDietReleased = Boolean(student.diet_released);
+                  const isReleasingWk = releasingId === `workout-${student.id}`;
+                  const isReleasingDt = releasingId === `diet-${student.id}`;
+
+                  return (
+                    <div
+                      key={student.id}
+                      className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] hover:border-[#3A3A3F] transition-all space-y-4 shadow-xl"
+                    >
+                      {/* Card Header: Student Identity & Status Badges */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-[#2B2B2F]">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={
+                              student.avatar_url ||
+                              "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
+                            }
+                            alt={student.name}
+                            className="w-12 h-12 rounded-2xl object-cover border border-[#D8B46A]/30 shrink-0"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base font-extrabold text-[#F5F5F7]">{student.name}</h3>
+                              {student.nickname && (
+                                <span className="text-xs font-bold text-[#D8B46A] bg-[#D8B46A]/10 px-2 py-0.5 rounded-full border border-[#D8B46A]/20">
+                                  "{student.nickname}"
+                                </span>
+                              )}
+                              <span className="text-[10px] font-black uppercase tracking-wider bg-[#2B2B2F] text-[#9B9BA1] px-2 py-0.5 rounded-md">
+                                {student.plan || "Consultoria VIP"}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#9B9BA1] mt-0.5">{student.email}</p>
+                          </div>
+                        </div>
+
+                        {/* Status Badges */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div
+                            className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border ${
+                              isWorkoutReleased
+                                ? "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/30"
+                                : "bg-[#FF6A2A]/15 text-[#FF6A2A] border-[#FF6A2A]/30"
+                            }`}
+                          >
+                            <Dumbbell className="w-3.5 h-3.5" />
+                            <span>{isWorkoutReleased ? "Treino Liberado" : "Treino Travado"}</span>
+                          </div>
+
+                          <div
+                            className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border ${
+                              isDietReleased
+                                ? "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/30"
+                                : "bg-[#FF6A2A]/15 text-[#FF6A2A] border-[#FF6A2A]/30"
+                            }`}
+                          >
+                            <UtensilsCrossed className="w-3.5 h-3.5" />
+                            <span>{isDietReleased ? "Dieta Liberada" : "Dieta Travada"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Anamnese Clinical Data Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        <div className="p-3 rounded-2xl bg-[#111113] border border-[#2B2B2F]/60">
+                          <span className="text-[10px] uppercase font-bold text-[#9B9BA1] flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-[#D8B46A]" /> Idade
+                          </span>
+                          <p className="text-sm font-black text-[#F5F5F7] mt-0.5">
+                            {student.age ? `${student.age} anos` : "Não inf."}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#111113] border border-[#2B2B2F]/60">
+                          <span className="text-[10px] uppercase font-bold text-[#9B9BA1] flex items-center gap-1">
+                            <Scale className="w-3 h-3 text-[#34C759]" /> Peso Atual
+                          </span>
+                          <p className="text-sm font-black text-[#F5F5F7] mt-0.5">
+                            {student.weight_kg ? `${student.weight_kg} kg` : "—"}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#111113] border border-[#2B2B2F]/60">
+                          <span className="text-[10px] uppercase font-bold text-[#9B9BA1] flex items-center gap-1">
+                            <Target className="w-3 h-3 text-[#0A84FF]" /> Altura
+                          </span>
+                          <p className="text-sm font-black text-[#F5F5F7] mt-0.5">
+                            {student.height_cm ? `${student.height_cm} cm` : "—"}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#111113] border border-[#2B2B2F]/60">
+                          <span className="text-[10px] uppercase font-bold text-[#9B9BA1] flex items-center gap-1">
+                            <Flame className="w-3 h-3 text-[#FF6A2A]" /> Objetivo
+                          </span>
+                          <p
+                            className="text-sm font-black text-[#F5F5F7] mt-0.5 truncate"
+                            title={student.primary_goal || student.goal}
+                          >
+                            {student.primary_goal || student.goal || "Condicionamento Geral"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Dietary Restrictions and Medical History Details */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="p-3.5 rounded-2xl bg-[#111113] border border-[#2B2B2F]/80 space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-[#D8B46A]">
+                            <UtensilsCrossed className="w-3.5 h-3.5" />
+                            <span>Restrições Alimentares / Alergias:</span>
+                          </div>
+                          <p className="text-xs text-[#E5E5E7] leading-relaxed">
+                            {student.dietary_restrictions || student.restrictions || "Nenhuma restrição relatada"}
+                          </p>
+                        </div>
+
+                        <div className="p-3.5 rounded-2xl bg-[#111113] border border-[#2B2B2F]/80 space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-[#FF6A2A]">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span>Histórico de Lesões / Observações Médicas:</span>
+                          </div>
+                          <p className="text-xs text-[#E5E5E7] leading-relaxed">
+                            {student.medical_history || "Nenhum histórico de lesão ou condição prévia"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Coach Actions Toolbar */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#2B2B2F]">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Release Workout Button */}
+                          <button
+                            onClick={() => handleReleaseWorkout(student.id)}
+                            disabled={isWorkoutReleased || isReleasingWk}
+                            className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                              isWorkoutReleased
+                                ? "bg-[#34C759]/10 text-[#34C759] border border-[#34C759]/30 cursor-default"
+                                : "bg-[#FF6A2A] hover:bg-[#E55A1D] text-white shadow-md shadow-[#FF6A2A]/20"
+                            }`}
+                          >
+                            {isReleasingWk ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : isWorkoutReleased ? (
+                              <Check className="w-3.5 h-3.5" />
+                            ) : (
+                              <Dumbbell className="w-3.5 h-3.5" />
+                            )}
+                            <span>{isWorkoutReleased ? "Treino Liberado" : "Liberar Treino"}</span>
+                          </button>
+
+                          {/* Release Diet Button */}
+                          <button
+                            onClick={() => handleReleaseDiet(student.id)}
+                            disabled={isDietReleased || isReleasingDt}
+                            className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                              isDietReleased
+                                ? "bg-[#34C759]/10 text-[#34C759] border border-[#34C759]/30 cursor-default"
+                                : "bg-[#34C759] hover:bg-[#2EB04F] text-white shadow-md shadow-[#34C759]/20"
+                            }`}
+                          >
+                            {isReleasingDt ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : isDietReleased ? (
+                              <Check className="w-3.5 h-3.5" />
+                            ) : (
+                              <UtensilsCrossed className="w-3.5 h-3.5" />
+                            )}
+                            <span>{isDietReleased ? "Dieta Liberada" : "Liberar Dieta"}</span>
+                          </button>
+                        </div>
+
+                        {/* Shortcuts to Prescribe / Edit */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => {
+                              handleSelectStudent(student);
+                              setActiveTab("workouts");
+                            }}
+                            className="px-3 py-2 rounded-xl text-xs font-bold bg-[#202024] hover:bg-[#2B2B2F] text-[#F5F5F7] flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Dumbbell className="w-3 h-3 text-[#D8B46A]" />
+                            <span>Editar Treino</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleSelectStudent(student);
+                              setActiveTab("diet");
+                            }}
+                            className="px-3 py-2 rounded-xl text-xs font-bold bg-[#202024] hover:bg-[#2B2B2F] text-[#F5F5F7] flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <UtensilsCrossed className="w-3 h-3 text-[#34C759]" />
+                            <span>Editar Dieta</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tab: Overview */}
       {activeTab === "overview" && (
@@ -931,7 +1390,7 @@ export const CoachDashboardView: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
                 <span className="text-[11px] font-black uppercase tracking-widest text-[#D8B46A] bg-[#D8B46A]/15 px-3 py-1 rounded-full border border-[#D8B46A]/30 inline-flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 fill-current" />
+                  <Bot className="w-3.5 h-3.5 fill-current" />
                   <span>ASSISTENTE TÉCNICO & BIOMECÂNICO</span>
                 </span>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F7] tracking-tight">
@@ -957,7 +1416,7 @@ export const CoachDashboardView: React.FC = () => {
                 <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#D8B46A] to-[#FFD580] flex items-center justify-center text-[#0A0A0A] font-black">
-                      <Sparkles className="w-4 h-4 fill-current" />
+                      <Bot className="w-4 h-4 fill-current" />
                     </div>
                     <div>
                       <h4 className="text-xs font-black text-[#F5F5F7]">Canal de Metodologia & Instruções</h4>
@@ -986,7 +1445,7 @@ export const CoachDashboardView: React.FC = () => {
                             : "bg-[#1D1D1F] border border-[#2B2B2F] text-[#D8B46A]"
                         }`}
                       >
-                        {msg.sender === "coach" ? "C" : <Sparkles className="w-3.5 h-3.5 fill-current" />}
+                        {msg.sender === "coach" ? "C" : <Bot className="w-3.5 h-3.5 fill-current" />}
                       </div>
 
                       <div
@@ -1162,7 +1621,7 @@ export const CoachDashboardView: React.FC = () => {
                     }}
                     className="px-3.5 py-2 rounded-xl bg-[#D8B46A] text-[#0A0A0A] font-black text-xs hover:brightness-110 flex items-center gap-1.5 shrink-0 shadow-md shadow-[#D8B46A]/20 cursor-pointer"
                   >
-                    <Sparkles className="w-3.5 h-3.5 fill-current" />
+                    <Zap className="w-3.5 h-3.5 fill-current" />
                     <span>Gerar Treino</span>
                   </button>
                 </div>
@@ -1206,7 +1665,7 @@ export const CoachDashboardView: React.FC = () => {
             <div className="p-4 rounded-2xl bg-[#0F0F11] border border-[#D8B46A]/40 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#F5F5F7] flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-[#D8B46A]" />
+                  <Link2 className="w-4 h-4 text-[#D8B46A]" />
                   <span>Seu Link Oficial de Convite de Alunos</span>
                 </span>
                 <span className="text-[10px] text-[#34C759] font-bold bg-[#34C759]/15 px-2 py-0.5 rounded-full border border-[#34C759]/30">
@@ -1664,7 +2123,7 @@ export const CoachDashboardView: React.FC = () => {
                   onClick={() => setShowAiWorkoutModal(true)}
                   className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-[#D8B46A] to-[#F1C40F] text-[#0A0A0A] hover:brightness-110 flex items-center gap-1.5 shadow-lg shadow-[#D8B46A]/20 cursor-pointer"
                 >
-                  <Sparkles className="w-4 h-4 fill-current" />
+                  <Zap className="w-4 h-4 fill-current" />
                   <span>Gerar c/ IA</span>
                 </button>
 
@@ -2001,7 +2460,7 @@ export const CoachDashboardView: React.FC = () => {
                   onClick={() => setShowAiDietModal(true)}
                   className="px-4 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-[#D8B46A] to-[#F1C40F] text-[#0A0A0A] hover:brightness-110 flex items-center gap-1.5 shadow-lg shadow-[#D8B46A]/20 cursor-pointer"
                 >
-                  <Sparkles className="w-4 h-4 fill-current" />
+                  <Zap className="w-4 h-4 fill-current" />
                   <span>Gerar Dieta com IA</span>
                 </button>
                 <button
@@ -2773,7 +3232,7 @@ export const CoachDashboardView: React.FC = () => {
           <div className="p-5 rounded-3xl bg-[#1E1A11] border border-[#D8B46A]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <h4 className="text-sm font-black text-[#F5F5F7] flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#D8B46A]" />
+                <Crown className="w-4 h-4 text-[#D8B46A]" />
                 <span>Gamificação & Coroação Automatizada</span>
               </h4>
               <p className="text-xs text-[#9B9BA1] max-w-lg">
@@ -2984,7 +3443,7 @@ export const CoachDashboardView: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 fill-current" />
+                  <Zap className="w-4 h-4 fill-current" />
                 </div>
                 <div>
                   <span className="text-[10px] font-black uppercase text-[#D8B46A]">
@@ -3125,7 +3584,7 @@ export const CoachDashboardView: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4 fill-current" />
+                    <Zap className="w-4 h-4 fill-current" />
                     <span>Gerar Treino com Gemini AI</span>
                   </>
                 )}
@@ -3142,7 +3601,7 @@ export const CoachDashboardView: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 fill-current" />
+                  <Zap className="w-4 h-4 fill-current" />
                 </div>
                 <div>
                   <span className="text-[10px] font-black uppercase text-[#D8B46A]">
@@ -3235,7 +3694,7 @@ export const CoachDashboardView: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4 fill-current" />
+                    <Zap className="w-4 h-4 fill-current" />
                     <span>Gerar Dieta com Gemini AI</span>
                   </>
                 )}

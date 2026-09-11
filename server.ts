@@ -52,6 +52,60 @@ function getSupabaseServer(): SupabaseClient {
   return supabaseServerClient;
 }
 
+/**
+ * Salva ou atualiza a assinatura do usuário de forma segura,
+ * sem disparar erro de constraint UNIQUE no PostgreSQL/Supabase.
+ */
+async function saveUserSubscription(
+  sb: SupabaseClient,
+  userId: string,
+  subData: {
+    status: string;
+    plan_type?: string;
+    payment_method?: string;
+    current_period_end?: string | null;
+    stripe_customer_id?: string | null;
+    stripe_subscription_id?: string | null;
+    has_lifetime_coupon?: boolean;
+    updated_at?: string;
+  }
+) {
+  try {
+    const { data: existing } = await sb
+      .from("subscriptions")
+      .select("id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const payload = {
+      ...subData,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existing && existing.length > 0) {
+      const { data, error } = await sb
+        .from("subscriptions")
+        .update(payload)
+        .eq("id", existing[0].id)
+        .select();
+      return { data, error };
+    } else {
+      const { data, error } = await sb
+        .from("subscriptions")
+        .insert({
+          user_id: userId,
+          created_at: new Date().toISOString(),
+          ...payload,
+        })
+        .select();
+      return { data, error };
+    }
+  } catch (err: any) {
+    return { data: null, error: err };
+  }
+}
+
 // Lazy Gemini AI initialization
 let aiClient: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI | null {
@@ -852,13 +906,17 @@ const db = {
     nickname: "Rafael",
     email: "rafael@vyra.club",
     avatar_url: "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80",
-    height_cm: 178,
-    weight_kg: 81.1,
-    waist_cm: 84,
-    right_arm_cm: 39.5,
-    left_arm_cm: 39.2,
-    right_leg_cm: 58,
-    left_leg_cm: 57.5,
+    height_cm: null as any,
+    weight_kg: null as any,
+    waist_cm: null as any,
+    hip_cm: null as any,
+    right_arm_cm: null as any,
+    left_arm_cm: null as any,
+    right_leg_cm: null as any,
+    left_leg_cm: null as any,
+    thigh_right: null as any,
+    thigh_left: null as any,
+    last_assessment_date: null as any,
     anamnesis: null as any,
     anamnesis_done: false,
     water_ml: 2500,
@@ -866,6 +924,13 @@ const db = {
     creatine_dose_g: 5.0,
     creatine_times: ["08:00", "20:00"],
     logged_in: false,
+    onboarding_completed: false,
+    workout_released: false,
+    diet_released: false,
+    age: null as any,
+    primary_goal: "",
+    dietary_restrictions: "",
+    medical_history: "",
     is_veteran: false,
     veteran_since: null,
     consecutive_months: 0,
@@ -1530,6 +1595,334 @@ api.put("/students/:id/protocol", (req, res) => {
   res.json(std);
 });
 
+// --- ONBOARDING & COACH RELEASE ENDPOINTS ---
+
+// Submissão do Onboarding Inicial Obrigatório (Anamnese)
+api.post("/onboarding", async (req, res) => {
+  const {
+    user_id,
+    userId,
+    full_name,
+    fullName,
+    nickname,
+    age,
+    weight_kg,
+    weightKg,
+    height_cm,
+    heightCm,
+    primary_goal,
+    primaryGoal,
+    dietary_restrictions,
+    dietaryRestrictions,
+    medical_history,
+    medicalHistory,
+    email,
+  } = req.body;
+
+  const effectiveUserId = user_id || userId || "me";
+  const effectiveName = (full_name || fullName || "").trim() || "Aluno";
+  const effectiveNickname = (nickname || "").trim() || effectiveName.split(" ")[0] || "Aluno";
+  const effectiveAge = age !== undefined && age !== null && age !== "" ? Number(age) : null;
+  const effectiveWeight = (weight_kg || weightKg) !== undefined && (weight_kg || weightKg) !== null && (weight_kg || weightKg) !== "" ? Number(weight_kg || weightKg) : null;
+  const effectiveHeight = (height_cm || heightCm) !== undefined && (height_cm || heightCm) !== null && (height_cm || heightCm) !== "" ? Number(height_cm || heightCm) : null;
+  const effectiveGoal = (primary_goal || primaryGoal || "").trim();
+  const effectiveRestrictions = (dietary_restrictions || dietaryRestrictions || "").trim();
+  const effectiveMedical = (medical_history || medicalHistory || "").trim();
+  const effectiveEmail = (email || db.profile.email || "aluno@vyra.club").trim().toLowerCase();
+
+  // 1. Atualiza o perfil em memória
+  (db.profile as any).full_name = effectiveName;
+  db.profile.nickname = effectiveNickname;
+  (db.profile as any).name = effectiveName;
+  (db.profile as any).age = effectiveAge;
+  db.profile.weight_kg = effectiveWeight as any;
+  db.profile.height_cm = effectiveHeight as any;
+  (db.profile as any).primary_goal = effectiveGoal;
+  (db.profile as any).dietary_restrictions = effectiveRestrictions;
+  (db.profile as any).medical_history = effectiveMedical;
+  (db.profile as any).onboarding_completed = true;
+  (db.profile as any).workout_released = false;
+  (db.profile as any).diet_released = false;
+  (db.profile as any).last_assessment_date = new Date().toISOString().split("T")[0];
+
+  // 2. Procura ou adiciona o aluno na lista do coach
+  let student: any = db.students.find((s) => s.id === effectiveUserId || s.email === effectiveEmail);
+  if (!student) {
+    student = {
+      id: effectiveUserId !== "me" ? effectiveUserId : `std-${Date.now()}`,
+      name: effectiveName,
+      nickname: effectiveNickname,
+      email: effectiveEmail,
+      avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      plan: "Aguardando Escolha",
+      goal: effectiveGoal,
+      weight_kg: effectiveWeight,
+      height_cm: effectiveHeight,
+      restrictions: effectiveRestrictions,
+      adherence_pct: 100,
+      primary_goal: effectiveGoal,
+      age: effectiveAge,
+      dietary_restrictions: effectiveRestrictions,
+      medical_history: effectiveMedical,
+      onboarding_completed: true,
+      workout_released: false,
+      diet_released: false,
+      created_at: new Date().toISOString(),
+    };
+    db.students.unshift(student);
+  } else {
+    student.name = effectiveName;
+    student.nickname = effectiveNickname;
+    student.weight_kg = effectiveWeight;
+    student.height_cm = effectiveHeight;
+    student.goal = effectiveGoal;
+    student.primary_goal = effectiveGoal;
+    student.age = effectiveAge;
+    student.restrictions = effectiveRestrictions;
+    student.dietary_restrictions = effectiveRestrictions;
+    student.medical_history = effectiveMedical;
+    student.onboarding_completed = true;
+    student.workout_released = false;
+    student.diet_released = false;
+  }
+
+  // 3. Sincroniza com Supabase se configurado
+  try {
+    const sb = getSupabaseServer();
+    if (sb && effectiveUserId && effectiveUserId !== "me") {
+      // Upsert na tabela profiles
+      const { error: profileErr } = await sb
+        .from("profiles")
+        .upsert(
+          {
+            id: effectiveUserId,
+            full_name: effectiveName,
+            name: effectiveName,
+            nickname: effectiveNickname,
+            email: effectiveEmail,
+            weight_kg: effectiveWeight,
+            height_cm: effectiveHeight,
+            onboarding_completed: true,
+            workout_released: false,
+            diet_released: false,
+            age: effectiveAge,
+            primary_goal: effectiveGoal,
+            dietary_restrictions: effectiveRestrictions,
+            medical_history: effectiveMedical,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+
+      if (profileErr) {
+        // Se alguma coluna personalizada não existir em profiles, tenta salvar com colunas base
+        await sb.from("profiles").upsert(
+          {
+            id: effectiveUserId,
+            full_name: effectiveName,
+            name: effectiveName,
+            nickname: effectiveNickname,
+            weight_kg: effectiveWeight,
+            height_cm: effectiveHeight,
+            onboarding_completed: true,
+            workout_released: false,
+            diet_released: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+      }
+
+      // Tenta persistir na tabela student_onboarding
+      try {
+        await sb
+          .from("student_onboarding")
+          .upsert(
+            {
+              user_id: effectiveUserId,
+              full_name: effectiveName,
+              nickname: effectiveNickname,
+              age: effectiveAge,
+              weight_kg: effectiveWeight,
+              height_cm: effectiveHeight,
+              primary_goal: effectiveGoal,
+              dietary_restrictions: effectiveRestrictions,
+              medical_history: effectiveMedical,
+              onboarding_completed: true,
+              workout_released: false,
+              diet_released: false,
+              created_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          );
+      } catch {}
+    }
+  } catch (err) {
+    console.warn("Aviso ao sincronizar anamnese com Supabase:", err);
+  }
+
+  return res.json({
+    ok: true,
+    onboarding_completed: true,
+    workout_released: false,
+    diet_released: false,
+    student,
+  });
+});
+
+// Lista de Alunos Pendentes de Liberação de Treino ou Dieta
+api.get("/coach/pending-students", async (req, res) => {
+  // Procura na memória
+  const memoryPending = db.students.filter(
+    (s: any) =>
+      s.onboarding_completed === true &&
+      (s.workout_released === false || s.diet_released === false)
+  );
+
+  // Se houver Supabase, busca também alunos com onboarding concluído e pendência
+  try {
+    const sb = getSupabaseServer();
+    if (sb) {
+      const { data: supaProfiles } = await sb
+        .from("profiles")
+        .select("*")
+        .eq("onboarding_completed", true)
+        .or("workout_released.is.null,workout_released.eq.false,diet_released.is.null,diet_released.eq.false");
+
+      if (supaProfiles && supaProfiles.length > 0) {
+        for (const sp of supaProfiles) {
+          const exists = memoryPending.find((m) => m.id === sp.id || m.email === sp.email);
+          if (!exists) {
+            memoryPending.unshift({
+              id: sp.id,
+              name: sp.full_name || sp.name || "Aluno",
+              nickname: sp.nickname || sp.name || "Aluno",
+              email: sp.email || "aluno@vyra.club",
+              avatar_url: sp.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+              plan: sp.plan || sp.active_protocol || "Sem plano ativo",
+              goal: sp.primary_goal || "Definição e Performance",
+              primary_goal: sp.primary_goal || "Definição",
+              weight_kg: sp.weight_kg || 70,
+              height_cm: sp.height_cm || 170,
+              age: sp.age || 26,
+              restrictions: sp.dietary_restrictions || "Nenhuma",
+              dietary_restrictions: sp.dietary_restrictions || "Nenhuma",
+              medical_history: sp.medical_history || "Sem lesões",
+              adherence_pct: 100,
+              onboarding_completed: true,
+              workout_released: Boolean(sp.workout_released),
+              diet_released: Boolean(sp.diet_released),
+              created_at: sp.created_at || sp.updated_at || new Date().toISOString(),
+            } as any);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Aviso ao buscar pendências do Supabase:", err);
+  }
+
+  res.json(memoryPending);
+});
+
+// Liberar Treino do Aluno
+api.post("/students/:id/release-workout", async (req, res) => {
+  const { id } = req.params;
+  const isReleased = req.body.workout_released !== undefined ? Boolean(req.body.workout_released) : true;
+
+  const std = db.students.find((s) => s.id === id);
+  if (std) {
+    (std as any).workout_released = isReleased;
+  }
+
+  if (id === "me" || (std && std.email === db.profile.email)) {
+    (db.profile as any).workout_released = isReleased;
+  }
+
+  // Atualiza no Supabase
+  try {
+    const sb = getSupabaseServer();
+    if (sb && id !== "me") {
+      await sb
+        .from("profiles")
+        .update({ workout_released: isReleased, updated_at: new Date().toISOString() })
+        .eq("id", id);
+    }
+  } catch (err) {
+    console.warn("Erro ao atualizar workout_released no Supabase:", err);
+  }
+
+  res.json({ ok: true, workout_released: isReleased, student: std });
+});
+
+// Liberar Dieta do Aluno
+api.post("/students/:id/release-diet", async (req, res) => {
+  const { id } = req.params;
+  const isReleased = req.body.diet_released !== undefined ? Boolean(req.body.diet_released) : true;
+
+  const std = db.students.find((s) => s.id === id);
+  if (std) {
+    (std as any).diet_released = isReleased;
+  }
+
+  if (id === "me" || (std && std.email === db.profile.email)) {
+    (db.profile as any).diet_released = isReleased;
+  }
+
+  // Atualiza no Supabase
+  try {
+    const sb = getSupabaseServer();
+    if (sb && id !== "me") {
+      await sb
+        .from("profiles")
+        .update({ diet_released: isReleased, updated_at: new Date().toISOString() })
+        .eq("id", id);
+    }
+  } catch (err) {
+    console.warn("Erro ao atualizar diet_released no Supabase:", err);
+  }
+
+  res.json({ ok: true, diet_released: isReleased, student: std });
+});
+
+// Toggle Workout Release global do usuário logado
+api.post("/workout/release", (req, res) => {
+  const next = req.body.workout_released !== undefined
+    ? Boolean(req.body.workout_released)
+    : !(db.profile as any).workout_released;
+  (db.profile as any).workout_released = next;
+  res.json({ ok: true, workout_released: next });
+});
+
+// Simular Novo Aluno com Pendência (para testes e demonstração do Coach)
+api.post("/coach/simulate-pending-student", (req, res) => {
+  const count = db.students.filter((s: any) => (s as any).is_simulated).length + 1;
+  const newStudent = {
+    id: `std-sim-${Date.now()}`,
+    name: `Aluno Teste #${count}`,
+    nickname: `Teste ${count}`,
+    email: `aluno.teste${count}@vyra.club`,
+    avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+    plan: "Projeto Reset 12",
+    goal: "Hipertrofia e Redução de Gordura",
+    primary_goal: "Hipertrofia",
+    weight_kg: 78.5,
+    height_cm: 176,
+    age: 27,
+    restrictions: "Intolerância leve a lactose",
+    dietary_restrictions: "Intolerância leve a lactose",
+    medical_history: "Dor no ombro direito em movimentos acima da cabeça",
+    adherence_pct: 100,
+    onboarding_completed: true,
+    workout_released: false,
+    diet_released: false,
+    is_simulated: true,
+    created_at: new Date().toISOString(),
+  };
+  db.students.unshift(newStudent as any);
+  res.json({ ok: true, student: newStudent });
+});
+
 api.post("/coach/assign-workout-bulk", (req, res) => {
   const { student_ids, workout } = req.body;
   if (!Array.isArray(student_ids) || student_ids.length === 0) {
@@ -1926,9 +2319,30 @@ api.post("/progress", (req, res) => {
   if (req.body.waist_cm) {
     db.profile.waist_cm = req.body.waist_cm;
   }
+  if (req.body.hip_cm) {
+    db.profile.hip_cm = req.body.hip_cm;
+  }
   if (req.body.arms_cm) {
     db.profile.right_arm_cm = req.body.arms_cm;
+    db.profile.left_arm_cm = req.body.arms_cm;
   }
+  if (req.body.right_arm_cm) {
+    db.profile.right_arm_cm = req.body.right_arm_cm;
+  }
+  if (req.body.left_arm_cm) {
+    db.profile.left_arm_cm = req.body.left_arm_cm;
+  }
+  if (req.body.thigh_right !== undefined || req.body.right_leg_cm !== undefined) {
+    const val = req.body.thigh_right ?? req.body.right_leg_cm;
+    db.profile.right_leg_cm = val;
+    db.profile.thigh_right = val;
+  }
+  if (req.body.thigh_left !== undefined || req.body.left_leg_cm !== undefined) {
+    const val = req.body.thigh_left ?? req.body.left_leg_cm;
+    db.profile.left_leg_cm = val;
+    db.profile.thigh_left = val;
+  }
+  db.profile.last_assessment_date = entry.date;
   res.json(entry);
 });
 
@@ -2952,6 +3366,13 @@ api.post("/stripe-checkout", async (req, res) => {
             currency: "brl",
             customer: customer.id,
             payment_method_types: paymentMethod === "pix" ? ["pix"] : ["card"],
+            payment_method_options: {
+              card: {
+                installments: {
+                  enabled: true,
+                },
+              },
+            },
             metadata: sessionMetadata,
             description: isTest ? "Vyra - Plano de Teste Live (R$ 1,00)" : `Vyra Reset - Programa de 12 Semanas (${protocolName})`,
           });
@@ -2993,6 +3414,13 @@ api.post("/stripe-checkout", async (req, res) => {
               currency: "brl",
               customer: customer.id,
               payment_method_types: paymentMethod === "pix" ? ["pix"] : ["card"],
+              payment_method_options: {
+                card: {
+                  installments: {
+                    enabled: true,
+                  },
+                },
+              },
               metadata: sessionMetadata,
               description: `Vyra - ${protocolName}`,
             });
@@ -3036,7 +3464,7 @@ api.post("/stripe-checkout", async (req, res) => {
   }
 });
 
-// Consulta de Assinatura Diretamente no Supabase
+// Consulta de Assinatura Diretamente no Supabase com Janela de Tolerância (3 Dias)
 api.get("/subscription", async (req, res) => {
   const userId = (req.query.userId as string) || (req.headers["x-user-id"] as string);
   const email = (req.query.email as string) || (req.headers["x-user-email"] as string);
@@ -3053,12 +3481,47 @@ api.get("/subscription", async (req, res) => {
 
       if (!error && data && data.length > 0) {
         const sub = data[0];
+        const periodEndMs = sub.current_period_end ? new Date(sub.current_period_end).getTime() : NaN;
+        const nowMs = Date.now();
+        const isPastEnd = !isNaN(periodEndMs) && nowMs > periodEndMs;
+
+        let active = sub.status === "active";
+        let status = sub.status;
+        let inGracePeriod = sub.status === "in_grace_period" || sub.in_grace_period === true;
+        let daysLeftInGrace = 0;
+
+        // Janela de Tolerância de 3 Dias para Inadimplência / Vencimento
+        if (isPastEnd || sub.status === "past_due" || sub.status === "in_grace_period") {
+          const daysOverdue = !isNaN(periodEndMs) ? (nowMs - periodEndMs) / (1000 * 60 * 60 * 24) : 1;
+          if (daysOverdue <= 3) {
+            inGracePeriod = true;
+            active = true; // Mantém acesso aos treinos e dietas durante a carência de 3 dias
+            status = "in_grace_period";
+            daysLeftInGrace = Math.max(1, 3 - Math.floor(daysOverdue));
+          } else {
+            // Passados 3 dias corridos sem regularização -> Revogação definitiva
+            inGracePeriod = false;
+            active = false;
+            status = "inactive";
+            // Revoga acessos no Supabase se ainda constavam como liberados
+            try {
+              await sb.from("subscriptions").update({ status: "inactive" }).eq("id", sub.id);
+              await sb.from("profiles").update({ workout_released: false, diet_released: false }).eq("id", userId);
+            } catch (revokeErr) {
+              console.error("Error updating inactive status:", revokeErr);
+            }
+          }
+        }
+
         return res.json({
-          active: sub.status === "active",
-          status: sub.status,
+          active,
+          status,
           planId: sub.plan_type,
           paymentMethod: sub.payment_method,
           currentPeriodEnd: sub.current_period_end,
+          current_period_end: sub.current_period_end,
+          in_grace_period: inGracePeriod,
+          days_left_in_grace: daysLeftInGrace,
           id: sub.id,
           source: "supabase",
         });
@@ -3068,12 +3531,37 @@ api.get("/subscription", async (req, res) => {
     console.warn("Supabase subscription fetch warning:", e.message);
   }
 
-  // Fallback para usuário atual
-  const localSub = (db as any).subscription;
+  // Fallback para usuário atual com cálculo de carência
+  const localSub = (db as any).subscription || {};
+  const periodEndMs = localSub.current_period_end ? new Date(localSub.current_period_end).getTime() : NaN;
+  const nowMs = Date.now();
+  let localActive = localSub.active ?? false;
+  let localStatus = localSub.status ?? "inactive";
+  let inGracePeriod = localSub.in_grace_period || false;
+  let daysLeftInGrace = 0;
+
+  if (!isNaN(periodEndMs) && nowMs > periodEndMs) {
+    const daysOverdue = (nowMs - periodEndMs) / (1000 * 60 * 60 * 24);
+    if (daysOverdue <= 3) {
+      inGracePeriod = true;
+      localActive = true;
+      localStatus = "in_grace_period";
+      daysLeftInGrace = Math.max(1, 3 - Math.floor(daysOverdue));
+    } else {
+      inGracePeriod = false;
+      localActive = false;
+      localStatus = "inactive";
+    }
+  }
+
   return res.json({
-    active: localSub?.active ?? false,
-    status: localSub?.status ?? "inactive",
-    planId: localSub?.planId ?? "monthly",
+    active: localActive,
+    status: localStatus,
+    planId: localSub.planId ?? "monthly",
+    currentPeriodEnd: localSub.current_period_end,
+    current_period_end: localSub.current_period_end,
+    in_grace_period: inGracePeriod,
+    days_left_in_grace: daysLeftInGrace,
     source: "memory",
   });
 });
@@ -3119,27 +3607,18 @@ api.post("/subscription/confirm-payment", async (req, res) => {
     let supabaseSaved = false;
     if (sb) {
       try {
-        // 1. Atualiza / Cria a Assinatura com status 'active' e active_protocol
-        const { data, error } = await sb
-          .from("subscriptions")
-          .upsert(
-            {
-              user_id: effectiveUserId,
-              status: "active",
-              plan_type: effectivePlanType,
-              active_protocol: protocolName,
-              payment_method: paymentMethod || "card",
-              current_period_end: periodEnd,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "user_id" }
-          )
-          .select();
+        // 1. Atualiza / Cria a Assinatura com status 'active' de forma segura
+        const { data, error } = await saveUserSubscription(sb, effectiveUserId, {
+          status: "active",
+          plan_type: effectivePlanType,
+          payment_method: paymentMethod || "card",
+          current_period_end: periodEnd,
+        });
 
         if (!error && data?.length) {
           supabaseSaved = true;
         } else if (error) {
-          console.warn("Supabase upsert error:", error.message);
+          console.warn("Supabase save subscription error:", error.message);
         }
 
         // 2. Atualiza a coluna active_protocol (e plan) na tabela profiles com o valor exato do metadata
@@ -3216,6 +3695,40 @@ const handleStripeWebhookPayload = async (req: express.Request, res: express.Res
       userId = metadata?.supabase_user_id;
       selectedProtocol = metadata?.selected_protocol;
       priceId = metadata?.price_id;
+    } else if (
+      event?.type === "invoice.payment_failed" ||
+      event?.type === "customer.subscription.updated" && event?.data?.object?.status === "past_due"
+    ) {
+      // Janela de Tolerância de Inadimplência (3 Dias):
+      // Caso a cobrança falhe, aplicar carência de 3 dias corridos antes do bloqueio definitivo.
+      const obj = event.data?.object;
+      const failedUserId = obj?.metadata?.supabase_user_id || obj?.subscription_details?.metadata?.supabase_user_id;
+      const gracePeriodEnd = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      const sb = getSupabaseServer();
+      if (sb && failedUserId) {
+        await saveUserSubscription(sb, failedUserId, {
+          status: "in_grace_period",
+          current_period_end: gracePeriodEnd,
+        });
+        // Durante esses 3 dias de tolerância, mantém o aluno com acesso aos treinos e dieta:
+        await sb
+          .from("profiles")
+          .update({
+            workout_released: true,
+            diet_released: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", failedUserId);
+      }
+      (db as any).subscription = {
+        active: true,
+        status: "in_grace_period",
+        in_grace_period: true,
+        current_period_end: gracePeriodEnd,
+        days_left_in_grace: 3,
+      };
+      console.log(`[Stripe Webhook] Aluno ${failedUserId || "anônimo"} em carência de 3 dias de inadimplência até ${gracePeriodEnd}`);
+      return res.json({ received: true, in_grace_period: true, grace_period_end: gracePeriodEnd });
     }
 
     const isTestPlan = priceId === TEST_PRICE_ID || metadata?.is_test_plan === "true";
@@ -3244,19 +3757,11 @@ const handleStripeWebhookPayload = async (req: express.Request, res: express.Res
         .eq("id", userId);
 
       // 2. Atualizar status na tabela subscriptions
-      await sb
-        .from("subscriptions")
-        .upsert(
-          {
-            user_id: userId,
-            status: "active",
-            plan_type: isReset ? "reset12" : isTestPlan ? "test" : "monthly",
-            active_protocol: finalProtocol,
-            current_period_end: periodEnd,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" }
-        );
+      await saveUserSubscription(sb, userId, {
+        status: "active",
+        plan_type: isReset ? "reset12" : isTestPlan ? "test" : "monthly",
+        current_period_end: periodEnd,
+      });
       console.log(`[Stripe Webhook] Aluno ${userId} atualizado com protocolo: ${finalProtocol}`);
     }
 
@@ -3290,17 +3795,10 @@ api.post("/subscription/set-status", async (req, res) => {
 
   if (sb) {
     try {
-      await sb
-        .from("subscriptions")
-        .upsert(
-          {
-            user_id: effectiveUserId,
-            status: targetStatus,
-            plan_type: planType || "monthly",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" }
-        );
+      await saveUserSubscription(sb, effectiveUserId, {
+        status: targetStatus,
+        plan_type: planType || "monthly",
+      });
     } catch (e: any) {
       console.warn("Error setting subscription in Supabase:", e.message);
     }
@@ -3442,7 +3940,7 @@ async function generateGeminiContentWithFailover(prompt: string): Promise<string
   const ai = getAI();
   if (!ai) return "";
 
-  const models = ["gemini-2.5-flash", "gemini-3.7-flash"];
+  const models = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"];
   for (const model of models) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
@@ -3495,7 +3993,7 @@ async function generateGeminiVisionWithFailover(prompt: string, imageBase64?: st
     ];
   }
 
-  const models = ["gemini-2.5-flash", "gemini-3.7-flash"];
+  const models = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"];
   for (const model of models) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {

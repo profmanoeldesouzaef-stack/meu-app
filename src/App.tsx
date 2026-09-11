@@ -22,6 +22,7 @@ import { FormCheckerModal } from "./views/FormCheckerModal";
 import { PhotoGalleryView } from "./views/PhotoGalleryView";
 import { GaleriaView } from "./views/GaleriaView";
 import { WorkoutCompletionView } from "./views/WorkoutCompletionView";
+import { FirstTimeOnboardingModal } from "./components/FirstTimeOnboardingModal";
 
 const AppContent: React.FC = () => {
   const {
@@ -30,6 +31,7 @@ const AppContent: React.FC = () => {
     setActiveView,
     theme,
     persona,
+    onboardingCompleted,
     milestoneCelebration,
     dismissMilestoneCelebration,
     chatNameColor,
@@ -48,6 +50,19 @@ const AppContent: React.FC = () => {
 
   if (!loggedIn) {
     return <LoginModal />;
+  }
+
+  // Mandatory fullscreen onboarding for students who haven't completed anamnesis
+  if (persona === "student" && !onboardingCompleted && activeView !== "profile") {
+    return (
+      <div
+        className={`min-h-screen font-sans selection:bg-[#FF6A2A] selection:text-white transition-colors duration-200 ${
+          theme === "dark" ? "bg-[#0A0A0A] text-[#F5F5F7]" : "bg-[#F5F5F7] text-[#1D1D1F]"
+        }`}
+      >
+        <FirstTimeOnboardingModal onCompleted={() => setActiveView(activeView && activeView !== "paywall" ? activeView : "home")} />
+      </div>
+    );
   }
 
   return (

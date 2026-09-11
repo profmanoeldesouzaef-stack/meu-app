@@ -324,6 +324,54 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+  submitOnboarding: (data: {
+    user_id?: string;
+    email?: string;
+    full_name: string;
+    nickname: string;
+    age: number;
+    weight_kg: number;
+    height_cm: number;
+    primary_goal: string;
+    dietary_restrictions: string;
+    medical_history: string;
+  }) =>
+    request<{
+      ok: boolean;
+      onboarding_completed: boolean;
+      workout_released: boolean;
+      diet_released: boolean;
+      student?: Student;
+    }>("/onboarding", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getPendingStudents: () => request<Student[]>("/coach/pending-students"),
+  releaseStudentWorkout: (studentId: string, workout_released: boolean = true) =>
+    request<{ ok: boolean; workout_released: boolean; student?: Student }>(
+      `/students/${studentId}/release-workout`,
+      {
+        method: "POST",
+        body: JSON.stringify({ workout_released }),
+      }
+    ),
+  releaseStudentDiet: (studentId: string, diet_released: boolean = true) =>
+    request<{ ok: boolean; diet_released: boolean; student?: Student }>(
+      `/students/${studentId}/release-diet`,
+      {
+        method: "POST",
+        body: JSON.stringify({ diet_released }),
+      }
+    ),
+  toggleWorkoutRelease: (workout_released?: boolean) =>
+    request<{ ok: boolean; workout_released: boolean }>("/workout/release", {
+      method: "POST",
+      body: JSON.stringify({ workout_released }),
+    }),
+  simulatePendingStudent: () =>
+    request<{ ok: boolean; student: Student }>("/coach/simulate-pending-student", {
+      method: "POST",
+    }),
   coachGenerateWorkout: (params: {
     student_name?: string;
     goal?: string;

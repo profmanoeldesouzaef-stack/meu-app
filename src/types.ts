@@ -24,10 +24,14 @@ export interface AssessmentEntry {
   date: string;
   weight_kg: number;
   waist_cm?: number;
+  hip_cm?: number;
+  chest_cm?: number;
   right_arm_cm?: number;
   left_arm_cm?: number;
   right_leg_cm?: number;
   left_leg_cm?: number;
+  thigh_right?: number;
+  thigh_left?: number;
   photo_front?: string;
   photo_side?: string;
   photo_back?: string;
@@ -47,6 +51,7 @@ export interface UserProfile {
   height_cm?: number;
   weight_kg?: number;
   waist_cm?: number;
+  hip_cm?: number;
   arm_cm?: number;
   chest_cm?: number;
   thigh_cm?: number;
@@ -54,6 +59,8 @@ export interface UserProfile {
   left_arm_cm?: number;
   right_leg_cm?: number;
   left_leg_cm?: number;
+  thigh_right?: number;
+  thigh_left?: number;
   last_assessment_date?: string;
   assessments?: AssessmentEntry[];
   anamnesis?: Anamnesis | null;
@@ -71,6 +78,12 @@ export interface UserProfile {
   patente_level?: number;
   vip_chat_unlocked?: boolean;
   diet_released?: boolean;
+  workout_released?: boolean;
+  onboarding_completed?: boolean;
+  age?: number;
+  primary_goal?: string;
+  dietary_restrictions?: string;
+  medical_history?: string;
 }
 
 export interface Student {
@@ -92,6 +105,25 @@ export interface Student {
   water_ml?: number;
   creatine_dose_g?: number;
   vip_chat_unlocked?: boolean;
+  onboarding_completed?: boolean;
+  workout_released?: boolean;
+  diet_released?: boolean;
+  age?: number;
+  primary_goal?: string;
+  dietary_restrictions?: string;
+  medical_history?: string;
+  created_at?: string;
+}
+
+export interface OnboardingData {
+  full_name: string;
+  nickname: string;
+  age: number;
+  weight_kg: number;
+  height_cm: number;
+  primary_goal: string;
+  dietary_restrictions: string;
+  medical_history: string;
 }
 
 export type BillingCycle = "month" | "quarter" | "semester" | "year" | "single" | "test";
@@ -202,8 +234,16 @@ export interface ProgressEntry {
   date: string;
   weight_kg: number;
   waist_cm?: number;
+  hip_cm?: number;
   arms_cm?: number;
+  right_arm_cm?: number;
+  left_arm_cm?: number;
+  thigh_right?: number;
+  thigh_left?: number;
+  right_leg_cm?: number;
+  left_leg_cm?: number;
   note?: string;
+  notes?: string;
 }
 
 export interface ChallengeEvent {
@@ -389,6 +429,12 @@ export interface Subscription {
   monthlyFeePaid?: boolean;
   startedAt?: string;
   lastPaymentDate?: string;
+  currentPeriodEnd?: string;
+  current_period_end?: string;
+  active_protocol?: string;
+  in_grace_period?: boolean;
+  grace_period_end?: string;
+  days_left_in_grace?: number;
 }
 
 export interface ExerciseSetLog {

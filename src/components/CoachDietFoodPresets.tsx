@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Plus, UtensilsCrossed, Sparkles, Check } from "lucide-react";
+import { Plus, UtensilsCrossed, Check } from "lucide-react";
 
 interface FoodPreset {
   category: string;

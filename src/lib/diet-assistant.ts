@@ -68,7 +68,7 @@ Não inclua NENHUM texto introdutório, conclusões, saudações ou blocos de fo
 
 Gere 3 opções de refeições completas, práticas e equilibradas respeitando rigorosamente o formato JSON solicitado.`;
 
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3.7-flash"];
+  const modelsToTry = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"];
 
   for (const model of modelsToTry) {
     for (let attempt = 1; attempt <= 2; attempt++) {

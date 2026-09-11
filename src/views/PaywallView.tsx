@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { Linking } from "react-native";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
-import { Plan, BillingCycle } from "../types";
+import { Plan } from "../types";
 import {
-  Sparkles,
   Check,
   Award,
   ArrowRight,
@@ -12,6 +12,7 @@ import {
   Zap,
   Info,
   HeartHandshake,
+  ExternalLink,
 } from "lucide-react";
 
 export const PaywallView: React.FC = () => {
@@ -19,7 +20,6 @@ export const PaywallView: React.FC = () => {
     t,
     lang,
     fmtPrice,
-    setSelectedPlan,
     setActiveView,
     anamnesisDone,
   } = useApp();
@@ -35,11 +35,25 @@ export const PaywallView: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleSelectPlan = (plan: Plan) => {
-    // Default cycle: single for Reset 12, test for Test Plan, month for subscriptions
-    const defaultCycle: BillingCycle = plan.slug === "reset12" ? "single" : plan.slug === "test" ? "test" : "month";
-    setSelectedPlan({ plan, cycle: defaultCycle });
-    setActiveView("checkout");
+  const handleSubscribeExternal = (planSlug?: string) => {
+    const targetUrl = planSlug 
+      ? `https://vyratraining.com?plan=${planSlug}` 
+      : "https://vyratraining.com";
+    try {
+      if (typeof Linking !== "undefined" && Linking?.openURL) {
+        Linking.openURL(targetUrl).catch(() => {
+          if (typeof window !== "undefined") {
+            window.open(targetUrl, "_blank");
+          }
+        });
+      } else if (typeof window !== "undefined") {
+        window.open(targetUrl, "_blank");
+      }
+    } catch {
+      if (typeof window !== "undefined") {
+        window.open(targetUrl, "_blank");
+      }
+    }
   };
 
   if (loading) {
@@ -50,6 +64,10 @@ export const PaywallView: React.FC = () => {
       </div>
     );
   }
+
+  // Filtrar para destacar os 3 protocolos principais: Reset 12 Semanas, Shape e Forge
+  const activePlans = plans.filter((p) => p.slug !== "test" && p.id !== "test");
+  const displayPlans = activePlans.length > 0 ? activePlans : plans;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 pb-28 md:pb-12 space-y-8 animate-in fade-in duration-300">
@@ -64,22 +82,29 @@ export const PaywallView: React.FC = () => {
         <p className="text-sm text-[#9B9BA1] leading-relaxed">{t("paywall.sub")}</p>
       </div>
 
-      {/* Alerta de Ambiente Live / Produção */}
-      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-4 max-w-4xl mx-auto">
-        <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+      {/* Informativo de Assinatura Segura no Portal Oficial */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] flex flex-col sm:flex-row items-center justify-between gap-4 max-w-4xl mx-auto shadow-xl">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-[#34C759]/15 text-[#34C759] flex items-center justify-center shrink-0 border border-[#34C759]/30">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
           <div>
-            <p className="text-xs font-bold text-amber-300">
-              Atenção: Ambiente de Produção Ativo. Pagamentos reais serão processados.
+            <p className="text-xs sm:text-sm font-bold text-[#F5F5F7]">
+              A assinatura e ativação dos protocolos são realizadas de forma segura em nosso portal oficial.
             </p>
-            <p className="text-[11px] text-amber-300/80">
-              Utilize o &apos;Plano de Teste (R$ 1,00)&apos; para validar a geração real de QR Code PIX e ativação via Webhook da Stripe.
+            <p className="text-[11px] text-[#9B9BA1] mt-0.5">
+              Escolha seu protocolo abaixo para contratação e ativação direta na web.
             </p>
           </div>
         </div>
-        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-          LIVE MODE
-        </span>
+        <button
+          id="paywall-go-portal-direct-btn"
+          onClick={() => handleSubscribeExternal()}
+          className="px-4 py-2.5 rounded-xl text-xs font-bold bg-[#FF6A2A] text-white hover:bg-[#FF6A2A]/90 transition-all shrink-0 flex items-center gap-1.5 cursor-pointer"
+        >
+          <span>Acessar Portal Oficial</span>
+          <ExternalLink className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Anamnesis Advisory */}
@@ -92,7 +117,7 @@ export const PaywallView: React.FC = () => {
           <button
             id="paywall-go-anamnesis-btn"
             onClick={() => setActiveView("anamnesis")}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shrink-0"
+            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shrink-0 cursor-pointer"
           >
             {t("cta.start_anamnesis")}
           </button>
@@ -100,55 +125,42 @@ export const PaywallView: React.FC = () => {
       )}
 
       {/* Plans Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {plans.map((plan) => {
+      <div className={`grid grid-cols-1 ${displayPlans.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2 lg:grid-cols-3"} gap-6`}>
+        {displayPlans.map((plan) => {
           const isShape = plan.slug === "shape" || plan.name.toLowerCase().includes("shape");
           const isForce = plan.slug === "force" || plan.slug === "forge" || plan.name.toLowerCase().includes("force") || plan.name.toLowerCase().includes("forge");
           const isReset = plan.slug === "reset12";
-          const isTest = plan.slug === "test" || plan.id === "test";
 
           const cardStyles = isShape
             ? "border-pink-500/60 bg-gradient-to-b from-[#201018] to-[#151515] shadow-2xl shadow-pink-500/10 hover:border-pink-400"
             : isForce
             ? "border-blue-500/60 bg-gradient-to-b from-[#0e1828] to-[#151515] shadow-2xl shadow-blue-500/10 hover:border-blue-400"
-            : isTest
-            ? "border-emerald-500/60 bg-gradient-to-b from-[#0e241b] to-[#151515] shadow-2xl shadow-emerald-500/10 hover:border-emerald-400 ring-1 ring-emerald-500/30"
             : "border-[#D8B46A]/60 bg-gradient-to-b from-[#1E1B14] to-[#151515] shadow-2xl shadow-[#D8B46A]/10 hover:border-[#D8B46A]";
 
           const badgeStyles = isShape
             ? "bg-pink-500/20 text-pink-300 border-pink-500/40"
             : isForce
             ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
-            : isTest
-            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
             : "bg-[#D8B46A]/20 text-[#D8B46A] border-[#D8B46A]/40";
 
           const checkIconStyles = isShape
             ? "bg-pink-500/20 text-pink-400"
             : isForce
             ? "bg-blue-500/20 text-blue-400"
-            : isTest
-            ? "bg-emerald-500/20 text-emerald-400"
             : "bg-[#D8B46A]/20 text-[#D8B46A]";
 
           const btnStyles = isShape
             ? "bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/25 hover:brightness-110"
             : isForce
             ? "bg-gradient-to-r from-blue-600 to-indigo-500 text-white shadow-lg shadow-blue-500/25 hover:brightness-110"
-            : isTest
-            ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25 hover:brightness-110"
             : "bg-gradient-to-r from-[#D8B46A] to-[#FFD580] text-[#0A0A0A] shadow-lg shadow-[#D8B46A]/25 hover:brightness-110";
 
           const displayPrice = isReset
             ? fmtPrice(479.90, 95.00)
-            : isTest
-            ? fmtPrice(1.00, 1.00)
             : fmtPrice(179.90, 34.90);
 
           const displayCycleLabel = isReset
             ? "Pagamento Único (12 Semanas)"
-            : isTest
-            ? "Ambiente Live (Produção)"
             : "a partir de / mês";
 
           return (
@@ -160,9 +172,8 @@ export const PaywallView: React.FC = () => {
               {/* Tag Badge */}
               <div className={`inline-flex self-start px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border mb-3 ${badgeStyles}`}>
                 {isShape && "Hipertrofia Feminina"}
-                {isForce && "Hipertrofia & Força Pura"}
-                {isReset && "Transformação Completa"}
-                {isTest && "Validação Live R$ 1,00"}
+                {isForce && "Hipertrofia & Força Pura (Forge)"}
+                {isReset && "Transformação Completa (12 Semanas)"}
               </div>
 
               <div className="space-y-4">
@@ -186,14 +197,9 @@ export const PaywallView: React.FC = () => {
                         {displayPrice}
                       </span>
                     </div>
-                    {!isReset && !isTest && (
+                    {!isReset && (
                       <span className="text-[11px] text-[#D8B46A] font-medium mt-1">
-                        Opções Mensal, Trimestral, Semestral e Anual na finalização
-                      </span>
-                    )}
-                    {isTest && (
-                      <span className="text-[11px] text-emerald-400 font-medium mt-1">
-                        price_1UCUo4F7VqDt14kNAJolBpkp
+                        Opções Mensal, Trimestral, Semestral e Anual no portal oficial
                       </span>
                     )}
                   </div>
@@ -219,11 +225,11 @@ export const PaywallView: React.FC = () => {
               <div className="pt-6">
                 <button
                   id={`select-plan-btn-${plan.slug}`}
-                  onClick={() => handleSelectPlan(plan)}
-                  className={`w-full py-3.5 rounded-2xl font-bold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2 ${btnStyles}`}
+                  onClick={() => handleSubscribeExternal(plan.slug)}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer ${btnStyles}`}
                 >
-                  <span>{isTest ? "Testar Plano R$ 1,00" : `Escolher ${plan.name.replace(/[^a-zA-Z0-9 ]/g, "").trim()}`}</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>{isReset ? "Começar Agora" : "Assinar Plano"}</span>
+                  <ExternalLink className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -252,7 +258,7 @@ export const PaywallView: React.FC = () => {
 
         <div className="text-xs text-[#9B9BA1] flex items-center gap-2">
           <Zap className="w-4 h-4 text-[#FF6A2A]" />
-          <span>Liberação imediata no aplicativo</span>
+          <span>Liberação imediata no aplicativo via Webhook oficial</span>
         </div>
       </div>
     </div>

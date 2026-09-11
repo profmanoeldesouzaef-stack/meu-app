@@ -10,7 +10,6 @@ import {
   Heart,
   UserCheck,
   Shield,
-  Sparkles,
   Image as ImageIcon,
   X,
   Upload,
@@ -407,8 +406,6 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
             id="send-chat-btn"
             type="submit"
             onClick={handleSend}
-            onPointerDown={handleSend}
-            {...({ onPress: handleSend } as any)}
             disabled={!text.trim() || sending}
             className="w-11 h-11 rounded-2xl bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white flex items-center justify-center disabled:opacity-40 hover:brightness-110 active:scale-95 transition-all shrink-0 shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
             title="Enviar mensagem para a Comunidade"

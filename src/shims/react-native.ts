@@ -27,6 +27,18 @@ export const processColor = (color: any) => color;
 
 export const EventEmitter = NativeEventEmitter;
 
+export const Linking = {
+  openURL: async (url: string) => {
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank");
+    }
+    return Promise.resolve();
+  },
+  canOpenURL: async (_url: string) => Promise.resolve(true),
+  getInitialURL: async () => Promise.resolve(null),
+  addEventListener: () => ({ remove: () => {} }),
+};
+
 export default {
   NativeEventEmitter,
   Platform,
@@ -34,4 +46,5 @@ export default {
   NativeModules,
   processColor,
   EventEmitter,
+  Linking,
 };
