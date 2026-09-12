@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
+import { supabase } from "../lib/supabase";
 import { ProgressEntry, UserProfile } from "../types";
 import {
   TrendingUp,
@@ -10,6 +11,8 @@ import {
   Image as ImageIcon,
   X,
   Check,
+  CheckCircle2,
+  Loader2,
   Award,
 } from "lucide-react";
 
@@ -29,6 +32,9 @@ export const ProgressView: React.FC = () => {
   const [newThighRight, setNewThighRight] = useState("");
   const [newThighLeft, setNewThighLeft] = useState("");
   const [newNote, setNewNote] = useState("");
+  const [savingProgress, setSavingProgress] = useState(false);
+  const [progressSuccessMessage, setProgressSuccessMessage] = useState<string | null>(null);
+  const [progressSuccessToast, setProgressSuccessToast] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -116,6 +122,8 @@ export const ProgressView: React.FC = () => {
     };
 
     try {
+      setSavingProgress(true);
+      setProgressSuccessMessage(null);
       const added = await api.addProgress(entry);
       setProgress((prev) => [...prev, added]);
 
@@ -142,17 +150,80 @@ export const ProgressView: React.FC = () => {
 
       setProfile((prev) => (prev ? { ...prev, ...profilePatch } : null));
 
-      setShowLogModal(false);
-      setNewWeight("");
-      setNewWaist("");
-      setNewHip("");
-      setNewArmRight("");
-      setNewArmLeft("");
-      setNewThighRight("");
-      setNewThighLeft("");
-      setNewNote("");
+      // Sincronização direta com Supabase (profiles e assessments)
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const profileSbUpdate: Record<string, any> = {
+            id: user.id,
+            weight_kg: weightVal,
+            last_assessment_date: todayDate,
+            updated_at: new Date().toISOString(),
+          };
+          if (waistVal !== undefined) profileSbUpdate.waist_cm = waistVal;
+          if (hipVal !== undefined) profileSbUpdate.hip_cm = hipVal;
+          if (armRightVal !== undefined) profileSbUpdate.right_arm_cm = armRightVal;
+          if (armLeftVal !== undefined) profileSbUpdate.left_arm_cm = armLeftVal;
+          if (thighRightVal !== undefined) {
+            profileSbUpdate.right_leg_cm = thighRightVal;
+            profileSbUpdate.thigh_right = thighRightVal;
+          }
+          if (thighLeftVal !== undefined) {
+            profileSbUpdate.left_leg_cm = thighLeftVal;
+            profileSbUpdate.thigh_left = thighLeftVal;
+          }
+          await supabase.from("profiles").upsert(profileSbUpdate);
+
+          await supabase.from("assessments").insert({
+            user_id: user.id,
+            user_email: user.email,
+            date: todayDate,
+            measurements: {
+              weight_kg: weightVal,
+              waist_cm: waistVal,
+              hip_cm: hipVal,
+              right_arm_cm: armRightVal,
+              left_arm_cm: armLeftVal,
+              right_leg_cm: thighRightVal,
+              left_leg_cm: thighLeftVal,
+              thigh_right: thighRightVal,
+              thigh_left: thighLeftVal,
+            },
+            notes: newNote || null,
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (sbErr) {
+        console.warn("Aviso na sincronização de medidas com Supabase:", sbErr);
+      }
+
+      // Recarrega listagem e estado de fundo
+      loadData();
+
+      // Feedback visual e auto-close
+      setProgressSuccessMessage("Métricas corporais registradas com sucesso!");
+      setProgressSuccessToast("Métricas corporais registradas com sucesso!");
+
+      setTimeout(() => {
+        setShowLogModal(false);
+        setSavingProgress(false);
+        setProgressSuccessMessage(null);
+        setNewWeight("");
+        setNewWaist("");
+        setNewHip("");
+        setNewArmRight("");
+        setNewArmLeft("");
+        setNewThighRight("");
+        setNewThighLeft("");
+        setNewNote("");
+      }, 950);
+
+      setTimeout(() => {
+        setProgressSuccessToast(null);
+      }, 4500);
     } catch (e) {
       console.error("Error adding progress entry:", e);
+      setSavingProgress(false);
     }
   };
 
@@ -170,7 +241,23 @@ export const ProgressView: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300 relative">
+      {/* Toast de Confirmação de Métricas Corporais */}
+      {progressSuccessToast && (
+        <div
+          id="progress-view-success-toast"
+          className="fixed top-5 right-5 z-50 p-4 rounded-2xl bg-[#151515] border border-[#34C759]/60 shadow-2xl text-xs font-bold text-[#F5F5F7] flex items-center gap-3 animate-in slide-in-from-top-3 max-w-sm"
+        >
+          <div className="w-8 h-8 rounded-xl bg-[#34C759]/20 text-[#34C759] flex items-center justify-center shrink-0 border border-[#34C759]/30">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="font-extrabold text-[#34C759]">Atualização Concluída</p>
+            <p className="text-[11px] text-[#9B9BA1]">{progressSuccessToast}</p>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -508,12 +595,39 @@ export const ProgressView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Mensagem de Confirmação no Modal */}
+              {progressSuccessMessage && (
+                <div
+                  id="progress-view-modal-alert"
+                  className="p-3.5 rounded-2xl bg-[#34C759]/15 border border-[#34C759]/40 text-[#34C759] text-xs font-bold flex items-center gap-2.5 animate-in fade-in mt-3"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-[#34C759]" />
+                  <span>{progressSuccessMessage}</span>
+                </div>
+              )}
+
               <button
+                id="submit-progress-entry-btn"
                 type="submit"
-                className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 transition-all flex items-center justify-center gap-2 mt-4 cursor-pointer"
+                disabled={savingProgress || Boolean(progressSuccessMessage)}
+                className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 transition-all flex items-center justify-center gap-2 mt-4 cursor-pointer disabled:opacity-60"
               >
-                <Check className="w-4 h-4" />
-                <span>Salvar Registro</span>
+                {savingProgress ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Salvando no Supabase...</span>
+                  </>
+                ) : progressSuccessMessage ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <span>Registro Salvo com Sucesso!</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Salvar Registro</span>
+                  </>
+                )}
               </button>
             </form>
           </div>

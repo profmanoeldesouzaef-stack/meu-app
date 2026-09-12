@@ -29,6 +29,7 @@ import {
   Sliders,
   CheckCircle2,
   AlertCircle,
+  Save,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { appStorage } from "../utils/storage";
@@ -168,6 +169,11 @@ export const DietView: React.FC = () => {
     appDietReleased !== undefined ? appDietReleased : true
   );
 
+  // Macro & Calorie updating state
+  const [savingMacros, setSavingMacros] = useState(false);
+  const [macroSuccessMessage, setMacroSuccessMessage] = useState<string | null>(null);
+  const [macroErrorMessage, setMacroErrorMessage] = useState<string | null>(null);
+
   useEffect(() => {
     if (appDietReleased !== undefined) {
       setDietReleased(appDietReleased);
@@ -188,7 +194,32 @@ export const DietView: React.FC = () => {
         const data = await api.getDiet().catch(() => null);
         if (!isMounted) return;
 
-        const baseDiet = cachedDiet || data;
+        let baseDiet = cachedDiet || data;
+
+        // Consultar metas salvas diretamente no perfil do Supabase
+        if (user) {
+          try {
+            const { data: profileData } = await supabase
+              .from("profiles")
+              .select("target_calories, target_protein_pct, target_carbs_pct, target_fats_pct, diet_plan")
+              .eq("id", user.id)
+              .maybeSingle();
+
+            if (profileData && baseDiet) {
+              baseDiet = {
+                ...baseDiet,
+                ...(profileData.diet_plan || {}),
+                kcal: profileData.target_calories || profileData.diet_plan?.kcal || baseDiet.kcal,
+                protein_pct: profileData.target_protein_pct || profileData.diet_plan?.protein_pct || baseDiet.protein_pct,
+                carbs_pct: profileData.target_carbs_pct || profileData.diet_plan?.carbs_pct || baseDiet.carbs_pct,
+                fats_pct: profileData.target_fats_pct || profileData.diet_plan?.fats_pct || baseDiet.fats_pct,
+              };
+            }
+          } catch (pErr) {
+            console.warn("Aviso ao ler perfil de macros no Supabase:", pErr);
+          }
+        }
+
         if (baseDiet) {
           if (baseDiet.diet_released !== undefined) {
             const isRel = Boolean(baseDiet.diet_released);
@@ -222,6 +253,93 @@ export const DietView: React.FC = () => {
       isMounted = false;
     };
   }, []);
+
+  const handleSaveMacrosAndDiet = async () => {
+    if (!diet) return;
+    setSavingMacros(true);
+    setMacroSuccessMessage(null);
+    setMacroErrorMessage(null);
+
+    try {
+      const calories = diet.kcal || 2400;
+      const proteinPct = diet.protein_pct || 35;
+      const carbsPct = diet.carbs_pct || 45;
+      const fatsPct = diet.fats_pct || 20;
+
+      const proteinG = Math.round((calories * (proteinPct / 100)) / 4);
+      const carbsG = Math.round((calories * (carbsPct / 100)) / 4);
+      const fatsG = Math.round((calories * (fatsPct / 100)) / 9);
+
+      // 1. Atualização e gravação direta no Supabase
+      const { data: authData } = await supabase.auth.getUser();
+      const currentUser = authData?.user;
+
+      if (currentUser) {
+        const updatePayload: Record<string, any> = {
+          target_calories: calories,
+          target_protein_pct: proteinPct,
+          target_carbs_pct: carbsPct,
+          target_fats_pct: fatsPct,
+          target_protein_g: proteinG,
+          target_carbs_g: carbsG,
+          target_fats_g: fatsG,
+          diet_plan: diet,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: sbErr } = await supabase
+          .from("profiles")
+          .update(updatePayload)
+          .eq("id", currentUser.id);
+
+        if (sbErr) {
+          console.warn("Aviso ao atualizar perfil no Supabase:", sbErr);
+        }
+
+        try {
+          await supabase.from("diet_plans").upsert(
+            {
+              user_id: currentUser.id,
+              calories,
+              protein_pct: proteinPct,
+              carbs_pct: carbsPct,
+              fats_pct: fatsPct,
+              plan_data: diet,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          );
+        } catch (planErr) {
+          console.warn("Aviso ao atualizar diet_plans:", planErr);
+        }
+
+        await appStorage.setItem(`vyra_diet_${currentUser.id}`, diet);
+        await appStorage.setItem(`vyra_macros_${currentUser.id}`, {
+          calories,
+          proteinPct,
+          carbsPct,
+          fatsPct,
+          proteinG,
+          carbsG,
+          fatsG,
+        });
+      }
+
+      await appStorage.setItem("vyra_diet_current", diet);
+      await api.updateDiet(diet).catch(() => {});
+
+      // 2. Feedback visual de sucesso imediato
+      setMacroSuccessMessage("Metas de macronutrientes atualizadas com sucesso!");
+      setTimeout(() => {
+        setMacroSuccessMessage(null);
+      }, 4000);
+    } catch (err: any) {
+      console.error("Erro ao salvar macronutrientes:", err);
+      setMacroErrorMessage(err?.message || "Falha ao gravar macronutrientes.");
+    } finally {
+      setSavingMacros(false);
+    }
+  };
 
   const handleToggleDietRelease = async () => {
     try {
@@ -611,6 +729,166 @@ export const DietView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Divisão de Macronutrientes & Calorias */}
+      {diet && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-5 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#2B2B2F]">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Flame className="w-4 h-4 text-[#FF6A2A]" />
+                <h3 className="text-sm font-bold text-[#F5F5F7]">
+                  Divisão de Macronutrientes & Calorias
+                </h3>
+              </div>
+              <p className="text-xs text-[#9B9BA1]">
+                {isCoach ? "Ajuste fino dos percentuais de macros para o aluno." : "Metas de ingestão diária planejadas para o seu protocolo."}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#9B9BA1]">Meta Calórica:</span>
+              <div className="flex items-center gap-1.5 bg-[#1D1D1F] px-3 py-1.5 rounded-xl border border-[#2B2B2F] focus-within:border-[#FF6A2A]">
+                {isCoach ? (
+                  <input
+                    type="number"
+                    step="50"
+                    min="1000"
+                    max="6000"
+                    value={diet.kcal || 2400}
+                    onChange={(e) => setDiet({ ...diet, kcal: parseInt(e.target.value) || 2000 })}
+                    className="w-16 bg-transparent text-xs font-black text-[#F5F5F7] focus:outline-none"
+                  />
+                ) : (
+                  <span className="text-xs font-black text-[#F5F5F7]">{diet.kcal || 2400}</span>
+                )}
+                <span className="text-[11px] text-[#9B9BA1]">kcal / dia</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Macro Sliders / Badges */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            {/* Proteína */}
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-[#FF6A2A]">Proteína</label>
+                <span className="text-xs font-black text-[#FF6A2A]">{diet.protein_pct}%</span>
+              </div>
+              {isCoach ? (
+                <input
+                  type="range"
+                  min="15"
+                  max="60"
+                  value={diet.protein_pct}
+                  onChange={(e) => setDiet({ ...diet, protein_pct: parseInt(e.target.value) || 35 })}
+                  className="w-full accent-[#FF6A2A]"
+                />
+              ) : (
+                <div className="w-full h-1.5 bg-[#2B2B2F] rounded-full overflow-hidden my-1">
+                  <div className="h-full bg-[#FF6A2A]" style={{ width: `${diet.protein_pct}%` }} />
+                </div>
+              )}
+              <span className="text-[10px] text-[#9B9BA1] block mt-1 font-medium">
+                ~{Math.round(((diet.kcal || 2400) * (diet.protein_pct / 100)) / 4)}g de proteína
+              </span>
+            </div>
+
+            {/* Carboidratos */}
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-[#D8B46A]">Carboidratos</label>
+                <span className="text-xs font-black text-[#D8B46A]">{diet.carbs_pct}%</span>
+              </div>
+              {isCoach ? (
+                <input
+                  type="range"
+                  min="15"
+                  max="65"
+                  value={diet.carbs_pct}
+                  onChange={(e) => setDiet({ ...diet, carbs_pct: parseInt(e.target.value) || 45 })}
+                  className="w-full accent-[#D8B46A]"
+                />
+              ) : (
+                <div className="w-full h-1.5 bg-[#2B2B2F] rounded-full overflow-hidden my-1">
+                  <div className="h-full bg-[#D8B46A]" style={{ width: `${diet.carbs_pct}%` }} />
+                </div>
+              )}
+              <span className="text-[10px] text-[#9B9BA1] block mt-1 font-medium">
+                ~{Math.round(((diet.kcal || 2400) * (diet.carbs_pct / 100)) / 4)}g de carboidratos
+              </span>
+            </div>
+
+            {/* Gorduras */}
+            <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F]">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-[#6D9BFF]">Gorduras</label>
+                <span className="text-xs font-black text-[#6D9BFF]">{diet.fats_pct}%</span>
+              </div>
+              {isCoach ? (
+                <input
+                  type="range"
+                  min="10"
+                  max="45"
+                  value={diet.fats_pct}
+                  onChange={(e) => setDiet({ ...diet, fats_pct: parseInt(e.target.value) || 20 })}
+                  className="w-full accent-[#6D9BFF]"
+                />
+              ) : (
+                <div className="w-full h-1.5 bg-[#2B2B2F] rounded-full overflow-hidden my-1">
+                  <div className="h-full bg-[#6D9BFF]" style={{ width: `${diet.fats_pct}%` }} />
+                </div>
+              )}
+              <span className="text-[10px] text-[#9B9BA1] block mt-1 font-medium">
+                ~{Math.round(((diet.kcal || 2400) * (diet.fats_pct / 100)) / 9)}g de lipídios
+              </span>
+            </div>
+          </div>
+
+          {/* Botão de Destaque: Salvar e Atualizar Dieta do Aluno */}
+          <div className="pt-1">
+            <button
+              id="dietview-save-and-update-diet-btn"
+              type="button"
+              disabled={savingMacros}
+              onClick={handleSaveMacrosAndDiet}
+              className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2.5 shadow-lg cursor-pointer ${
+                savingMacros
+                  ? "bg-[#2B2B2F] text-[#9B9BA1] cursor-not-allowed"
+                  : "bg-gradient-to-r from-[#FF6A2A] via-[#FF8A48] to-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shadow-[#FF6A2A]/20"
+              }`}
+            >
+              {savingMacros ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-[#9B9BA1] border-t-transparent rounded-full animate-spin" />
+                  <span>Atualizando protocolo...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Salvar e Atualizar Dieta do Aluno</span>
+                </>
+              )}
+            </button>
+
+            {/* Alerta de Sucesso */}
+            {macroSuccessMessage && (
+              <div className="mt-3 p-3.5 rounded-2xl bg-[#34C759]/15 border border-[#34C759]/40 text-[#34C759] text-xs font-bold flex items-center gap-2.5 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{macroSuccessMessage}</span>
+              </div>
+            )}
+
+            {/* Alerta de Erro */}
+            {macroErrorMessage && (
+              <div className="mt-3 p-3.5 rounded-2xl bg-[#FF453A]/15 border border-[#FF453A]/40 text-[#FF453A] text-xs font-bold flex items-center gap-2.5 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{macroErrorMessage}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Refeições Prescritas (Blocos com Botão de Expandir Ingredientes & Quantidades Recalculadas) */}
       <div className="space-y-3">

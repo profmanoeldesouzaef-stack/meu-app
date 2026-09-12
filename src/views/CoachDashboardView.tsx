@@ -56,12 +56,16 @@ import {
   Share2,
   Droplets,
   Palette,
+  AlertCircle,
 } from "lucide-react";
+import { supabase } from "../lib/supabase";
+import { appStorage } from "../utils/storage";
 import { SubstituteExerciseModal } from "../components/SubstituteExerciseModal";
 import { BulkSendWorkoutModal } from "../components/BulkSendWorkoutModal";
 import { CoachWorkoutLibrary } from "../components/CoachWorkoutLibrary";
 import { CoachDietFoodPresets } from "../components/CoachDietFoodPresets";
 import { VeteranBadge } from "../lib/patents";
+import { FinanceCRMTableWeb } from "../components/FinanceCRMTableWeb";
 
 export const CoachDashboardView: React.FC = () => {
   const { t, lang, currentUserEmail, setInviteData, setActiveView, setVipChatUnlocked } = useApp();
@@ -125,6 +129,11 @@ export const CoachDashboardView: React.FC = () => {
   const [broadcastAuthor, setBroadcastAuthor] = useState("Coach Mari");
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [saveMessage, setSaveMessage] = useState("Salvo com sucesso!");
+
+  // Macro & Calorie updating state
+  const [savingMacros, setSavingMacros] = useState(false);
+  const [macroSuccessMessage, setMacroSuccessMessage] = useState<string | null>(null);
+  const [macroErrorMessage, setMacroErrorMessage] = useState<string | null>(null);
 
   // AI Workout Generator Modal & State
   const [showAiWorkoutModal, setShowAiWorkoutModal] = useState(false);
@@ -609,6 +618,104 @@ export const CoachDashboardView: React.FC = () => {
       }
     } catch (e) {
       console.error("Error updating diet:", e);
+    }
+  };
+
+  const handleSaveMacrosAndDiet = async () => {
+    if (!diet) return;
+    setSavingMacros(true);
+    setMacroSuccessMessage(null);
+    setMacroErrorMessage(null);
+
+    try {
+      const studentId = selectedStudent?.id;
+      const calories = diet.kcal || 2400;
+      const proteinPct = diet.protein_pct || 35;
+      const carbsPct = diet.carbs_pct || 45;
+      const fatsPct = diet.fats_pct || 20;
+
+      const proteinG = Math.round((calories * (proteinPct / 100)) / 4);
+      const carbsG = Math.round((calories * (carbsPct / 100)) / 4);
+      const fatsG = Math.round((calories * (fatsPct / 100)) / 9);
+
+      // 1. Atualizar e sincronizar diretamente no Supabase
+      if (studentId) {
+        const updatePayload: Record<string, any> = {
+          target_calories: calories,
+          target_protein_pct: proteinPct,
+          target_carbs_pct: carbsPct,
+          target_fats_pct: fatsPct,
+          target_protein_g: proteinG,
+          target_carbs_g: carbsG,
+          target_fats_g: fatsG,
+          diet_plan: diet,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: sbProfileErr } = await supabase
+          .from("profiles")
+          .update(updatePayload)
+          .eq("id", studentId);
+
+        if (sbProfileErr) {
+          console.warn("Aviso ao atualizar perfil no Supabase:", sbProfileErr);
+        }
+
+        try {
+          await supabase.from("diet_plans").upsert(
+            {
+              user_id: studentId,
+              calories,
+              protein_pct: proteinPct,
+              carbs_pct: carbsPct,
+              fats_pct: fatsPct,
+              plan_data: diet,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          );
+        } catch (planErr) {
+          console.warn("Aviso ao gravar diet_plans:", planErr);
+        }
+
+        // Cache persistente por aluno
+        await appStorage.setItem(`vyra_diet_${studentId}`, diet);
+        await appStorage.setItem(`vyra_macros_${studentId}`, {
+          calories,
+          proteinPct,
+          carbsPct,
+          fatsPct,
+          proteinG,
+          carbsG,
+          fatsG,
+        });
+      }
+
+      // Persistir também no storage global ativo
+      await appStorage.setItem("vyra_diet_current", diet);
+
+      // 2. Atualizar a API interna do applet e o state de alunos
+      if (selectedStudent) {
+        await api.updateStudentDiet(selectedStudent.id, diet).catch(() => {});
+        setStudents((prev) =>
+          prev.map((s) => (s.id === selectedStudent.id ? { ...s, diet } : s))
+        );
+      } else {
+        await api.updateDiet(diet).catch(() => {});
+      }
+
+      // 3. Feedback visual de sucesso imediato
+      setMacroSuccessMessage("Metas de macronutrientes atualizadas com sucesso!");
+      showNotification("Metas de macronutrientes atualizadas com sucesso!");
+
+      setTimeout(() => {
+        setMacroSuccessMessage(null);
+      }, 4000);
+    } catch (err: any) {
+      console.error("Erro ao atualizar macronutrientes:", err);
+      setMacroErrorMessage(err?.message || "Falha ao gravar macronutrientes no banco de dados.");
+    } finally {
+      setSavingMacros(false);
     }
   };
 
@@ -1945,9 +2052,13 @@ export const CoachDashboardView: React.FC = () => {
 
       {/* Tab: Finance */}
       {activeTab === "finance" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Coupon Management */}
-          <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
+        <div className="space-y-6">
+          {/* Módulo de Busca e Gestão de Alunos no Financeiro */}
+          <FinanceCRMTableWeb />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Coupon Management */}
+            <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
             <h3 className="text-sm font-bold text-[#F5F5F7]">Cupons de Desconto</h3>
 
             <form onSubmit={handleCreateCoupon} className="flex gap-2">
@@ -2074,7 +2185,8 @@ export const CoachDashboardView: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* Tab: Workouts Editor with Student Filters, Library & Bulk Send */}
       {activeTab === "workouts" && (
@@ -2764,9 +2876,19 @@ export const CoachDashboardView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-[#F5F5F7] bg-[#1D1D1F] px-3 py-1.5 rounded-xl border border-[#2B2B2F]">
-                    Total: {diet.kcal || 2400} kcal / dia
-                  </span>
+                  <label className="text-xs font-bold text-[#9B9BA1]">Meta Calórica:</label>
+                  <div className="flex items-center gap-1.5 bg-[#1D1D1F] px-3 py-1.5 rounded-xl border border-[#2B2B2F] focus-within:border-[#FF6A2A]">
+                    <input
+                      type="number"
+                      step="50"
+                      min="1000"
+                      max="6000"
+                      value={diet.kcal || 2400}
+                      onChange={(e) => setDiet({ ...diet, kcal: parseInt(e.target.value) || 2000 })}
+                      className="w-16 bg-transparent text-xs font-black text-[#F5F5F7] focus:outline-none"
+                    />
+                    <span className="text-[11px] text-[#9B9BA1]">kcal / dia</span>
+                  </div>
                 </div>
               </div>
 
@@ -2785,7 +2907,7 @@ export const CoachDashboardView: React.FC = () => {
                     onChange={(e) => setDiet({ ...diet, protein_pct: parseInt(e.target.value) || 35 })}
                     className="w-full accent-[#FF6A2A]"
                   />
-                  <span className="text-[10px] text-[#9B9BA1] block mt-1">
+                  <span className="text-[10px] text-[#9B9BA1] block mt-1 font-medium">
                     ~{Math.round(((diet.kcal || 2400) * (diet.protein_pct / 100)) / 4)}g de proteína
                   </span>
                 </div>
@@ -2803,7 +2925,7 @@ export const CoachDashboardView: React.FC = () => {
                     onChange={(e) => setDiet({ ...diet, carbs_pct: parseInt(e.target.value) || 45 })}
                     className="w-full accent-[#D8B46A]"
                   />
-                  <span className="text-[10px] text-[#9B9BA1] block mt-1">
+                  <span className="text-[10px] text-[#9B9BA1] block mt-1 font-medium">
                     ~{Math.round(((diet.kcal || 2400) * (diet.carbs_pct / 100)) / 4)}g de carboidratos
                   </span>
                 </div>
@@ -2821,10 +2943,53 @@ export const CoachDashboardView: React.FC = () => {
                     onChange={(e) => setDiet({ ...diet, fats_pct: parseInt(e.target.value) || 20 })}
                     className="w-full accent-[#6D9BFF]"
                   />
-                  <span className="text-[10px] text-[#9B9BA1] block mt-1">
+                  <span className="text-[10px] text-[#9B9BA1] block mt-1 font-medium">
                     ~{Math.round(((diet.kcal || 2400) * (diet.fats_pct / 100)) / 9)}g de lipídios
                   </span>
                 </div>
+              </div>
+
+              {/* Botão de Destaque: Salvar e Atualizar Dieta do Aluno */}
+              <div className="pt-2">
+                <button
+                  id="save-and-update-diet-btn"
+                  type="button"
+                  disabled={savingMacros}
+                  onClick={handleSaveMacrosAndDiet}
+                  className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2.5 shadow-lg cursor-pointer ${
+                    savingMacros
+                      ? "bg-[#2B2B2F] text-[#9B9BA1] cursor-not-allowed"
+                      : "bg-gradient-to-r from-[#FF6A2A] via-[#FF8A48] to-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shadow-[#FF6A2A]/20"
+                  }`}
+                >
+                  {savingMacros ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-[#9B9BA1] border-t-transparent rounded-full animate-spin" />
+                      <span>Atualizando protocolo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Salvar e Atualizar Dieta do Aluno</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Alerta de Sucesso */}
+                {macroSuccessMessage && (
+                  <div className="mt-3 p-3.5 rounded-2xl bg-[#34C759]/15 border border-[#34C759]/40 text-[#34C759] text-xs font-bold flex items-center gap-2.5 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{macroSuccessMessage}</span>
+                  </div>
+                )}
+
+                {/* Alerta de Erro */}
+                {macroErrorMessage && (
+                  <div className="mt-3 p-3.5 rounded-2xl bg-[#FF453A]/15 border border-[#FF453A]/40 text-[#FF453A] text-xs font-bold flex items-center gap-2.5 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{macroErrorMessage}</span>
+                  </div>
+                )}
               </div>
 
               {/* Preset Foods Quick Selector */}

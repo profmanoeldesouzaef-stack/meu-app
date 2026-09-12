@@ -27,6 +27,7 @@ import {
   Lock,
   AlertTriangle,
   FileText,
+  Loader2,
 } from "lucide-react";
 
 const WEEK_PT = ["S", "T", "Q", "Q", "S", "S", "D"];
@@ -72,6 +73,9 @@ export const HomeView: React.FC = () => {
   const [newThighRight, setNewThighRight] = useState("");
   const [newThighLeft, setNewThighLeft] = useState("");
   const [newNote, setNewNote] = useState("");
+  const [savingProgress, setSavingProgress] = useState(false);
+  const [progressSuccessMessage, setProgressSuccessMessage] = useState<string | null>(null);
+  const [progressSuccessToast, setProgressSuccessToast] = useState<string | null>(null);
 
   // Preenchimento prévio dos inputs com os últimos valores registrados ao abrir o modal
   const handleOpenLogModal = useCallback(() => {
@@ -117,6 +121,9 @@ export const HomeView: React.FC = () => {
   const handleAddProgressEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWeight) return;
+
+    setSavingProgress(true);
+    setProgressSuccessMessage(null);
 
     const todayDate = new Date().toISOString().split("T")[0];
     const weightVal = parseFloat(newWeight);
@@ -218,17 +225,34 @@ export const HomeView: React.FC = () => {
         console.warn("Aviso na sincronização de medidas com Supabase:", sbErr);
       }
 
-      setShowLogModal(false);
-      setNewWeight("");
-      setNewWaist("");
-      setNewHip("");
-      setNewArmRight("");
-      setNewArmLeft("");
-      setNewThighRight("");
-      setNewThighLeft("");
-      setNewNote("");
+      // Recarrega todos os dados de fundo no dashboard
+      loadData();
+
+      // Feedback visual com mensagem explícita e fechamento automático do modal
+      setProgressSuccessMessage("Métricas corporais registradas com sucesso!");
+      setProgressSuccessToast("Métricas corporais registradas com sucesso!");
+
+      setTimeout(() => {
+        setShowLogModal(false);
+        setSavingProgress(false);
+        setProgressSuccessMessage(null);
+        setNewWeight("");
+        setNewWaist("");
+        setNewHip("");
+        setNewArmRight("");
+        setNewArmLeft("");
+        setNewThighRight("");
+        setNewThighLeft("");
+        setNewNote("");
+      }, 950);
+
+      // Limpa toast após 4.5s
+      setTimeout(() => {
+        setProgressSuccessToast(null);
+      }, 4500);
     } catch (e) {
       console.error("Error adding progress entry:", e);
+      setSavingProgress(false);
     }
   };
 
@@ -423,7 +447,23 @@ export const HomeView: React.FC = () => {
       : 3);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300 relative">
+      {/* Toast de Confirmação de Métricas Corporais */}
+      {progressSuccessToast && (
+        <div
+          id="progress-success-toast"
+          className="fixed top-5 right-5 z-50 p-4 rounded-2xl bg-[#151515] border border-[#34C759]/60 shadow-2xl text-xs font-bold text-[#F5F5F7] flex items-center gap-3 animate-in slide-in-from-top-3 max-w-sm"
+        >
+          <div className="w-8 h-8 rounded-xl bg-[#34C759]/20 text-[#34C759] flex items-center justify-center shrink-0 border border-[#34C759]/30">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="font-extrabold text-[#34C759]">Atualização Concluída</p>
+            <p className="text-[11px] text-[#9B9BA1]">{progressSuccessToast}</p>
+          </div>
+        </div>
+      )}
+
       {/* Header Greeting */}
       <div className="flex items-center justify-between">
         <div>
@@ -1165,20 +1205,45 @@ export const HomeView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Mensagem de Confirmação no Modal */}
+              {progressSuccessMessage && (
+                <div
+                  id="modal-progress-success-alert"
+                  className="p-3.5 rounded-2xl bg-[#34C759]/15 border border-[#34C759]/40 text-[#34C759] text-xs font-bold flex items-center gap-2.5 animate-in fade-in"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-[#34C759]" />
+                  <span>{progressSuccessMessage}</span>
+                </div>
+              )}
+
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
+                  disabled={savingProgress}
                   onClick={() => setShowLogModal(false)}
-                  className="flex-1 py-3 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#9B9BA1] border border-[#2B2B2F] hover:text-[#F5F5F7] cursor-pointer"
+                  className="flex-1 py-3 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#9B9BA1] border border-[#2B2B2F] hover:text-[#F5F5F7] cursor-pointer disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   id="submit-measurements-btn"
                   type="submit"
-                  className="flex-1 py-3 rounded-xl text-xs font-bold bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
+                  disabled={savingProgress || Boolean(progressSuccessMessage)}
+                  className="flex-1 py-3 rounded-xl text-xs font-bold bg-gradient-to-r from-[#FF6A2A] to-[#FF9A62] text-white hover:brightness-110 shadow-lg shadow-[#FF6A2A]/20 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
                 >
-                  Salvar Medidas
+                  {savingProgress ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Salvando no Supabase...</span>
+                    </>
+                  ) : progressSuccessMessage ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                      <span>Salvo com Sucesso!</span>
+                    </>
+                  ) : (
+                    <span>Salvar Medidas</span>
+                  )}
                 </button>
               </div>
             </form>
