@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useApp } from "../context/AppContext";
+import { supabase } from "../lib/supabase";
+import { appStorage } from "../utils/storage";
 import {
   Trophy,
   Copy,
@@ -71,7 +73,7 @@ export const WorkoutCompletionView: React.FC = () => {
 
   const currentPos = positions[selectedTemplate] || { x: 0, y: 0, scale: 1 };
 
-  // Load summary data from localStorage or provide fallback
+  // Load summary data from localStorage, appStorage or Supabase
   const [summaryData, setSummaryData] = useState<WorkoutSummaryData>(() => {
     try {
       const saved = localStorage.getItem("vyra_last_completed_workout");
@@ -82,22 +84,15 @@ export const WorkoutCompletionView: React.FC = () => {
       // Fallback
     }
     return {
-      workoutTitle: "Peito, Ombro & Tríceps",
-      dayLabel: "Dia 3 · Push",
-      durationMin: 58,
-      completedExercises: 6,
-      totalExercises: 6,
+      workoutTitle: "Treino Concluído",
+      dayLabel: "Sessão de Força",
+      durationMin: 50,
+      completedExercises: 5,
+      totalExercises: 5,
       progressPct: 100,
-      maxWeightKg: 84,
-      totalSets: 21,
-      exercises: [
-        { name: "Supino Reto Barra", sets: 4, reps: "8-10" },
-        { name: "Supino Inclinado Halter", sets: 3, reps: "10-12" },
-        { name: "Desenvolvimento Militar", sets: 4, reps: "8" },
-        { name: "Elevação Lateral", sets: 4, reps: "12-15" },
-        { name: "Tríceps Corda Polia", sets: 3, reps: "12-15" },
-        { name: "Tríceps Francês", sets: 3, reps: "10" },
-      ],
+      maxWeightKg: 80,
+      totalSets: 15,
+      exercises: [],
       date: new Date().toLocaleDateString("pt-BR", {
         day: "2-digit",
         month: "2-digit",
@@ -105,6 +100,32 @@ export const WorkoutCompletionView: React.FC = () => {
       }),
     };
   });
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSavedWorkout() {
+      try {
+        // 1. Leitura via appStorage (AsyncStorage / local)
+        const cached = await appStorage.getItem<WorkoutSummaryData>("vyra_last_completed_workout");
+        if (cached && isMounted) {
+          setSummaryData(cached);
+        }
+
+        // 2. Leitura oficial do Supabase
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+        if (user?.user_metadata?.last_completed_workout && isMounted) {
+          setSummaryData(user.user_metadata.last_completed_workout);
+        }
+      } catch (err) {
+        console.warn("[WorkoutCompletion] Erro ao carregar dados do treino:", err);
+      }
+    }
+    fetchSavedWorkout();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const templatesList = [
     {

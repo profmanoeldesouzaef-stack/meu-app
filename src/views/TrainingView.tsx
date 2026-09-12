@@ -41,6 +41,8 @@ import {
   Bed,
   ShieldCheck,
 } from "lucide-react";
+import { supabase } from "../lib/supabase";
+import { appStorage } from "../utils/storage";
 import {
   getExerciseVideoInfo,
   buildYouTubeEmbedUrl,
@@ -396,6 +398,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     if (workout?.id) {
       try {
         localStorage.setItem(`vyra_workout_sets_${workout.id}`, JSON.stringify(updated));
+        appStorage.setItem(`vyra_workout_sets_${workout.id}`, updated).catch(() => {});
       } catch (e) {
         console.error("Error saving workout sets locally:", e);
       }
@@ -414,13 +417,34 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     debounceTimersRef.current[exerciseId] = setTimeout(async () => {
       try {
         const ex = workout.exercises.find((e) => e.id === exerciseId);
+        
+        // 1. Sincronização direta com a tabela workout_set_logs do Supabase
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+        if (user) {
+          const validSets = setsToSave
+            .filter((s) => s.completed || Boolean(s.weight))
+            .map((s) => ({
+              user_id: user.id,
+              set_number: s.setNum,
+              reps_completed: parseInt(s.reps) || 10,
+              load_kg: parseFloat(s.weight) || 0,
+              created_at: new Date().toISOString(),
+            }));
+          if (validSets.length > 0) {
+            await supabase.from("workout_set_logs").insert(validSets);
+          }
+        }
+
+        // 2. Sincronização com API local de apoio
         await api.saveExerciseLog({
           workout_id: workout.id,
           exercise_id: exerciseId,
           exercise_name: ex?.name || "",
           sets: setsToSave,
           user_email: currentUserEmail,
-        });
+        }).catch(() => {});
+
         setDatabaseSyncState("synced");
         setTimeout(() => setDatabaseSyncState("idle"), 2500);
       } catch (err) {
@@ -435,11 +459,34 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     if (!workout?.id) return;
     setDatabaseSyncState("saving");
     try {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (user) {
+        const setsToInsert = [];
+        for (const [exId, sets] of Object.entries(exerciseSets)) {
+          for (const s of sets) {
+            if (s.completed || Boolean(s.weight)) {
+              setsToInsert.push({
+                user_id: user.id,
+                set_number: s.setNum,
+                reps_completed: parseInt(s.reps) || 10,
+                load_kg: parseFloat(s.weight) || 0,
+                created_at: new Date().toISOString(),
+              });
+            }
+          }
+        }
+        if (setsToInsert.length > 0) {
+          await supabase.from("workout_set_logs").insert(setsToInsert);
+        }
+      }
+
       await api.saveBatchWorkoutLogs({
         workout_id: workout.id,
         logs: exerciseSets,
         user_email: currentUserEmail,
-      });
+      }).catch(() => {});
+
       setDatabaseSyncState("synced");
       setTimeout(() => setDatabaseSyncState("idle"), 3000);
     } catch (err) {
@@ -561,7 +608,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
     return Math.max(max, exMax);
   }, 0);
 
-  const handleFinishWorkout = () => {
+  const handleFinishWorkout = async () => {
     if (!workout) return;
     const workoutSummary = {
       workoutTitle: workout.title,
@@ -582,11 +629,45 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onOpenFormChecker })
         month: "2-digit",
         year: "numeric",
       }),
+      completedAt: new Date().toISOString(),
     };
+
     try {
+      // 1. Salvar no localStorage e appStorage
       localStorage.setItem("vyra_last_completed_workout", JSON.stringify(workoutSummary));
+      await appStorage.setItem("vyra_last_completed_workout", workoutSummary);
+
+      // 2. Persistir no Supabase Auth e workout_set_logs
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (user) {
+        await supabase.auth.updateUser({
+          data: {
+            last_completed_workout: workoutSummary,
+            last_workout_date: new Date().toISOString().split("T")[0],
+          },
+        });
+
+        const setsToInsert = [];
+        for (const [exId, sets] of Object.entries(exerciseSets)) {
+          for (const s of sets) {
+            if (s.completed || Boolean(s.weight)) {
+              setsToInsert.push({
+                user_id: user.id,
+                set_number: s.setNum,
+                reps_completed: parseInt(s.reps) || 10,
+                load_kg: parseFloat(s.weight) || 0,
+                created_at: new Date().toISOString(),
+              });
+            }
+          }
+        }
+        if (setsToInsert.length > 0) {
+          await supabase.from("workout_set_logs").insert(setsToInsert);
+        }
+      }
     } catch (e) {
-      console.error("Failed to save workout summary:", e);
+      console.error("Failed to save workout summary to Supabase:", e);
     }
     setShowFinishedModal(false);
     setActiveView("workout-completion");

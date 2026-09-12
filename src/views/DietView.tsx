@@ -27,7 +27,11 @@ import {
   SlidersHorizontal,
   Edit2,
   Sliders,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
+import { supabase } from "../lib/supabase";
+import { appStorage } from "../utils/storage";
 
 interface GeminiMealRecipe {
   nome_receita: string;
@@ -171,32 +175,52 @@ export const DietView: React.FC = () => {
   }, [appDietReleased]);
 
   useEffect(() => {
-    api
-      .getDiet()
-      .then((data) => {
-        if (data.diet_released !== undefined) {
-          const isRel = Boolean(data.diet_released);
-          setDietReleased(isRel);
-          setAppDietReleased(isRel);
+    let isMounted = true;
+    async function loadDietData() {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+        let cachedDiet: Diet | null = null;
+        if (user) {
+          cachedDiet = await appStorage.getItem<Diet>(`vyra_diet_${user.id}`);
         }
-        // Enriquecer alimentos prescritos com quantidades e modo de preparo caso não estejam populados
-        const enrichedFoods = data.foods.map((food) => {
-          const ingredients = food.ingredients && food.ingredients.length > 0
-            ? food.ingredients
-            : getMealIngredients(food.name, food.grams);
-          const recipe_instructions = food.recipe_instructions && food.recipe_instructions.length > 0
-            ? food.recipe_instructions
-            : getMealPrepInstructions(food.name);
-          return {
-            ...food,
-            ingredients,
-            recipe_instructions,
-          };
-        });
-        setDiet({ ...data, foods: enrichedFoods });
-      })
-      .catch((err) => console.error("Error loading diet:", err))
-      .finally(() => setLoading(false));
+
+        const data = await api.getDiet().catch(() => null);
+        if (!isMounted) return;
+
+        const baseDiet = cachedDiet || data;
+        if (baseDiet) {
+          if (baseDiet.diet_released !== undefined) {
+            const isRel = Boolean(baseDiet.diet_released);
+            setDietReleased(isRel);
+            setAppDietReleased(isRel);
+          }
+          const foodsToUse = user?.user_metadata?.custom_diet_foods || baseDiet.foods || [];
+          const enrichedFoods = foodsToUse.map((food: any) => {
+            const ingredients = food.ingredients && food.ingredients.length > 0
+              ? food.ingredients
+              : getMealIngredients(food.name, food.grams);
+            const recipe_instructions = food.recipe_instructions && food.recipe_instructions.length > 0
+              ? food.recipe_instructions
+              : getMealPrepInstructions(food.name);
+            return {
+              ...food,
+              ingredients,
+              recipe_instructions,
+            };
+          });
+          setDiet({ ...baseDiet, foods: enrichedFoods });
+        }
+      } catch (err) {
+        console.error("Error loading diet:", err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadDietData();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleToggleDietRelease = async () => {
@@ -204,7 +228,29 @@ export const DietView: React.FC = () => {
       const next = !dietReleased;
       setDietReleased(next);
       setAppDietReleased(next);
-      await api.toggleDietRelease(next);
+
+      // Persistir no Supabase
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (user) {
+        await supabase.from("profiles").upsert(
+          {
+            id: user.id,
+            diet_released: next,
+            protocol_status: next ? "released" : "pending",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+        await supabase.auth.updateUser({
+          data: {
+            diet_released: next,
+            protocol_status: next ? "released" : "pending",
+          },
+        });
+      }
+
+      await api.toggleDietRelease(next).catch(() => {});
     } catch (err) {
       console.error("Erro ao alterar liberação da dieta:", err);
     }
@@ -248,7 +294,7 @@ export const DietView: React.FC = () => {
     }
   };
 
-  const applyFoodSwap = (suggestion: {
+  const applyFoodSwap = async (suggestion: {
     name: string;
     grams: number;
     kcal: number;
@@ -282,6 +328,23 @@ export const DietView: React.FC = () => {
     setDiet(updatedDiet);
     // Abre o card automaticamente para o aluno conferir os novos ingredientes recalculados
     setExpandedMealIds((prev) => ({ ...prev, [selectedMealToSwap.id]: true }));
+    
+    // Persistência local e Supabase
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (user) {
+        await appStorage.setItem(`vyra_diet_${user.id}`, updatedDiet);
+        await supabase.auth.updateUser({
+          data: {
+            custom_diet_foods: updatedFoods,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn("Erro ao persistir dieta no Supabase:", e);
+    }
+
     api.updateDiet({ foods: updatedFoods }).catch(() => {});
     setSelectedMealToSwap(null);
   };
@@ -1301,8 +1364,31 @@ export const DietView: React.FC = () => {
                   <button
                     id="log-plate-meal-btn"
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       setPlateLoggedSuccess(true);
+                      try {
+                        const { data: authData } = await supabase.auth.getUser();
+                        const user = authData?.user;
+                        if (user && plateAnalysis) {
+                          const logEntry = {
+                            id: `plate_${Date.now()}`,
+                            user_id: user.id,
+                            logged_at: new Date().toISOString(),
+                            analysis: plateAnalysis,
+                          };
+                          const existingLogs = (await appStorage.getItem<any[]>(`vyra_plate_logs_${user.id}`)) || [];
+                          await appStorage.setItem(`vyra_plate_logs_${user.id}`, [logEntry, ...existingLogs.slice(0, 30)]);
+                          
+                          await supabase.auth.updateUser({
+                            data: {
+                              last_plate_log: logEntry,
+                            },
+                          });
+                        }
+                      } catch (err) {
+                        console.warn("Erro ao registrar refeição no diário:", err);
+                      }
+
                       setTimeout(() => {
                         setShowPlateModal(false);
                         setPlateAnalysis(null);

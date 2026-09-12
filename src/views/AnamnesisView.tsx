@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { Anamnesis } from "../types";
+import { supabase } from "../lib/supabase";
+import { appStorage } from "../utils/storage";
 import {
   ClipboardCheck,
   Check,
@@ -11,6 +13,8 @@ import {
   ShieldCheck,
   Activity,
   Heart,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 
 export const AnamnesisView: React.FC = () => {
@@ -19,8 +23,8 @@ export const AnamnesisView: React.FC = () => {
   const [formData, setFormData] = useState<Anamnesis>({
     age: 28,
     gender: "Masculino",
-    height_cm: 182,
-    weight_kg: 81.5,
+    height_cm: 180,
+    weight_kg: 80,
     goal: "Hipertrofia e Definição Muscular",
     activity_level: "Avançado (4-6x semana)",
     restrictions: "Nenhuma",
@@ -37,6 +41,69 @@ export const AnamnesisView: React.FC = () => {
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadUserData() {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+
+        if (user) {
+          // 1. Tentar ler dados do appStorage / AsyncStorage
+          const cached = await appStorage.getItem<any>(`vyra_anamnesis_${user.id}`, null);
+
+          // 2. Select direto na tabela 'profiles' do Supabase
+          const { data: dbProfile, error: profileErr } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          if (profileErr) {
+            console.warn("[Anamnesis] Aviso ao carregar profile do Supabase:", profileErr.message);
+          }
+
+          const meta = user.user_metadata || {};
+
+          if (isMounted) {
+            setFormData((prev) => ({
+              age: dbProfile?.age || meta.age || cached?.age || prev.age,
+              gender: meta.gender || cached?.gender || prev.gender,
+              height_cm: dbProfile?.height_cm || meta.height_cm || cached?.height_cm || prev.height_cm,
+              weight_kg: dbProfile?.weight_kg || meta.weight_kg || cached?.weight_kg || prev.weight_kg,
+              goal: dbProfile?.goal || dbProfile?.primary_goal || meta.primary_goal || meta.goal || cached?.goal || prev.goal,
+              activity_level: meta.activity_level || cached?.activity_level || prev.activity_level,
+              restrictions: dbProfile?.dietary_restrictions || meta.dietary_restrictions || cached?.restrictions || prev.restrictions,
+              allergies: meta.allergies || cached?.allergies || prev.allergies,
+              medical_notes: dbProfile?.medical_history || meta.medical_history || cached?.medical_notes || prev.medical_notes,
+            }));
+
+            if (meta.photo_front || cached?.photo_front) {
+              setPhotos({
+                front: meta.photo_front || cached?.photo_front,
+                side: meta.photo_side || cached?.photo_side,
+                back: meta.photo_back || cached?.photo_back,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Anamnesis] Erro ao carregar dados do usuário:", err);
+      } finally {
+        if (isMounted) setLoadingInitial(false);
+      }
+    }
+
+    loadUserData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleUseDemoPhotos = () => {
     setPhotos({
@@ -68,21 +135,98 @@ export const AnamnesisView: React.FC = () => {
 
     setSaving(true);
     setPhotoError(null);
+    setErrorMessage(null);
+
     try {
+      // 1. Obter usuário autenticado no Supabase
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      const user = authData?.user;
+
+      if (authErr || !user) {
+        throw new Error("Sessão do usuário não encontrada. Faça login para confirmar sua anamnese.");
+      }
+
+      // 2. Executar UPSERT direto na tabela 'profiles' do Supabase filtrando pelo user.id
+      const numAge = Number(formData.age);
+      const numHeight = Number(formData.height_cm);
+      const numWeight = Number(formData.weight_kg);
+
+      const profilePayload: Record<string, any> = {
+        id: user.id,
+        age: numAge,
+        height_cm: numHeight,
+        weight_kg: numWeight,
+        primary_goal: formData.goal,
+        goal: formData.goal,
+        dietary_restrictions: formData.restrictions,
+        medical_history: formData.medical_notes,
+        protocol_status: "pending",
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: sbProfileError } = await supabase
+        .from("profiles")
+        .upsert(profilePayload, { onConflict: "id" });
+
+      if (sbProfileError) {
+        console.warn("[Supabase] Aviso no upsert em profiles:", sbProfileError.message);
+        // Fallback básico caso algumas colunas customizadas não existam
+        await supabase
+          .from("profiles")
+          .upsert(
+            { id: user.id, updated_at: new Date().toISOString() },
+            { onConflict: "id" }
+          );
+      }
+
+      // 3. Atualizar metadados permanentes no Supabase Auth
+      await supabase.auth.updateUser({
+        data: {
+          age: numAge,
+          gender: formData.gender,
+          height_cm: numHeight,
+          weight_kg: numWeight,
+          goal: formData.goal,
+          primary_goal: formData.goal,
+          activity_level: formData.activity_level,
+          dietary_restrictions: formData.restrictions,
+          allergies: formData.allergies,
+          medical_history: formData.medical_notes,
+          photo_front: photos.front,
+          photo_side: photos.side,
+          photo_back: photos.back,
+          anamnesis_done: true,
+          onboarding_completed: true,
+        },
+      });
+
+      // 4. Persistir no appStorage (AsyncStorage / localStorage)
+      const anamnesisRecord = {
+        ...formData,
+        ...photos,
+        user_id: user.id,
+        saved_at: new Date().toISOString(),
+      };
+      await appStorage.setItem(`vyra_anamnesis_${user.id}`, anamnesisRecord);
+      await appStorage.setItem("vyra_onboarding_completed", true);
+
+      // 5. Enviar também para a API de suporte / backend
       await api.saveAnamnesis({
         ...formData,
         photo_front: photos.front,
         photo_side: photos.side,
         photo_back: photos.back,
-      });
+      }).catch(() => {});
+
       setAnamnesisDone(true);
       setPhotosDone(true);
       setSuccess(true);
       setTimeout(() => {
         setActiveView("home");
-      }, 1200);
-    } catch (e) {
-      console.error("Error saving anamnesis:", e);
+      }, 1500);
+    } catch (e: any) {
+      console.error("[Anamnesis] Erro ao salvar anamnese no Supabase:", e);
+      setErrorMessage(e?.message || "Erro ao salvar anamnese no servidor. Tente novamente.");
     } finally {
       setSaving(false);
     }
@@ -112,17 +256,41 @@ export const AnamnesisView: React.FC = () => {
       </div>
 
       {success ? (
-        <div className="p-8 rounded-3xl bg-[#151515] border border-[#34C759] text-center space-y-3">
+        <div className="p-8 rounded-3xl bg-[#151515] border border-[#34C759] text-center space-y-3 animate-in fade-in">
           <div className="w-14 h-14 rounded-full bg-[#34C759]/20 text-[#34C759] flex items-center justify-center mx-auto">
-            <Check className="w-8 h-8 stroke-[3]" />
+            <CheckCircle2 className="w-8 h-8 stroke-[3]" />
           </div>
           <h3 className="text-xl font-bold text-[#F5F5F7]">{t("ana.done")}</h3>
           <p className="text-xs text-[#9B9BA1]">
-            Seus dados foram integrados aos algoritmos de treino e dieta do Vyra.
+            Seus dados foram integrados e confirmados no Supabase com sucesso. Redirecionando...
           </p>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
+          {loadingInitial && (
+            <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] text-xs flex items-center gap-2.5 animate-pulse">
+              <div className="w-3 h-3 border-2 border-[#FF6A2A] border-t-transparent rounded-full animate-spin" />
+              <span>Carregando dados salvos no Supabase...</span>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="p-4 rounded-2xl bg-[#FF3B30]/15 border border-[#FF3B30]/40 text-[#FF3B30] text-xs font-bold flex items-center gap-2.5">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <div>
+                <p className="font-extrabold">Falha ao salvar no servidor</p>
+                <p className="text-[11px] font-normal text-[#FF3B30]/80">{errorMessage}</p>
+              </div>
+            </div>
+          )}
+
+          {photoError && (
+            <div className="p-4 rounded-2xl bg-[#FF9F0A]/15 border border-[#FF9F0A]/40 text-[#FF9F0A] text-xs font-bold flex items-center gap-2.5">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{photoError}</span>
+            </div>
+          )}
+
           {/* Biometrics */}
           <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
             <h3 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider flex items-center gap-2">

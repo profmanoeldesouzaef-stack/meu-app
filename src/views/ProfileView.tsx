@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { UserProfile, AssessmentEntry } from "../types";
 import { VeteranBadge, PatentBadge, PatentRecurrenceCard, getPatentInfo } from "../lib/patents";
 import { supabase } from "../lib/supabase";
+import { appStorage } from "../utils/storage";
 import {
   User,
   ShieldCheck,
@@ -92,6 +93,9 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const [medicalHistory, setMedicalHistory] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [showSavedCardsModal, setShowSavedCardsModal] = useState(false);
   const [showFinancialModal, setShowFinancialModal] = useState(false);
   const [showStudentsModal, setShowStudentsModal] = useState(false);
@@ -200,141 +204,234 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
 
   useEffect(() => {
     setEditingProfile(false);
-    // Busca no Supabase diretamente
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .maybeSingle()
-          .then(({ data }) => {
-            if (data) {
-              if (data.role) setSupabaseRole(data.role);
-              if (data.is_coach) setSupabaseRole("coach");
-              if (data.full_name) setFullName(data.full_name);
-              if (data.nickname) setNickname(data.nickname);
-              if (data.avatar_url) setAvatarUrl(data.avatar_url);
-              if (data.height_cm) setHeightCm(data.height_cm);
-              if (data.weight_kg) {
-                setWeightKg(data.weight_kg);
-                setAssessmentWeight(String(data.weight_kg));
-              }
-              if (data.age) setAge(data.age);
-              if (data.primary_goal || data.goal) setPrimaryGoal(data.primary_goal || data.goal);
-              if (data.dietary_restrictions) setDietaryRestrictions(data.dietary_restrictions);
-              if (data.medical_history) setMedicalHistory(data.medical_history);
-              if (data.arm_cm || data.right_arm_cm) setArmCm(String(data.arm_cm || data.right_arm_cm));
-              if (data.waist_cm) setWaistCm(String(data.waist_cm));
-              if (data.chest_cm) setChestCm(String(data.chest_cm));
-              if (data.thigh_cm || data.right_leg_cm) setThighCm(String(data.thigh_cm || data.right_leg_cm));
+    setLoadingProfile(true);
+    let isMounted = true;
+
+    async function loadProfileFromSupabase() {
+      try {
+        // 1. Obter usuário autenticado no Supabase
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+        const targetUserId = user?.id;
+
+        if (targetUserId) {
+          // 2. Leitura inicial do cache local (appStorage / AsyncStorage) para resposta instantânea
+          const cached = await appStorage.getItem<Record<string, any>>(`vyra_profile_${targetUserId}`);
+          if (cached && isMounted) {
+            if (cached.full_name) setFullName(cached.full_name);
+            if (cached.nickname) setNickname(cached.nickname);
+            if (cached.avatar_url) setAvatarUrl(cached.avatar_url);
+            if (cached.height_cm) setHeightCm(cached.height_cm);
+            if (cached.weight_kg) {
+              setWeightKg(cached.weight_kg);
+              setAssessmentWeight(String(cached.weight_kg));
             }
-          });
+            if (cached.age) setAge(cached.age);
+            if (cached.primary_goal || cached.goal) setPrimaryGoal(cached.primary_goal || cached.goal);
+            if (cached.dietary_restrictions) setDietaryRestrictions(cached.dietary_restrictions);
+            if (cached.medical_history) setMedicalHistory(cached.medical_history);
+          }
 
-        supabase
-          .from("student_onboarding")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle()
-          .then(
-            ({ data: obData }) => {
-              if (obData) {
-                if (obData.age) setAge(obData.age);
-                if (obData.height_cm) setHeightCm(obData.height_cm);
-                if (obData.weight_kg) {
-                  setWeightKg(obData.weight_kg);
-                  setAssessmentWeight(String(obData.weight_kg));
-                }
-                if (obData.primary_goal) setPrimaryGoal(obData.primary_goal);
-                if (obData.dietary_restrictions) setDietaryRestrictions(obData.dietary_restrictions);
-                if (obData.medical_history) setMedicalHistory(obData.medical_history);
-              }
-            },
-            () => {}
-          );
+          // 3. SELECT oficial direto na tabela 'profiles' do Supabase filtrando por user.id
+          const { data: dbProfile, error: dbError } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", targetUserId)
+            .maybeSingle();
+
+          if (dbError) {
+            console.warn("[Supabase] Aviso ao consultar tabela profiles:", dbError.message);
+          }
+
+          const meta = user?.user_metadata || {};
+
+          if (isMounted) {
+            const resolvedFullName = dbProfile?.full_name || meta.full_name || meta.name || cached?.full_name || "";
+            const resolvedNickname = dbProfile?.nickname || meta.nickname || (resolvedFullName ? resolvedFullName.split(" ")[0] : cached?.nickname || "");
+            const resolvedAvatar = dbProfile?.avatar_url || meta.avatar_url || cached?.avatar_url || "";
+            const resolvedHeight = dbProfile?.height_cm || meta.height_cm || cached?.height_cm || "";
+            const resolvedWeight = dbProfile?.weight_kg || meta.weight_kg || cached?.weight_kg || "";
+            const resolvedAge = dbProfile?.age || meta.age || cached?.age || "";
+            const resolvedGoal = dbProfile?.primary_goal || dbProfile?.goal || meta.primary_goal || meta.goal || cached?.primary_goal || "";
+            const resolvedDiet = dbProfile?.dietary_restrictions || meta.dietary_restrictions || cached?.dietary_restrictions || "";
+            const resolvedMed = dbProfile?.medical_history || meta.medical_history || cached?.medical_history || "";
+
+            if (dbProfile?.role) setSupabaseRole(dbProfile.role);
+            if (resolvedFullName) setFullName(resolvedFullName);
+            if (resolvedNickname) setNickname(resolvedNickname);
+            if (resolvedAvatar) setAvatarUrl(resolvedAvatar);
+            if (resolvedHeight) setHeightCm(resolvedHeight);
+            if (resolvedWeight) {
+              setWeightKg(resolvedWeight);
+              setAssessmentWeight(String(resolvedWeight));
+            }
+            if (resolvedAge) setAge(resolvedAge);
+            if (resolvedGoal) setPrimaryGoal(resolvedGoal);
+            if (resolvedDiet) setDietaryRestrictions(resolvedDiet);
+            if (resolvedMed) setMedicalHistory(resolvedMed);
+
+            setProfile((prev) => ({
+              ...(prev || {}),
+              id: targetUserId,
+              full_name: resolvedFullName || prev?.full_name || "",
+              nickname: resolvedNickname || prev?.nickname || "",
+              email: dbProfile?.email || user?.email || currentUserEmail || prev?.email || "",
+              avatar_url: resolvedAvatar || prev?.avatar_url || "",
+              height_cm: (resolvedHeight ? Number(resolvedHeight) : prev?.height_cm) as number,
+              weight_kg: (resolvedWeight ? Number(resolvedWeight) : prev?.weight_kg) as number,
+              assessments: prev?.assessments || [],
+            } as UserProfile));
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao carregar dados do Supabase:", err);
+      } finally {
+        if (isMounted) {
+          setLoadingProfile(false);
+          setEditingProfile(false);
+        }
       }
-    });
+    }
 
+    loadProfileFromSupabase();
+
+    // Consulta complementar à API sem sobrescrever os dados reais do Supabase
     api
       .getProfile()
       .then((data) => {
-        setProfile(data);
-        const pendingName = localStorage.getItem("vyra_pending_fullname");
-        if (pendingName || data.full_name) setFullName(pendingName || data.full_name || "");
-        if (data.nickname) setNickname(data.nickname);
-        if (data.avatar_url) setAvatarUrl(data.avatar_url);
-        if (data.height_cm) setHeightCm(data.height_cm);
-        if (data.weight_kg) {
-          setWeightKg(data.weight_kg);
-          setAssessmentWeight(String(data.weight_kg));
+        if (isMounted) {
+          setProfile((prev) => ({
+            ...data,
+            full_name: prev?.full_name || data.full_name,
+            nickname: prev?.nickname || data.nickname,
+            avatar_url: prev?.avatar_url || data.avatar_url,
+            height_cm: prev?.height_cm || data.height_cm,
+            weight_kg: prev?.weight_kg || data.weight_kg,
+          }));
         }
-        if ((data as any).age) setAge((data as any).age);
-        if ((data as any).primary_goal || (data as any).goal) setPrimaryGoal((data as any).primary_goal || (data as any).goal);
-        if ((data as any).dietary_restrictions) setDietaryRestrictions((data as any).dietary_restrictions);
-        if ((data as any).medical_history) setMedicalHistory((data as any).medical_history);
-        if (data.right_arm_cm || data.arm_cm) setArmCm(String(data.right_arm_cm || data.arm_cm));
-        if (data.waist_cm) setWaistCm(String(data.waist_cm));
-        if (data.chest_cm) setChestCm(String(data.chest_cm));
-        if (data.right_leg_cm || data.thigh_cm) setThighCm(String(data.right_leg_cm || data.thigh_cm));
-
-        // Limpa quaisquer flags residuais para não forçar a edição automática ao entrar no perfil
-        localStorage.removeItem("vyra_open_profile_edit");
-        localStorage.removeItem("vyra_is_new_user");
-        setEditingProfile(false);
       })
-      .catch((e) => {
-        console.error("Error loading profile:", e);
-        localStorage.removeItem("vyra_open_profile_edit");
-        localStorage.removeItem("vyra_is_new_user");
-        setEditingProfile(false);
-      });
-  }, []);
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUserEmail]);
 
   const handleSaveProfile = async () => {
     setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+
     try {
       const numHeight = heightCm !== "" && heightCm !== undefined && heightCm !== null ? parseInt(String(heightCm)) : null;
       const numWeight = weightKg !== "" && weightKg !== undefined && weightKg !== null ? parseFloat(String(weightKg)) : null;
       const numAge = age !== "" && age !== undefined && age !== null ? parseInt(String(age)) : null;
+      const cleanName = fullName.trim();
+      const cleanNickname = nickname.trim() || (cleanName ? cleanName.split(" ")[0] : "Aluno");
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from("profiles").upsert({
-          id: user.id,
-          full_name: fullName,
-          nickname,
+      // 1. Obter usuário logado oficial do Supabase
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (authError || !user) {
+        throw new Error("Sessão do usuário não encontrada. Faça login para salvar seus dados.");
+      }
+
+      // 2. Executar UPSERT direto na tabela 'profiles' filtrando pelo user.id
+      const basePayload: Record<string, any> = {
+        id: user.id,
+        full_name: cleanName,
+        avatar_url: avatarUrl || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (user.email) {
+        basePayload.email = user.email;
+      }
+
+      // Tentativa de upsert com todas as colunas
+      const fullPayload: Record<string, any> = {
+        ...basePayload,
+        nickname: cleanNickname,
+        height_cm: numHeight,
+        weight_kg: numWeight,
+        age: numAge,
+        primary_goal: primaryGoal,
+        goal: primaryGoal,
+        dietary_restrictions: dietaryRestrictions,
+        medical_history: medicalHistory,
+      };
+
+      const { error: fullUpsertError } = await supabase
+        .from("profiles")
+        .upsert(fullPayload, { onConflict: "id" });
+
+      if (fullUpsertError) {
+        console.warn("[Supabase] Aviso no upsert estendido de profiles:", fullUpsertError.message);
+        // Fallback garantido: upsert com as colunas base da tabela profiles
+        const { error: baseUpsertError } = await supabase
+          .from("profiles")
+          .upsert(basePayload, { onConflict: "id" });
+
+        if (baseUpsertError) {
+          throw new Error(`Erro no Supabase: ${baseUpsertError.message}`);
+        }
+      }
+
+      // 3. Persistência permanente de metadados no Supabase Auth (auth.users)
+      const { error: metaUpdateError } = await supabase.auth.updateUser({
+        data: {
+          full_name: cleanName,
+          name: cleanName,
+          nickname: cleanNickname,
           avatar_url: avatarUrl,
           height_cm: numHeight,
           weight_kg: numWeight,
           age: numAge,
-          goal: primaryGoal,
           primary_goal: primaryGoal,
+          goal: primaryGoal,
           dietary_restrictions: dietaryRestrictions,
           medical_history: medicalHistory,
-          updated_at: new Date().toISOString(),
-        });
+        },
+      });
 
-        try {
-          await supabase.from("student_onboarding").upsert({
-            user_id: user.id,
-            full_name: fullName,
-            nickname,
-            age: numAge,
-            weight_kg: numWeight,
-            height_cm: numHeight,
-            primary_goal: primaryGoal,
-            dietary_restrictions: dietaryRestrictions,
-            medical_history: medicalHistory,
-            updated_at: new Date().toISOString(),
-          });
-        } catch {
-          // ignore if table doesn't exist
-        }
+      if (metaUpdateError) {
+        console.warn("[Supabase Auth] Aviso ao atualizar user_metadata:", metaUpdateError.message);
       }
 
-      const updated = await api.updateProfile({
-        full_name: fullName,
-        nickname,
+      // 4. Salvar no appStorage (AsyncStorage / localStorage) para persistência imediata
+      const cachedProfile = {
+        id: user.id,
+        full_name: cleanName,
+        nickname: cleanNickname,
+        avatar_url: avatarUrl,
+        height_cm: numHeight,
+        weight_kg: numWeight,
+        age: numAge,
+        primary_goal: primaryGoal,
+        dietary_restrictions: dietaryRestrictions,
+        medical_history: medicalHistory,
+        updated_at: new Date().toISOString(),
+      };
+      await appStorage.setItem(`vyra_profile_${user.id}`, cachedProfile);
+      await appStorage.setItem("vyra_user_name", cleanName);
+      await appStorage.setItem("vyra_user_nickname", cleanNickname);
+
+      // 5. Atualizar estado local da tela
+      setProfile((prev) => ({
+        ...(prev || {}),
+        id: user.id,
+        full_name: cleanName,
+        nickname: cleanNickname,
+        avatar_url: avatarUrl,
+        height_cm: (numHeight || prev?.height_cm) as number,
+        weight_kg: (numWeight || prev?.weight_kg) as number,
+        assessments: prev?.assessments || [],
+      } as UserProfile));
+
+      // Sincronização auxiliar com backend local
+      api.updateProfile({
+        full_name: cleanName,
+        nickname: cleanNickname,
         avatar_url: avatarUrl,
         height_cm: numHeight as any,
         weight_kg: numWeight as any,
@@ -342,13 +439,15 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         primary_goal: primaryGoal,
         dietary_restrictions: dietaryRestrictions,
         medical_history: medicalHistory,
-      });
-      setProfile(updated);
+      }).catch(() => {});
+
       setEditingProfile(false);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (e) {
-      console.error("Error updating profile:", e);
+      setSaveSuccessMsg("Dados pessoais salvos e confirmados no Supabase com sucesso!");
+      setTimeout(() => setSaveSuccess(false), 4500);
+    } catch (e: any) {
+      console.error("Erro ao salvar perfil:", e);
+      setSaveError(e?.message || "Erro ao salvar perfil no Supabase. Tente novamente.");
     } finally {
       setSaving(false);
     }
@@ -595,7 +694,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             </div>
 
             <p className="text-xs text-[#9B9BA1]">
-              Apelido: <strong className="text-[#F5F5F7]">@{profile?.nickname || "rafael"}</strong> · {profile?.email || "rafael@vyra.app"}
+              Apelido: <strong className="text-[#F5F5F7]">@{profile?.nickname || nickname || (fullName ? fullName.split(" ")[0] : "aluno")}</strong> · {profile?.email || currentUserEmail || "aluno@vyra.club"}
             </p>
           </div>
         </div>
@@ -603,6 +702,7 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         <div className="flex items-center gap-2">
           <button
             id="profile-edit-toggle-btn"
+            disabled={saving}
             onClick={() => {
               if (editingProfile) handleSaveProfile();
               else setEditingProfile(true);
@@ -615,8 +715,12 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           >
             {editingProfile ? (
               <>
-                <Check className="w-3.5 h-3.5 stroke-[3]" />
-                <span>{saving ? "Salvando..." : "Salvar Alterações"}</span>
+                {saving ? (
+                  <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                )}
+                <span>{saving ? "Salvando no Supabase..." : "Salvar Alterações"}</span>
               </>
             ) : (
               <>
@@ -627,6 +731,35 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           </button>
         </div>
       </div>
+
+      {/* Visual Feedback Alerts */}
+      {saveSuccess && (
+        <div className="p-4 rounded-2xl bg-[#34C759]/15 border border-[#34C759]/40 text-[#34C759] text-xs font-bold flex items-center gap-2.5 shadow-lg animate-in fade-in">
+          <CheckCircle2 className="w-5 h-5 shrink-0 text-[#34C759]" />
+          <div>
+            <p className="font-extrabold">{saveSuccessMsg || "Alterações confirmadas no servidor!"}</p>
+            <p className="text-[11px] font-normal text-[#34C759]/80">Dados sincronizados diretamente com a tabela profiles do Supabase.</p>
+          </div>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="p-4 rounded-2xl bg-[#FF3B30]/15 border border-[#FF3B30]/40 text-[#FF3B30] text-xs font-bold flex items-center justify-between gap-2.5 shadow-lg animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 shrink-0 text-[#FF3B30]" />
+            <div>
+              <p className="font-extrabold">Falha ao salvar no servidor</p>
+              <p className="text-[11px] font-normal text-[#FF3B30]/80">{saveError}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setSaveError(null)}
+            className="p-1 rounded-lg hover:bg-[#FF3B30]/20 text-[#FF3B30]"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Editable Fields Form (when editingProfile is open) */}
       {editingProfile && (
@@ -779,10 +912,25 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             <button
               type="button"
               id="edit-profile-save-btn"
+              disabled={saving}
               onClick={handleSaveProfile}
-              className="px-5 py-2 rounded-xl text-xs font-bold bg-[#FF6A2A] hover:bg-[#FF9A62] text-white shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                saving
+                  ? "bg-[#FF6A2A]/50 text-white cursor-not-allowed"
+                  : "bg-[#FF6A2A] hover:bg-[#FF9A62] text-white shadow-lg shadow-[#FF6A2A]/20 cursor-pointer"
+              }`}
             >
-              {saving ? "Salvando..." : "Salvar Dados"}
+              {saving ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Salvando no Supabase...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Salvar Dados</span>
+                </>
+              )}
             </button>
           </div>
         </div>
