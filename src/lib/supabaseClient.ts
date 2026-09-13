@@ -116,6 +116,7 @@ export function getSupabaseClient(): SupabaseClient | null {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        flowType: "pkce",
       },
     });
     lastUsedUrl = safeUrl;
@@ -129,6 +130,7 @@ export function getSupabaseClient(): SupabaseClient | null {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
+          flowType: "pkce",
         },
       });
     } catch {
@@ -143,6 +145,8 @@ export const supabase: SupabaseClient =
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: "pkce",
     },
   });
 

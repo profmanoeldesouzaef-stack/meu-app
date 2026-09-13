@@ -44,12 +44,15 @@ export interface CoachInviteInfo {
 
 interface AppContextType {
   user: any | null;
+  userProfile?: any | null;
+  setUserProfile?: (p: any) => void;
   authLoading: boolean;
   ensureUserProfile: (user: any) => Promise<void>;
   persona: Persona;
   lang: Lang;
   theme: Theme;
   loggedIn: boolean;
+  isLoggedIn: boolean;
   anamnesisDone: boolean;
   photosDone: boolean;
   subscription: Subscription;
@@ -504,17 +507,8 @@ const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<any | null>(null);
-  const [authLoading, setAuthLoading] = useState<boolean>(() => {
-    try {
-      if (typeof window !== "undefined") {
-        const hasHash = window.location.hash.includes("access_token");
-        const hasCode = window.location.search.includes("code=");
-        const wasLoggedIn = localStorage.getItem("vyra_logged_in") === "true";
-        return hasHash || hasCode || wasLoggedIn;
-      }
-    } catch {}
-    return true;
-  });
+  const [userProfile, setUserProfile] = useState<any | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [persona, setPersonaState] = useState<Persona>("student");
   const [lang, setLangState] = useState<Lang>("pt");
   const [theme, setThemeState] = useState<Theme>("dark");
@@ -1045,7 +1039,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (
         userEmail === "suporte@vyratraining.com" ||
-        userEmail === "cubocao@gmail.com" ||
         usuario.user_metadata?.role === "moderator" ||
         usuario.app_metadata?.role === "moderator" ||
         usuario.app_metadata?.role === "admin" ||
@@ -1102,11 +1095,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem("vyra_user_nickname", realNickname);
 
           if (!error && profileRecord) {
-            if (profileRecord.role === "coach" || profileRecord.is_coach === true) {
+            const roleClean = String(profileRecord.role || "").toLowerCase().trim();
+            if (roleClean === "coach" || roleClean === "treinador" || profileRecord.is_coach === true) {
               detectedPersona = "coach";
-            } else if (profileRecord.role === "moderator" || profileRecord.role === "admin") {
+            } else if (roleClean === "moderator" || roleClean === "moderador" || roleClean === "admin") {
               detectedPersona = "moderator";
-            } else if (profileRecord.role === "student") {
+            } else {
               detectedPersona = "student";
             }
 
@@ -1309,20 +1303,151 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     let isMounted = true;
 
+    // Helper: Aplica imediatamente o usuário autenticado sem travar a interface
+    const handleAuthenticatedUser = (sessionUser: any) => {
+      if (!sessionUser) return;
+      const userName =
+        sessionUser.user_metadata?.full_name ||
+        sessionUser.user_metadata?.name ||
+        sessionUser.raw_user_meta_data?.full_name ||
+        sessionUser.raw_user_meta_data?.name ||
+        sessionUser.email?.split("@")[0] ||
+        "Aluno";
+
+      const userNick =
+        sessionUser.user_metadata?.nickname ||
+        sessionUser.user_metadata?.display_name ||
+        sessionUser.user_metadata?.name ||
+        userName.split(" ")[0] ||
+        "Aluno";
+
+      // Fallback para Role: perfil padrão de aluno provisoriamente em memória (role: 'aluno')
+      const provisionalStudentProfile: any = {
+        id: sessionUser.id,
+        email: sessionUser.email,
+        role: "aluno",
+        full_name: userName,
+        name: userName,
+        nickname: userNick,
+        persona: "student" as Persona,
+        is_coach: false,
+        points: 0,
+        rank: null,
+        onboarding_completed: true,
+        updated_at: new Date().toISOString(),
+      };
+
+      // 1. Liberação IMEDIATA da UI (não aguarda o banco)
+      setUser(sessionUser);
+      setLoggedInState(true);
+      localStorage.setItem("vyra_logged_in", "true");
+      if (sessionUser.email) {
+        setCurrentUserEmailState(sessionUser.email.trim().toLowerCase());
+      }
+      setCurrentUserNameState(userName);
+      setCurrentUserNicknameState(userNick);
+      setUserProfile(provisionalStudentProfile);
+      setPersonaState("student");
+      localStorage.setItem("vyra_persona", "student");
+      setOnboardingCompletedState(true);
+      localStorage.setItem("vyra_onboarding_completed", "true");
+      setWorkoutReleasedState(true);
+      setDietReleasedState(true);
+      setAuthLoading(false);
+
+      // 2. Consulta em segundo plano à tabela profiles com fallback caso falhe ou demore
+      const fetchProfileInBackground = async () => {
+        try {
+          const fetchPromise = supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", sessionUser.id)
+            .maybeSingle();
+
+          const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) => {
+            setTimeout(() => resolve({ data: null, error: new Error("Profile query timeout") }), 2500);
+          });
+
+          const { data: profile, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+          if (error) {
+            console.warn("[PROFILES] Consulta falhou ou demorou. Mantendo perfil aluno provisório:", error.message || error);
+          }
+
+          if (profile) {
+            const rawRole = String(profile.role || "").toLowerCase().trim();
+            let detectedRole: Persona = "student";
+
+            if (rawRole === "coach" || rawRole === "treinador" || profile.is_coach === true) {
+              detectedRole = "coach";
+            } else if (rawRole === "moderator" || rawRole === "moderador" || rawRole === "admin") {
+              detectedRole = "moderator";
+            } else {
+              // Cobre 'aluno', 'student' e padrão
+              detectedRole = "student";
+            }
+
+            setUserProfile({
+              ...provisionalStudentProfile,
+              ...profile,
+              role: profile.role || "aluno",
+            });
+            setPersonaState(detectedRole);
+            localStorage.setItem("vyra_persona", detectedRole);
+
+            if (profile.full_name || profile.name) {
+              const name = profile.full_name || profile.name;
+              setCurrentUserNameState(name);
+              localStorage.setItem("vyra_user_name", name);
+            }
+            if (profile.nickname) {
+              setCurrentUserNicknameState(profile.nickname);
+              localStorage.setItem("vyra_user_nickname", profile.nickname);
+            }
+            if (typeof profile.points === "number") {
+              setUserPointsState(profile.points);
+              localStorage.setItem("vyra_user_points", String(profile.points));
+            }
+            if (profile.rank) {
+              setUserRankState(profile.rank);
+              localStorage.setItem("vyra_user_rank", profile.rank);
+            }
+            if (profile.is_champion !== undefined) {
+              setIsChampionState(Boolean(profile.is_champion));
+              localStorage.setItem("vyra_is_champion", String(Boolean(profile.is_champion)));
+            }
+          } else if (!error) {
+            // Perfil não existe no banco: cadastra como aluno provisório
+            try {
+              await supabase.from("profiles").upsert({
+                id: sessionUser.id,
+                role: "aluno",
+                full_name: userName,
+                nickname: userNick,
+                updated_at: new Date().toISOString(),
+              });
+            } catch (upsertErr: any) {
+              console.warn("[PROFILES UPSERT WARN]:", upsertErr);
+            }
+          }
+
+          await definirPerfil(sessionUser);
+        } catch (err) {
+          console.warn("[PROFILES BACKGROUND ERROR]: Mantendo perfil aluno em memória:", err);
+        }
+      };
+
+      fetchProfileInBackground();
+    };
+
     // 1. Checa sessão ativa inicial no Supabase
     supabase.auth
       .getSession()
       .then(async ({ data: { session } }) => {
         if (!isMounted) return;
+        console.log("[INITIAL GET_SESSION]:", session?.user?.email);
         if (session?.user) {
-          setUser(session.user);
-          setLoggedInState(true);
-          localStorage.setItem("vyra_logged_in", "true");
-          if (session.user.email) {
-            setCurrentUserEmailState(session.user.email.trim().toLowerCase());
-          }
-          await ensureUserProfile(session.user);
-          await definirPerfil(session.user);
+          handleAuthenticatedUser(session.user);
         } else {
           const hasOAuthParams =
             typeof window !== "undefined" &&
@@ -1331,56 +1456,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!hasOAuthParams && localStorage.getItem("vyra_logged_in") !== "true") {
             setUser(null);
             setLoggedInState(false);
+            setAuthLoading(false);
           }
         }
       })
       .catch((err) => {
         console.warn("Aviso ao verificar sessão inicial do Supabase:", err);
-      })
-      .finally(() => {
-        if (!isMounted) return;
-        const hasOAuthParams =
-          typeof window !== "undefined" &&
-          (window.location.hash.includes("access_token") ||
-            window.location.search.includes("code="));
-        if (!hasOAuthParams) {
-          setAuthLoading(false);
-        } else {
-          // Timeout de segurança se estiver em processo de troca de token OAuth
-          setTimeout(() => {
-            if (isMounted) setAuthLoading(false);
-          }, 2500);
-        }
+        if (isMounted) setAuthLoading(false);
       });
 
     // 2. Auth Listener: Escuta alterações de autenticação e troca de código OAuth
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("[AUTH EVENT]:", event, session?.user?.email);
+
       if (session?.user) {
-        // Garante que a sessão seja reconhecida imediatamente
-        setUser(session.user);
-        setLoggedInState(true);
-        localStorage.setItem("vyra_logged_in", "true");
-        if (session.user.email) {
-          setCurrentUserEmailState(session.user.email.trim().toLowerCase());
+        handleAuthenticatedUser(session.user);
+
+        // Limpa os parâmetros de auth da barra de endereços de forma limpa
+        if (
+          typeof window !== "undefined" &&
+          (window.location.hash || window.location.search.includes("code="))
+        ) {
+          window.history.replaceState({}, document.title, window.location.pathname);
         }
-        await ensureUserProfile(session.user);
-        await definirPerfil(session.user);
-        if (isMounted) setAuthLoading(false);
       } else if (event === "SIGNED_OUT") {
         setUser(null);
+        setUserProfile(null);
         setLoggedInState(false);
         localStorage.setItem("vyra_logged_in", "false");
-        if (isMounted) setAuthLoading(false);
+        setAuthLoading(false);
+      } else {
+        if (localStorage.getItem("vyra_logged_in") !== "true") {
+          setUser(null);
+          setLoggedInState(false);
+          setAuthLoading(false);
+        }
       }
     });
 
+    // Timeout de salvaguarda geral para nunca deixar a tela eternamente congelada
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) setAuthLoading(false);
+    }, 2500);
+
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
-  }, [definirPerfil, ensureUserProfile]);
+  }, [definirPerfil]);
 
   const addCoachEmail = useCallback(
     async (email: string): Promise<{ success: boolean; message: string }> => {
@@ -1731,9 +1857,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUserEmailState("");
       setPersonaState("student");
       setActiveView("home");
-      try {
-        supabase.auth.signOut().catch(() => {});
-      } catch {}
     }
   }, []);
 
@@ -1909,12 +2032,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider
       value={{
         user,
+        userProfile,
+        setUserProfile,
         authLoading,
         ensureUserProfile,
         persona,
         lang,
         theme,
         loggedIn,
+        isLoggedIn: loggedIn,
         anamnesisDone,
         photosDone,
         subscription,

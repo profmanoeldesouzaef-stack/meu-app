@@ -22,11 +22,11 @@ import { FormCheckerModal } from "./views/FormCheckerModal";
 import { PhotoGalleryView } from "./views/PhotoGalleryView";
 import { GaleriaView } from "./views/GaleriaView";
 import { WorkoutCompletionView } from "./views/WorkoutCompletionView";
-import { FirstTimeOnboardingModal } from "./components/FirstTimeOnboardingModal";
 import { VyraLogo } from "./components/VyraLogo";
 
 const AppContent: React.FC = () => {
   const {
+    user,
     loggedIn,
     authLoading,
     activeView,
@@ -60,27 +60,17 @@ const AppContent: React.FC = () => {
         </div>
         <div className="flex items-center gap-2.5 text-xs font-bold text-[#9B9BA1] tracking-wider uppercase">
           <div className="w-3.5 h-3.5 rounded-full border-2 border-[#D8B46A] border-t-transparent animate-spin" />
-          <span>Sincronizando sessão...</span>
+          <span>Carregando Vyra...</span>
         </div>
       </div>
     );
   }
 
-  if (!loggedIn) {
+  // Roteamento direto: Se o usuário NÃO estiver autenticado, renderiza a tela de login.
+  // Se o usuário ESTIVER autenticado, nunca renderiza o componente de Login e vai direto para a visão principal (HomeView).
+  const isAuthenticated = Boolean(user || loggedIn);
+  if (!isAuthenticated) {
     return <LoginModal />;
-  }
-
-  // Mandatory fullscreen onboarding for students who haven't completed anamnesis
-  if (persona === "student" && !onboardingCompleted && activeView !== "profile") {
-    return (
-      <div
-        className={`min-h-screen font-sans selection:bg-[#FF6A2A] selection:text-white transition-colors duration-200 ${
-          theme === "dark" ? "bg-[#0A0A0A] text-[#F5F5F7]" : "bg-[#F5F5F7] text-[#1D1D1F]"
-        }`}
-      >
-        <FirstTimeOnboardingModal onCompleted={() => setActiveView(activeView && activeView !== "paywall" ? activeView : "home")} />
-      </div>
-    );
   }
 
   return (
@@ -94,7 +84,7 @@ const AppContent: React.FC = () => {
       <Navigation />
 
       <main className="min-h-[calc(100vh-140px)]">
-        {activeView === "home" && <HomeView />}
+        {(activeView === "home" || !activeView) && <HomeView />}
         {activeView === "training" && (
           <TrainingView
             onOpenFormChecker={(exerciseName) =>
