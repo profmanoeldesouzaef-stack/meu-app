@@ -68,6 +68,7 @@ export interface UserProfile {
   water_ml: number;
   creatine_g: number;
   creatine_dose_g?: number;
+  creatine_doses_per_day?: number;
   creatine_times: string[];
   creatine_taken_today?: Record<string, boolean>;
   logged_in: boolean;
@@ -104,6 +105,8 @@ export interface Student {
   workout?: Workout;
   water_ml?: number;
   creatine_dose_g?: number;
+  creatine_doses_per_day?: number;
+  creatine_times?: string[];
   vip_chat_unlocked?: boolean;
   onboarding_completed?: boolean;
   workout_released?: boolean;

@@ -43,9 +43,22 @@ export const PaywallView: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  const STRIPE_PRICES_MAP: Record<string, string> = {
+    reset12: "price_1UDGQQF7VqDt14kNHfhR3RlZ",
+    monthly: "price_1U9FMDF7VqDt14kN3LneAWDA",
+    quarterly: "price_1U9FMDF7VqDt14kNZhtT1hIO",
+    semiannual: "price_1U9FMDF7VqDt14kNRVRuJWd0",
+    annual: "price_1U9FMDF7VqDt14kNu6fxBRkh",
+    test: "price_1UCUo4F7VqDt14kNAJolBpkp",
+  };
+
   const handleSubscribeExternal = async (planSlug?: string, overrideRecurrence?: string) => {
     const cycle = overrideRecurrence || selectedRecurrence;
     const targetSlug = planSlug || "reset12";
+    const selectedPriceId = targetSlug === "reset12" 
+      ? STRIPE_PRICES_MAP.reset12 
+      : (STRIPE_PRICES_MAP[cycle] || STRIPE_PRICES_MAP.monthly);
+
     setRedirectingPlan(targetSlug);
 
     try {
@@ -53,42 +66,41 @@ export const PaywallView: React.FC = () => {
       const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: null }));
       const user = authData?.user;
 
-      // 2. Chamar endpoint do backend para criar sessão no Stripe ou obter URL segura
+      // 2. Chamar endpoint oficial do backend com o priceId selecionado
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          priceId: selectedPriceId,
           planSlug: targetSlug,
-          recurrence: cycle,
+          recurrence: targetSlug === "reset12" ? "single" : cycle,
           userId: user?.id,
           userEmail: user?.email || currentUserEmail,
+          successUrl: "https://vyratraining.com?payment=success",
+          cancelUrl: "https://vyratraining.com?payment=cancel",
         }),
       });
 
       const data = await res.json().catch(() => null);
       const targetUrl =
         data?.url ||
-        `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&cycle=${encodeURIComponent(cycle)}${
+        `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&priceId=${encodeURIComponent(selectedPriceId)}&cycle=${encodeURIComponent(cycle)}${
           user?.email ? `&email=${encodeURIComponent(user.email)}` : ""
         }`;
 
-      // 3. Redirecionamento seguro na Web
+      // 3. Redireciona a janela para a session.url imediatamente
       if (typeof window !== "undefined") {
-        const opened = window.open(targetUrl, "_blank");
-        if (!opened || opened.closed || typeof opened.closed === "undefined") {
-          window.location.href = targetUrl;
-        }
+        window.location.href = targetUrl;
       } else if (typeof Linking !== "undefined" && Linking?.openURL) {
         Linking.openURL(targetUrl);
       }
     } catch (err) {
       console.warn("Erro ao iniciar sessão do Stripe Checkout:", err);
-      const fallbackUrl = `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&cycle=${encodeURIComponent(cycle)}`;
+      const fallbackUrl = `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&priceId=${encodeURIComponent(selectedPriceId)}&cycle=${encodeURIComponent(cycle)}`;
       if (typeof window !== "undefined") {
-        window.open(fallbackUrl, "_blank") || (window.location.href = fallbackUrl);
+        window.location.href = fallbackUrl;
       }
     } finally {
-      // Mantém breve feedback antes de reabilitar
       setTimeout(() => setRedirectingPlan(null), 1200);
     }
   };

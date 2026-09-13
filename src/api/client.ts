@@ -318,7 +318,13 @@ export const api = {
     }),
   updateStudentProtocol: (
     id: string,
-    data: { water_ml?: number; creatine_dose_g?: number; vip_chat_unlocked?: boolean }
+    data: {
+      water_ml?: number;
+      creatine_dose_g?: number;
+      creatine_doses_per_day?: number;
+      creatine_times?: string[];
+      vip_chat_unlocked?: boolean;
+    }
   ) =>
     request<Student>(`/students/${id}/protocol`, {
       method: "PUT",

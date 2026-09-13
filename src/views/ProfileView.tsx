@@ -613,6 +613,204 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         ].includes(currentUserEmail.toLowerCase())
     );
 
+  // Perfil simplificado para Coach e Moderador (conforme solicitação: o coach e moderador já possuem painéis dedicados com amplo acesso)
+  if (isCoach || persona === "moderator") {
+    const isMod = persona === "moderator";
+    return (
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300">
+        {saveSuccess && (
+          <div className="p-3 rounded-xl bg-[#34C759]/20 border border-[#34C759] text-[#34C759] text-xs font-bold flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            <span>Perfil atualizado com sucesso!</span>
+          </div>
+        )}
+
+        {/* Profile Header Card Simplificado */}
+        <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-center gap-4">
+            <div className="relative group">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-[#FF6A2A] to-[#D8B46A] p-0.5 shadow-lg shadow-[#FF6A2A]/20 overflow-hidden">
+                <img
+                  src={profile?.avatar_url || avatarUrl || "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80"}
+                  alt="Avatar"
+                  className="w-full h-full object-cover rounded-[14px]"
+                />
+              </div>
+              <label
+                htmlFor="avatar-file-input-simple"
+                className="absolute inset-0 bg-black/60 rounded-2xl flex flex-col items-center justify-center text-white cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Camera className="w-5 h-5 text-[#FF6A2A]" />
+                <span className="text-[9px] font-bold mt-1">Alterar</span>
+                <input
+                  id="avatar-file-input-simple"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <div className="space-y-1.5 text-center sm:text-left">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <h2 className="text-xl font-bold text-[#F5F5F7]">
+                  {profile?.full_name || profile?.nickname || (isMod ? "Moderador Vyra" : "Coach Mariana")}
+                </h2>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                    isMod
+                      ? "bg-[#6D9BFF]/20 text-[#6D9BFF] border-[#6D9BFF]/40"
+                      : "bg-[#D8B46A]/20 text-[#D8B46A] border-[#D8B46A]/40"
+                  }`}
+                >
+                  {isMod ? "MODERADOR OFICIAL" : "HEAD COACH"}
+                </span>
+              </div>
+
+              <p className="text-xs text-[#9B9BA1]">
+                {profile?.email || currentUserEmail || (isMod ? "moderador@vyra.club" : "coach@vyra.club")}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Atalho Direto ao Painel de Controle */}
+        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#1A1A1E] via-[#151515] to-[#121214] border border-[#2B2B2F] shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${
+                isMod
+                  ? "bg-[#6D9BFF]/15 text-[#6D9BFF] border-[#6D9BFF]/30"
+                  : "bg-[#D8B46A]/15 text-[#D8B46A] border-[#D8B46A]/30"
+              }`}
+            >
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#F5F5F7]">
+                {isMod ? "Central de Moderação" : "Painel Central do Coach"}
+              </h3>
+              <p className="text-xs text-[#9B9BA1] mt-0.5">
+                {isMod
+                  ? "Acesse a moderação de posts, comentários e denúncias da comunidade."
+                  : "Acesse a gestão completa de alunos, treinos, radar e métricas financeiras."}
+              </p>
+            </div>
+          </div>
+
+          <button
+            id={isMod ? "goto-moderator-dashboard-btn" : "goto-coach-dashboard-btn"}
+            onClick={() => setActiveView(isMod ? "moderator" : "coach")}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 shadow-lg ${
+              isMod
+                ? "bg-[#6D9BFF] text-white hover:bg-[#5B89EE]"
+                : "bg-gradient-to-r from-[#D8B46A] to-[#B38E32] text-[#0A0A0A] hover:brightness-110"
+            }`}
+          >
+            {isMod ? "Abrir Painel de Moderação" : "Abrir Painel do Coach"}
+          </button>
+        </div>
+
+        {/* Language & Theme Controls */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Language */}
+          <div className="p-4 rounded-2xl bg-[#151515] border border-[#2B2B2F] flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Globe className="w-5 h-5 text-[#D8B46A]" />
+              <div>
+                <span className="text-xs font-bold text-[#F5F5F7] block">{t("profile.language")}</span>
+                <span className="text-[10px] text-[#9B9BA1]">
+                  {lang === "pt" ? "Português (BRL R$)" : "English (USD $)"}
+                </span>
+              </div>
+            </div>
+            <button
+              id="profile-switch-lang-btn"
+              onClick={() => setLang(lang === "pt" ? "en" : "pt")}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] hover:border-[#D8B46A] cursor-pointer"
+            >
+              {lang === "pt" ? "Switch to EN" : "Mudar para PT"}
+            </button>
+          </div>
+
+          {/* Theme */}
+          <div className="p-4 rounded-2xl bg-[#151515] border border-[#2B2B2F] flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {theme === "dark" ? (
+                <Moon className="w-5 h-5 text-[#D8B46A]" />
+              ) : (
+                <Sun className="w-5 h-5 text-[#FF6A2A]" />
+              )}
+              <div>
+                <span className="text-xs font-bold text-[#F5F5F7] block">{t("profile.theme")}</span>
+                <span className="text-[10px] text-[#9B9BA1]">
+                  {theme === "dark" ? t("profile.dark") : t("profile.light")}
+                </span>
+              </div>
+            </div>
+            <button
+              id="profile-switch-theme-btn"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] hover:border-[#D8B46A] cursor-pointer"
+            >
+              {theme === "dark" ? "Light Mode" : "Dark Mode"}
+            </button>
+          </div>
+        </div>
+
+        {/* Botão Sair da Conta */}
+        <div className="pt-6 pb-4 flex flex-col items-center gap-3 border-t border-[#2B2B2F]/60">
+          <button
+            id="profile-logout-btn"
+            type="button"
+            onClick={() => setShowLogoutConfirm(true)}
+            className="w-full sm:w-auto px-8 py-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#FF453A] hover:bg-[#FF453A]/10 hover:border-[#FF453A]/40 text-sm font-bold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-95"
+          >
+            <LogOut className="w-4 h-4 text-[#FF453A]" />
+            <span>Sair da Conta</span>
+          </button>
+          <p className="text-[11px] font-semibold text-[#6E6E73]">{t("profile.version")}</p>
+        </div>
+
+        {/* Modal de Confirmação de Logout */}
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-3xl bg-[#151515] border border-[#2B2B2F] p-6 space-y-4 shadow-2xl text-center">
+              <div className="w-12 h-12 rounded-2xl bg-[#FF453A]/20 text-[#FF453A] border border-[#FF453A]/30 flex items-center justify-center mx-auto">
+                <LogOut className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[#F5F5F7]">Deseja encerrar a sessão?</h3>
+                <p className="text-xs text-[#9B9BA1] mt-1">
+                  Você será desconectado com segurança do Vyra.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={async () => {
+                    setIsLoggingOut(true);
+                    await logout();
+                    setIsLoggingOut(false);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-[#FF453A] text-white hover:bg-[#FF453A]/90 cursor-pointer"
+                >
+                  {isLoggingOut ? "Saindo..." : "Sair"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300">
       {saveSuccess && (
@@ -1636,35 +1834,17 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           </div>
 
           <div className="flex items-center gap-2">
-            {persona === "moderator" && (
-              <span className="px-3 py-1 rounded-full bg-[#6D9BFF]/20 text-[#6D9BFF] border border-[#6D9BFF]/40 text-xs font-bold flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5" />
-                Moderador Oficial
-              </span>
-            )}
-            {persona === "coach" && (
-              <span className="px-3 py-1 rounded-full bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/40 text-xs font-bold flex items-center gap-1.5">
-                <UserCheck className="w-3.5 h-3.5" />
-                Treinador Credenciado
-              </span>
-            )}
-            {persona === "student" && (
-              <span className="px-3 py-1 rounded-full bg-[#FF6A2A]/20 text-[#FF9A62] border border-[#FF6A2A]/40 text-xs font-bold flex items-center gap-1.5">
-                <Dumbbell className="w-3.5 h-3.5" />
-                Aluno / Atleta
-              </span>
-            )}
+            <span className="px-3 py-1 rounded-full bg-[#FF6A2A]/20 text-[#FF9A62] border border-[#FF6A2A]/40 text-xs font-bold flex items-center gap-1.5">
+              <Dumbbell className="w-3.5 h-3.5" />
+              Aluno / Atleta
+            </span>
           </div>
         </div>
 
         <div className="pt-2 border-t border-[#2B2B2F]/60 flex items-center gap-2 text-[11px] text-[#6E6E73]">
           <ShieldCheck className="w-3.5 h-3.5 text-[#34C759] shrink-0" />
           <span>
-            {persona === "moderator"
-              ? "Acesso de moderador verificado por governança interna de e-mail e permissões do Supabase."
-              : persona === "coach"
-              ? "Acesso de treinador verificado por credenciamento oficial e permissões do Supabase."
-              : "Acesso aos painéis de moderação e treinador restrito exclusivamente a e-mails cadastrados e permissões no Supabase."}
+            Acesso aos painéis de moderação e treinador restrito exclusivamente a e-mails cadastrados e permissões no Supabase.
           </span>
         </div>
       </div>

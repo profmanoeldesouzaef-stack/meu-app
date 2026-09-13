@@ -15,6 +15,13 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Copy,
+  Check,
+  ExternalLink,
+  Mail,
+  FileSpreadsheet,
+  Ticket,
+  X,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -39,12 +46,84 @@ export interface StudentFinanceRecord {
 
 export const FinanceCRMTableWeb: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [couponSearchInput, setCouponSearchInput] = useState("");
+  const [couponFilter, setCouponFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [recurrenceFilter, setRecurrenceFilter] = useState<string>("all");
   const [records, setRecords] = useState<StudentFinanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedLinkStudentId, setCopiedLinkStudentId] = useState<string | null>(null);
+  const [copiedEmailStudentId, setCopiedEmailStudentId] = useState<string | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setFeedbackToast(msg);
+    setTimeout(() => setFeedbackToast(null), 3000);
+  };
+
+  const handleCopyEmail = (item: StudentFinanceRecord) => {
+    navigator.clipboard.writeText(item.email);
+    setCopiedEmailStudentId(item.id);
+    showToast(`E-mail de ${item.studentName} copiado!`);
+    setTimeout(() => setCopiedEmailStudentId(null), 2000);
+  };
+
+  const handleCopyPaymentLink = (item: StudentFinanceRecord) => {
+    const origin = window.location.origin;
+    const checkoutUrl = `${origin}/#checkout?email=${encodeURIComponent(item.email)}&plan=${encodeURIComponent(item.contractedProtocol)}`;
+    navigator.clipboard.writeText(checkoutUrl);
+    setCopiedLinkStudentId(item.id);
+    showToast(`Link de renovação gerado e copiado!`);
+    setTimeout(() => setCopiedLinkStudentId(null), 2500);
+  };
+
+  const handleToggleStatus = async (item: StudentFinanceRecord) => {
+    const nextStatus = item.subscriptionStatus === "active" ? "inactive" : "active";
+    setRecords((prev) =>
+      prev.map((r) => (r.id === item.id ? { ...r, subscriptionStatus: nextStatus } : r))
+    );
+    showToast(`Status de ${item.studentName} alterado para ${nextStatus === "active" ? "Ativo" : "Inativo"}`);
+
+    try {
+      await supabase
+        .from("profiles")
+        .update({
+          subscription_status: nextStatus,
+          active: nextStatus === "active",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", item.id);
+    } catch (e) {
+      console.warn("Aviso ao persistir status no Supabase:", e);
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (records.length === 0) return;
+    const headers = ["Aluno", "Email", "Cupom", "Data Inicio", "Data Fim", "Recorrencia", "Protocolo", "Status", "Valor"];
+    const rows = filteredRecords.map((r) => [
+      `"${r.studentName}"`,
+      `"${r.email}"`,
+      `"${r.couponUsed || "Nenhum"}"`,
+      `"${r.startDate}"`,
+      `"${r.endDate || ""}"`,
+      `"${r.recurrence}"`,
+      `"${r.contractedProtocol}"`,
+      `"${r.subscriptionStatus}"`,
+      `"${r.planAmount || ""}"`,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `gestao_alunos_financeiro_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Relatório CSV exportado com sucesso!");
+  };
 
   const formatDate = (dateStr?: string | null): string => {
     if (!dateStr) return "N/D";
@@ -279,18 +358,62 @@ export const FinanceCRMTableWeb: React.FC = () => {
     fetchFinanceCRMData();
   }, [fetchFinanceCRMData]);
 
-  // Filtragem combinada por Nome, E-mail, Cupom, Status e Recorrência
+  // Agrupamento e contagem de cupons utilizados
+  const { availableCoupons, countWithCoupon, countNoCoupon } = useMemo(() => {
+    const couponsMap: Record<string, number> = {};
+    let withCoupon = 0;
+    let noCoupon = 0;
+
+    records.forEach((r) => {
+      const rawCp = r.couponUsed ? r.couponUsed.trim() : "";
+      const isNone = !rawCp || rawCp.toLowerCase() === "nenhum" || rawCp.toLowerCase() === "none";
+      if (isNone) {
+        noCoupon++;
+      } else {
+        withCoupon++;
+        const key = rawCp.toUpperCase();
+        couponsMap[key] = (couponsMap[key] || 0) + 1;
+      }
+    });
+
+    return {
+      availableCoupons: couponsMap,
+      countWithCoupon: withCoupon,
+      countNoCoupon: noCoupon,
+    };
+  }, [records]);
+
+  // Filtragem combinada por Nome, E-mail, Busca por Cupom, Seletor de Cupom, Status e Recorrência
   const filteredRecords = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
+    const cpSearch = couponSearchInput.toLowerCase().trim();
 
     return records.filter((item) => {
-      // Filtro de Texto (Nome, E-mail ou Cupom específico)
-      const matchesQuery =
+      const itemCoupon = (item.couponUsed || "").toLowerCase();
+      const hasCoupon = itemCoupon !== "" && itemCoupon !== "nenhum" && itemCoupon !== "none";
+
+      // Filtro Geral de Texto (Nome, E-mail ou Protocolo)
+      const matchesGeneral =
         !q ||
         item.studentName.toLowerCase().includes(q) ||
         item.email.toLowerCase().includes(q) ||
         item.couponUsed.toLowerCase().includes(q) ||
         item.contractedProtocol.toLowerCase().includes(q);
+
+      // Busca Específica por Código de Cupom
+      const matchesCouponSearch =
+        !cpSearch ||
+        itemCoupon.includes(cpSearch);
+
+      // Filtro do Seletor/Tag de Cupom
+      let matchesCouponFilter = true;
+      if (couponFilter === "with_coupon") {
+        matchesCouponFilter = hasCoupon;
+      } else if (couponFilter === "no_coupon") {
+        matchesCouponFilter = !hasCoupon;
+      } else if (couponFilter !== "all") {
+        matchesCouponFilter = itemCoupon === couponFilter.toLowerCase();
+      }
 
       // Filtro de Status
       const matchesStatus =
@@ -302,9 +425,15 @@ export const FinanceCRMTableWeb: React.FC = () => {
         recurrenceFilter === "all" ||
         item.recurrence.toLowerCase() === recurrenceFilter.toLowerCase();
 
-      return matchesQuery && matchesStatus && matchesRecurrence;
+      return (
+        matchesGeneral &&
+        matchesCouponSearch &&
+        matchesCouponFilter &&
+        matchesStatus &&
+        matchesRecurrence
+      );
     });
-  }, [records, searchQuery, statusFilter, recurrenceFilter]);
+  }, [records, searchQuery, couponSearchInput, couponFilter, statusFilter, recurrenceFilter]);
 
   const statusCounts = useMemo(() => {
     const active = records.filter((r) => r.subscriptionStatus === "active").length;
@@ -313,8 +442,40 @@ export const FinanceCRMTableWeb: React.FC = () => {
     return { active, inactive, pending, total: records.length };
   }, [records]);
 
+  const handleResetFilters = () => {
+    setSearchQuery("");
+    setCouponSearchInput("");
+    setCouponFilter("all");
+    setStatusFilter("all");
+    setRecurrenceFilter("all");
+  };
+
+  const isAnyFilterActive = Boolean(
+    searchQuery ||
+    couponSearchInput ||
+    couponFilter !== "all" ||
+    statusFilter !== "all" ||
+    recurrenceFilter !== "all"
+  );
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {/* Toast flutuante de feedback de ações rápidas */}
+      {feedbackToast && (
+        <div
+          id="crm-feedback-toast"
+          className="fixed top-5 right-5 z-50 p-4 rounded-2xl bg-[#151515] border border-[#D8B46A]/60 shadow-2xl text-xs font-bold text-[#F5F5F7] flex items-center gap-3 animate-in slide-in-from-top-3 max-w-sm"
+        >
+          <div className="w-8 h-8 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center shrink-0 border border-[#D8B46A]/30">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="font-extrabold text-[#D8B46A]">Gestão Financeira</p>
+            <p className="text-[11px] text-[#9B9BA1]">{feedbackToast}</p>
+          </div>
+        </div>
+      )}
+
       {/* Bloco Dedicado de Busca e Gestão */}
       <div className="p-5 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#2B2B2F]">
@@ -326,75 +487,225 @@ export const FinanceCRMTableWeb: React.FC = () => {
               </h3>
             </div>
             <p className="text-xs text-[#9B9BA1]">
-              Consulte alunos matriculados, cupons aplicados, datas de início e status das assinaturas.
+              Consulte alunos matriculados, cupons aplicados, datas de início, planos, recorrências e status das assinaturas.
             </p>
           </div>
 
-          <button
-            onClick={() => {
-              setRefreshing(true);
-              fetchFinanceCRMData();
-            }}
-            className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#D8B46A] hover:border-[#D8B46A] transition-all cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            <span>Atualizar Dados</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] hover:border-[#D8B46A] hover:text-[#D8B46A] transition-all cursor-pointer"
+              title="Exportar dados filtrados em planilha CSV"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-[#34C759]" />
+              <span>Exportar CSV</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setRefreshing(true);
+                fetchFinanceCRMData();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#D8B46A] hover:border-[#D8B46A] transition-all cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              <span>Atualizar Dados</span>
+            </button>
+          </div>
         </div>
 
-        {/* Barra de Busca por Aluno (Nome/Email) ou Cupom Específico */}
+        {/* Barra de Busca e Filtros Avançados: Aluno e Cupom */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <div className="md:col-span-6 relative">
+          {/* Busca por Aluno (Nome ou E-mail) */}
+          <div className="md:col-span-4 relative">
             <Search className="w-4 h-4 text-[#9B9BA1] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               id="crm-student-search-input"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filtrar por nome do aluno, e-mail ou código de cupom..."
-              className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#6E6E73] focus:outline-none focus:border-[#D8B46A] transition-all"
+              placeholder="Buscar por aluno (nome, e-mail)..."
+              className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#6E6E73] focus:outline-none focus:border-[#D8B46A] transition-all"
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#9B9BA1] hover:text-[#F5F5F7] cursor-pointer"
+                title="Limpar busca de aluno"
               >
-                Limpar
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Filtro por Status */}
-          <div className="md:col-span-3">
+          {/* Busca Específica por Código de Cupom */}
+          <div className="md:col-span-3 relative">
+            <Tag className="w-4 h-4 text-[#34C759] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              id="crm-coupon-search-input"
+              type="text"
+              value={couponSearchInput}
+              onChange={(e) => {
+                setCouponSearchInput(e.target.value);
+                if (couponFilter !== "all") setCouponFilter("all");
+              }}
+              placeholder="Buscar por cupom (ex: RESETVIP)..."
+              className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#6E6E73] font-mono uppercase focus:outline-none focus:border-[#34C759] transition-all"
+            />
+            {couponSearchInput && (
+              <button
+                type="button"
+                onClick={() => setCouponSearchInput("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#9B9BA1] hover:text-[#F5F5F7] cursor-pointer"
+                title="Limpar busca de cupom"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Seletor Dropdown de Cupons */}
+          <div className="md:col-span-2">
+            <select
+              id="crm-coupon-select-filter"
+              value={couponFilter}
+              onChange={(e) => {
+                setCouponFilter(e.target.value);
+                if (couponSearchInput) setCouponSearchInput("");
+              }}
+              className="w-full px-3 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#34C759] cursor-pointer"
+            >
+              <option value="all">Cupons: Todos</option>
+              <option value="with_coupon">Com Cupom ({countWithCoupon})</option>
+              <option value="no_coupon">Sem Cupom ({countNoCoupon})</option>
+              {Object.entries(availableCoupons).map(([cp, count]) => (
+                <option key={cp} value={cp}>
+                  {cp} ({count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filtro por Status e Recorrência */}
+          <div className="md:col-span-3 flex gap-2">
             <select
               id="crm-status-filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A] cursor-pointer"
+              className="w-1/2 px-2.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A] cursor-pointer"
             >
               <option value="all">Status: Todos</option>
               <option value="active">Ativos ({statusCounts.active})</option>
               <option value="inactive">Inativos ({statusCounts.inactive})</option>
               <option value="pending">Pendentes ({statusCounts.pending})</option>
             </select>
-          </div>
 
-          {/* Filtro por Plano / Recorrência */}
-          <div className="md:col-span-3">
             <select
               id="crm-recurrence-filter"
               value={recurrenceFilter}
               onChange={(e) => setRecurrenceFilter(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A] cursor-pointer"
+              className="w-1/2 px-2.5 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A] cursor-pointer"
             >
               <option value="all">Recorrência: Todas</option>
               <option value="Mensal">Mensal</option>
               <option value="Trimestral">Trimestral</option>
               <option value="Semestral">Semestral</option>
               <option value="Anual">Anual</option>
-              <option value="12 Semanas">12 Semanas (Reset)</option>
+              <option value="12 Semanas">12 Semanas</option>
             </select>
           </div>
+        </div>
+
+        {/* Atalhos Rápidos por Cupom (Pills Clicáveis) */}
+        <div className="pt-2 border-t border-[#2B2B2F]/60 flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] font-bold text-[#9B9BA1] flex items-center gap-1 mr-1">
+            <Ticket className="w-3.5 h-3.5 text-[#34C759]" />
+            Atalhos de Cupom:
+          </span>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCouponFilter("all");
+              setCouponSearchInput("");
+            }}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              couponFilter === "all" && !couponSearchInput
+                ? "bg-[#D8B46A] text-[#0A0A0A] shadow-sm font-extrabold"
+                : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+            }`}
+          >
+            Todos ({records.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCouponFilter("with_coupon");
+              setCouponSearchInput("");
+            }}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              couponFilter === "with_coupon"
+                ? "bg-[#34C759] text-black shadow-sm font-extrabold"
+                : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+            }`}
+          >
+            Com Cupom ({countWithCoupon})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCouponFilter("no_coupon");
+              setCouponSearchInput("");
+            }}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              couponFilter === "no_coupon"
+                ? "bg-[#F5F5F7] text-black shadow-sm font-extrabold"
+                : "bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+            }`}
+          >
+            Sem Cupom ({countNoCoupon})
+          </button>
+
+          {Object.entries(availableCoupons).map(([cp, count]) => {
+            const isSelected =
+              couponFilter.toUpperCase() === cp.toUpperCase() ||
+              couponSearchInput.trim().toUpperCase() === cp.toUpperCase();
+            return (
+              <button
+                type="button"
+                key={cp}
+                onClick={() => {
+                  if (isSelected) {
+                    setCouponFilter("all");
+                    setCouponSearchInput("");
+                  } else {
+                    setCouponFilter(cp);
+                    setCouponSearchInput("");
+                    showToast(`Filtrando alunos pelo cupom: ${cp}`);
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-[#34C759] text-black shadow-sm font-black"
+                    : "bg-[#34C759]/10 text-[#34C759] hover:bg-[#34C759]/20 border border-[#34C759]/30"
+                }`}
+                title={`Clique para filtrar alunos com cupom ${cp}`}
+              >
+                <Tag className="w-3 h-3" />
+                <span>{cp}</span>
+                <span
+                  className={`text-[10px] px-1 py-0.2 rounded-full font-sans ${
+                    isSelected ? "bg-black/20 text-black font-extrabold" : "bg-[#34C759]/20 text-[#34C759]"
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Contador Total e Métricas Rápidas */}
@@ -405,16 +716,14 @@ export const FinanceCRMTableWeb: React.FC = () => {
               <span className="text-[#D8B46A] font-extrabold">{filteredRecords.length}</span> de{" "}
               <span className="text-[#9B9BA1]">{records.length} alunos</span>
             </span>
-            {(searchQuery || statusFilter !== "all" || recurrenceFilter !== "all") && (
+            {isAnyFilterActive && (
               <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setStatusFilter("all");
-                  setRecurrenceFilter("all");
-                }}
-                className="text-[11px] text-[#D8B46A] hover:underline cursor-pointer"
+                type="button"
+                onClick={handleResetFilters}
+                className="text-[11px] text-[#D8B46A] hover:underline cursor-pointer flex items-center gap-1"
               >
-                (Redefinir filtros)
+                <X className="w-3 h-3" />
+                <span>Limpar filtros</span>
               </button>
             )}
           </div>
@@ -502,16 +811,44 @@ export const FinanceCRMTableWeb: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                     {/* 1. Cupom Utilizado */}
                     <div className="p-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] flex flex-col justify-between">
-                      <span className="text-[10px] text-[#9B9BA1] font-bold uppercase tracking-wider flex items-center gap-1 mb-1">
-                        <Tag className="w-3 h-3 text-[#34C759]" />
-                        Cupom Utilizado
-                      </span>
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="text-[10px] text-[#9B9BA1] font-bold uppercase tracking-wider flex items-center gap-1">
+                          <Tag className="w-3 h-3 text-[#34C759]" />
+                          Cupom Utilizado
+                        </span>
+                        {item.couponUsed && item.couponUsed !== "Nenhum" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCouponFilter(item.couponUsed);
+                              setCouponSearchInput("");
+                              showToast(`Filtrando alunos pelo cupom: ${item.couponUsed}`);
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/30 hover:bg-[#34C759]/30 font-bold transition-all cursor-pointer"
+                            title={`Filtrar apenas alunos que usaram o cupom ${item.couponUsed}`}
+                          >
+                            Filtrar
+                          </button>
+                        )}
+                      </div>
                       <span
+                        onClick={() => {
+                          if (item.couponUsed && item.couponUsed !== "Nenhum") {
+                            setCouponFilter(item.couponUsed);
+                            setCouponSearchInput("");
+                            showToast(`Filtrando alunos pelo cupom: ${item.couponUsed}`);
+                          }
+                        }}
                         className={`font-mono text-xs font-black truncate ${
                           item.couponUsed && item.couponUsed !== "Nenhum"
-                            ? "text-[#34C759]"
+                            ? "text-[#34C759] hover:underline cursor-pointer"
                             : "text-[#6E6E73]"
                         }`}
+                        title={
+                          item.couponUsed && item.couponUsed !== "Nenhum"
+                            ? `Clique para filtrar alunos com o cupom ${item.couponUsed}`
+                            : undefined
+                        }
                       >
                         {item.couponUsed || "Nenhum"}
                       </span>
@@ -540,14 +877,71 @@ export const FinanceCRMTableWeb: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Rodapé do Card: Detalhe do Protocolo & Método */}
-                  <div className="pt-2 border-t border-[#2B2B2F]/60 flex items-center justify-between text-[11px] text-[#9B9BA1]">
-                    <span className="truncate">
-                      Protocolo: <strong className="text-[#F5F5F7]">{item.contractedProtocol}</strong>
-                    </span>
-                    <span className="font-bold text-[#F5F5F7] shrink-0 ml-2">
-                      {item.planAmount}
-                    </span>
+                  {/* Rodapé do Card: Detalhe do Protocolo & Método e Ações Rápidas */}
+                  <div className="pt-2 border-t border-[#2B2B2F]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-[11px] text-[#9B9BA1]">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="truncate">
+                        Protocolo: <strong className="text-[#F5F5F7]">{item.contractedProtocol}</strong>
+                      </span>
+                      <span className="text-[#6E6E73]">•</span>
+                      <span className="font-bold text-[#F5F5F7] shrink-0">
+                        {item.planAmount}
+                      </span>
+                    </div>
+
+                    {/* Ações Rápidas de Gestão */}
+                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyEmail(item)}
+                        className="px-2.5 py-1 rounded-lg bg-[#1D1D1F] border border-[#2B2B2F] text-[10px] font-bold text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#D8B46A] flex items-center gap-1 cursor-pointer transition-all"
+                        title="Copiar E-mail do Aluno"
+                      >
+                        {copiedEmailStudentId === item.id ? (
+                          <>
+                            <Check className="w-3 h-3 text-[#34C759]" />
+                            <span className="text-[#34C759]">Copiado</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mail className="w-3 h-3 text-[#D8B46A]" />
+                            <span>E-mail</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPaymentLink(item)}
+                        className="px-2.5 py-1 rounded-lg bg-[#1D1D1F] border border-[#2B2B2F] text-[10px] font-bold text-[#9B9BA1] hover:text-[#D8B46A] hover:border-[#D8B46A] flex items-center gap-1 cursor-pointer transition-all"
+                        title="Copiar link direto de renovação de plano"
+                      >
+                        {copiedLinkStudentId === item.id ? (
+                          <>
+                            <Check className="w-3 h-3 text-[#34C759]" />
+                            <span className="text-[#34C759]">Link Copiado</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3 text-[#D8B46A]" />
+                            <span>Link Pgto</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus(item)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          isActive
+                            ? "bg-[#FF453A]/10 text-[#FF453A] border-[#FF453A]/30 hover:bg-[#FF453A]/20"
+                            : "bg-[#34C759]/10 text-[#34C759] border-[#34C759]/30 hover:bg-[#34C759]/20"
+                        }`}
+                        title={isActive ? "Suspender ou inativar assinatura" : "Ativar assinatura manualmente"}
+                      >
+                        {isActive ? "Suspender" : "Ativar"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

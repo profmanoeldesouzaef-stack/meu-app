@@ -24,9 +24,21 @@ export const CheckoutView: React.FC = () => {
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const plan = selectedPlan?.plan;
 
+  const STRIPE_PRICES_MAP: Record<string, string> = {
+    reset12: "price_1UDGQQF7VqDt14kNHfhR3RlZ",
+    monthly: "price_1U9FMDF7VqDt14kN3LneAWDA",
+    quarterly: "price_1U9FMDF7VqDt14kNZhtT1hIO",
+    semiannual: "price_1U9FMDF7VqDt14kNRVRuJWd0",
+    annual: "price_1U9FMDF7VqDt14kNu6fxBRkh",
+    test: "price_1UCUo4F7VqDt14kNAJolBpkp",
+  };
+
   const handleSubscribeExternal = async (planSlug?: string) => {
     setLoadingCheckout(true);
     const targetSlug = planSlug || plan?.slug || "reset12";
+    const selectedPriceId = targetSlug === "reset12"
+      ? STRIPE_PRICES_MAP.reset12
+      : STRIPE_PRICES_MAP.monthly;
 
     try {
       // 1. Obter dados do usuário no Supabase
@@ -38,34 +50,34 @@ export const CheckoutView: React.FC = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          priceId: selectedPriceId,
           planSlug: targetSlug,
-          recurrence: "monthly",
+          recurrence: targetSlug === "reset12" ? "single" : "monthly",
           userId: user?.id,
           userEmail: user?.email || currentUserEmail,
+          successUrl: "https://vyratraining.com?payment=success",
+          cancelUrl: "https://vyratraining.com?payment=cancel",
         }),
       });
 
       const data = await res.json().catch(() => null);
       const targetUrl =
         data?.url ||
-        `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}${
+        `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&priceId=${encodeURIComponent(selectedPriceId)}${
           user?.email ? `&email=${encodeURIComponent(user.email)}` : ""
         }`;
 
-      // 3. Redirecionar com segurança
+      // 3. Redirecionar imediatamente para a session.url retornada pelo Stripe
       if (typeof window !== "undefined") {
-        const opened = window.open(targetUrl, "_blank");
-        if (!opened || opened.closed || typeof opened.closed === "undefined") {
-          window.location.href = targetUrl;
-        }
+        window.location.href = targetUrl;
       } else if (typeof Linking !== "undefined" && Linking?.openURL) {
         Linking.openURL(targetUrl);
       }
     } catch (err) {
       console.warn("Erro ao redirecionar para o checkout:", err);
-      const fallbackUrl = `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}`;
+      const fallbackUrl = `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&priceId=${encodeURIComponent(selectedPriceId)}`;
       if (typeof window !== "undefined") {
-        window.open(fallbackUrl, "_blank") || (window.location.href = fallbackUrl);
+        window.location.href = fallbackUrl;
       }
     } finally {
       setTimeout(() => setLoadingCheckout(false), 1200);

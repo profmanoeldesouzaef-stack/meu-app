@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import {
@@ -57,6 +57,10 @@ import {
   Droplets,
   Palette,
   AlertCircle,
+  UserPlus,
+  Sparkles,
+  Tag,
+  Mail,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { appStorage } from "../utils/storage";
@@ -70,7 +74,7 @@ import { FinanceCRMTableWeb } from "../components/FinanceCRMTableWeb";
 export const CoachDashboardView: React.FC = () => {
   const { t, lang, currentUserEmail, setInviteData, setActiveView, setVipChatUnlocked } = useApp();
   const [activeTab, setActiveTab] = useState<
-    "overview" | "pending_students" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
+    "overview" | "pending_students" | "students_finance" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
   >("overview");
 
   // Pending Students state (Onboarding anamnesis & release queue)
@@ -83,6 +87,8 @@ export const CoachDashboardView: React.FC = () => {
   // Protocol state (Hydration & Creatine for student)
   const [studentWaterTarget, setStudentWaterTarget] = useState<number>(2500);
   const [studentCreatineDose, setStudentCreatineDose] = useState<number>(5.0);
+  const [studentCreatineDosesPerDay, setStudentCreatineDosesPerDay] = useState<number>(1);
+  const [studentCreatineTimes, setStudentCreatineTimes] = useState<string[]>(["08:00"]);
   const [savingProtocol, setSavingProtocol] = useState<boolean>(false);
 
   // Consultant Invite Link state
@@ -98,15 +104,84 @@ export const CoachDashboardView: React.FC = () => {
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [radar, setRadar] = useState<RadarAlert[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponFilterQuery, setCouponFilterQuery] = useState("");
   const [partners, setPartners] = useState<Partner[]>([]);
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [diet, setDiet] = useState<Diet | null>(null);
+
+  // Radar tab - Novos Alunos state
+  const [newStudentsSearch, setNewStudentsSearch] = useState("");
+  const [newStudentsFilter, setNewStudentsFilter] = useState<"all" | "mensalista" | "decidindo">("all");
 
   // Students state
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>("std-1");
   const [studentSearchQuery, setStudentSearchQuery] = useState("");
   const [studentFilterPlan, setStudentFilterPlan] = useState<string>("all");
+
+  const isMensalista = (plan?: string) => {
+    if (!plan) return false;
+    const p = plan.toLowerCase();
+    return (
+      p.includes("mensal") ||
+      p.includes("pro") ||
+      p.includes("reset") ||
+      p.includes("vip") ||
+      p.includes("anual") ||
+      p.includes("trimestral") ||
+      p.includes("semestral") ||
+      p.includes("gold") ||
+      p.includes("club") ||
+      p.includes("ativo")
+    );
+  };
+
+  const allNewStudents = useMemo(() => {
+    const map = new Map<string, any>();
+    students.forEach((s) => map.set(s.id, s));
+    pendingStudents.forEach((ps) => {
+      if (!map.has(ps.id)) {
+        map.set(ps.id, {
+          id: ps.id,
+          name: ps.name,
+          email: ps.email,
+          plan: ps.plan || "Ainda decidindo",
+          goal: ps.primary_goal || ps.goal || "Avaliação inicial",
+          created_at: ps.created_at,
+          workout_released: ps.workout_released,
+          diet_released: ps.diet_released,
+          avatar_url: ps.avatar_url,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [students, pendingStudents]);
+
+  const mensalistasCount = useMemo(
+    () => allNewStudents.filter((s) => isMensalista(s.plan)).length,
+    [allNewStudents]
+  );
+
+  const decidindoCount = useMemo(
+    () => allNewStudents.filter((s) => !isMensalista(s.plan)).length,
+    [allNewStudents]
+  );
+
+  const filteredNewStudents = useMemo(() => {
+    return allNewStudents.filter((s) => {
+      const isM = isMensalista(s.plan);
+      if (newStudentsFilter === "mensalista" && !isM) return false;
+      if (newStudentsFilter === "decidindo" && isM) return false;
+      if (newStudentsSearch.trim()) {
+        const q = newStudentsSearch.toLowerCase();
+        const matchesName = s.name?.toLowerCase().includes(q);
+        const matchesEmail = s.email?.toLowerCase().includes(q);
+        const matchesPlan = s.plan?.toLowerCase().includes(q);
+        if (!matchesName && !matchesEmail && !matchesPlan) return false;
+      }
+      return true;
+    });
+  }, [allNewStudents, newStudentsFilter, newStudentsSearch]);
 
   // Workout tab specific filters
   const [workoutSearchQuery, setWorkoutSearchQuery] = useState("");
@@ -327,8 +402,25 @@ export const CoachDashboardView: React.FC = () => {
     if (selectedStudent) {
       setStudentWaterTarget(selectedStudent.water_ml ? Number(selectedStudent.water_ml) : 2500);
       setStudentCreatineDose(selectedStudent.creatine_dose_g ? Number(selectedStudent.creatine_dose_g) : 5.0);
+      const doses = selectedStudent.creatine_doses_per_day ? Number(selectedStudent.creatine_doses_per_day) : 1;
+      setStudentCreatineDosesPerDay(doses);
+      setStudentCreatineTimes(
+        selectedStudent.creatine_times && selectedStudent.creatine_times.length > 0
+          ? selectedStudent.creatine_times
+          : doses === 2
+          ? ["08:00", "20:00"]
+          : doses === 3
+          ? ["08:00", "14:00", "20:00"]
+          : ["08:00"]
+      );
     }
-  }, [selectedStudentId, selectedStudent?.id, selectedStudent?.water_ml, selectedStudent?.creatine_dose_g]);
+  }, [
+    selectedStudentId,
+    selectedStudent?.id,
+    selectedStudent?.water_ml,
+    selectedStudent?.creatine_dose_g,
+    selectedStudent?.creatine_doses_per_day,
+  ]);
 
   // Handle selecting a student
   const handleSelectStudent = (student: Student) => {
@@ -341,6 +433,17 @@ export const CoachDashboardView: React.FC = () => {
     }
     setStudentWaterTarget(student.water_ml ? Number(student.water_ml) : 2500);
     setStudentCreatineDose(student.creatine_dose_g ? Number(student.creatine_dose_g) : 5.0);
+    const doses = student.creatine_doses_per_day ? Number(student.creatine_doses_per_day) : 1;
+    setStudentCreatineDosesPerDay(doses);
+    setStudentCreatineTimes(
+      student.creatine_times && student.creatine_times.length > 0
+        ? student.creatine_times
+        : doses === 2
+        ? ["08:00", "20:00"]
+        : doses === 3
+        ? ["08:00", "14:00", "20:00"]
+        : ["08:00"]
+    );
     // Pre-fill AI modals with student info
     setAiDietGoal(student.goal || "Hipertrofia Muscular");
     setAiDietRestrictions(student.restrictions || "Nenhuma");
@@ -380,16 +483,24 @@ export const CoachDashboardView: React.FC = () => {
       const updated = await api.updateStudentProtocol(selectedStudent.id, {
         water_ml: studentWaterTarget,
         creatine_dose_g: studentCreatineDose,
+        creatine_doses_per_day: studentCreatineDosesPerDay,
+        creatine_times: studentCreatineTimes,
       });
       setStudents((prev) =>
         prev.map((s) =>
           s.id === selectedStudent.id
-            ? { ...s, water_ml: updated.water_ml, creatine_dose_g: updated.creatine_dose_g }
+            ? {
+                ...s,
+                water_ml: updated.water_ml,
+                creatine_dose_g: updated.creatine_dose_g,
+                creatine_doses_per_day: updated.creatine_doses_per_day,
+                creatine_times: updated.creatine_times,
+              }
             : s
         )
       );
       showNotification(
-        `Prescrição salva: ${updated.water_ml}ml de água e ${updated.creatine_dose_g}g de creatina para ${selectedStudent.name}!`
+        `Prescrição salva: ${updated.water_ml}ml de água e ${updated.creatine_dose_g}g de creatina (${studentCreatineDosesPerDay}x ao dia) para ${selectedStudent.name}!`
       );
     } catch (e) {
       console.error("Error saving student protocol:", e);
@@ -958,13 +1069,18 @@ export const CoachDashboardView: React.FC = () => {
       }`,
       icon: UserCheck,
     },
+    {
+      id: "students_finance",
+      label: "Gestão e Busca de Alunos (Financeiro)",
+      icon: Users,
+    },
     { id: "ai_chat", label: "Conversar com IA (Metodologia)", icon: Bot },
     { id: "invite", label: "Convidar Alunos (Link VIP)", icon: Link2 },
     { id: "challenges", label: "Desafios & Votação", icon: Trophy },
     { id: "workouts", label: t("coach.workouts"), icon: Dumbbell },
     { id: "library", label: "Biblioteca de Treinos", icon: BookOpen },
     { id: "diet", label: t("coach.diet"), icon: UtensilsCrossed },
-    { id: "finance", label: t("coach.finance"), icon: CreditCard },
+    { id: "finance", label: "Cupons & Parceiros", icon: CreditCard },
     { id: "radar", label: t("coach.radar"), icon: AlertTriangle },
     { id: "broadcast", label: t("coach.broadcast"), icon: Megaphone },
   ];
@@ -2050,65 +2166,127 @@ export const CoachDashboardView: React.FC = () => {
         </div>
       )}
 
-      {/* Tab: Finance */}
+      {/* Aba Solo: Gestão e Busca de Alunos (Financeiro) */}
+      {activeTab === "students_finance" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <FinanceCRMTableWeb />
+        </div>
+      )}
+
+      {/* Tab: Finance (Cupons & Parceiros) */}
       {activeTab === "finance" && (
         <div className="space-y-6">
-          {/* Módulo de Busca e Gestão de Alunos no Financeiro */}
-          <FinanceCRMTableWeb />
+          {/* Banner de Atalho para a Aba Solo de Gestão e Busca de Alunos */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#D8B46A]/15 via-[#1D1D1F] to-[#151515] border border-[#D8B46A]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#D8B46A]/20 border border-[#D8B46A]/40 text-[#D8B46A] flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-black text-[#F5F5F7] uppercase tracking-wider">Aba Solo Disponível</p>
+                <p className="text-[11px] text-[#9B9BA1]">
+                  Acesse a aba solo de <strong>Gestão e Busca de Alunos (Financeiro)</strong> para consultar alunos por nome, e-mail, cupom e status.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab("students_finance")}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shrink-0 flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#D8B46A]/20 transition-all"
+            >
+              <span>Abrir Aba Solo de Alunos</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Coupon Management */}
             <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
-            <h3 className="text-sm font-bold text-[#F5F5F7]">Cupons de Desconto</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[#F5F5F7]">Cupons de Desconto</h3>
+                <span className="text-[10px] font-bold text-[#9B9BA1]">{coupons.length} cadastrados</span>
+              </div>
 
-            <form onSubmit={handleCreateCoupon} className="flex gap-2">
-              <input
-                type="text"
-                placeholder="CÓDIGO (ex: VYRA20)"
-                value={newCouponCode}
-                onChange={(e) => setNewCouponCode(e.target.value)}
-                className="flex-1 px-3.5 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs uppercase font-bold focus:outline-none focus:border-[#D8B46A]"
-              />
-              <input
-                type="number"
-                min="5"
-                max="90"
-                value={newCouponPct}
-                onChange={(e) => setNewCouponPct(Number(e.target.value))}
-                className="w-16 px-2 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs font-bold text-center focus:outline-none focus:border-[#D8B46A]"
-              />
-              <button
-                type="submit"
-                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shrink-0 cursor-pointer"
-              >
-                Criar
-              </button>
-            </form>
-
-            <div className="space-y-2 pt-2">
-              {coupons.map((cp) => (
-                <div
-                  key={cp.id}
-                  className="p-3 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-between"
-                >
-                  <div>
-                    <span className="text-xs font-black text-[#F5F5F7]">{cp.code}</span>
-                    <span className="text-[10px] text-[#D8B46A] ml-2 font-bold">{cp.pct}% OFF</span>
-                  </div>
+              {/* Busca por cupom */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-[#9B9BA1] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  id="coach-coupon-search-input"
+                  type="text"
+                  placeholder="Buscar por cupom (ex: VYRA20)..."
+                  value={couponFilterQuery}
+                  onChange={(e) => setCouponFilterQuery(e.target.value)}
+                  className="w-full pl-8 pr-7 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] font-mono uppercase focus:outline-none focus:border-[#D8B46A]"
+                />
+                {couponFilterQuery && (
                   <button
-                    onClick={() => handleToggleCoupon(cp.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer ${
-                      cp.active
-                        ? "bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/30"
-                        : "bg-[#FF453A]/15 text-[#FF453A] border border-[#FF453A]/30"
-                    }`}
+                    type="button"
+                    onClick={() => setCouponFilterQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#9B9BA1] hover:text-[#F5F5F7]"
                   >
-                    {cp.active ? "Ativo" : "Inativo"}
+                    <X className="w-3 h-3" />
                   </button>
-                </div>
-              ))}
+                )}
+              </div>
+
+              <form onSubmit={handleCreateCoupon} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="NOVO CÓDIGO (ex: VYRA20)"
+                  value={newCouponCode}
+                  onChange={(e) => setNewCouponCode(e.target.value)}
+                  className="flex-1 px-3.5 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs uppercase font-bold focus:outline-none focus:border-[#D8B46A]"
+                />
+                <input
+                  type="number"
+                  min="5"
+                  max="90"
+                  value={newCouponPct}
+                  onChange={(e) => setNewCouponPct(Number(e.target.value))}
+                  className="w-16 px-2 py-2 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] text-xs font-bold text-center focus:outline-none focus:border-[#D8B46A]"
+                />
+                <button
+                  type="submit"
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#D8B46A] text-[#0A0A0A] hover:brightness-110 shrink-0 cursor-pointer"
+                >
+                  Criar
+                </button>
+              </form>
+
+              <div className="space-y-2 pt-2 max-h-60 overflow-y-auto">
+                {coupons
+                  .filter((cp) =>
+                    couponFilterQuery ? cp.code.toLowerCase().includes(couponFilterQuery.toLowerCase()) : true
+                  )
+                  .map((cp) => (
+                    <div
+                      key={cp.id}
+                      className="p-3 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-between"
+                    >
+                      <div>
+                        <span className="text-xs font-black text-[#F5F5F7]">{cp.code}</span>
+                        <span className="text-[10px] text-[#D8B46A] ml-2 font-bold">{cp.pct}% OFF</span>
+                      </div>
+                      <button
+                        onClick={() => handleToggleCoupon(cp.id)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer ${
+                          cp.active
+                            ? "bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/30"
+                            : "bg-[#FF453A]/15 text-[#FF453A] border border-[#FF453A]/30"
+                        }`}
+                      >
+                        {cp.active ? "Ativo" : "Inativo"}
+                      </button>
+                    </div>
+                  ))}
+                {coupons.filter((cp) =>
+                  couponFilterQuery ? cp.code.toLowerCase().includes(couponFilterQuery.toLowerCase()) : true
+                ).length === 0 && (
+                  <p className="text-center text-xs text-[#9B9BA1] py-3">
+                    Nenhum cupom encontrado para "{couponFilterQuery}".
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
 
           {/* Exempt Partners */}
           <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
@@ -2756,15 +2934,15 @@ export const CoachDashboardView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Creatine Dose */}
-                  <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-2">
+                  {/* Creatine Dose & Doses Per Day */}
+                  <div className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-[#D8B46A] flex items-center gap-1">
                         <Zap className="w-3.5 h-3.5" />
-                        <span>Dose de Creatina</span>
+                        <span>Dose de Creatina (g por tomada)</span>
                       </label>
                       <span className="text-xs font-black text-[#F5F5F7]">
-                        {studentCreatineDose}g / dose
+                        {studentCreatineDose}g / tomada
                       </span>
                     </div>
 
@@ -2780,7 +2958,7 @@ export const CoachDashboardView: React.FC = () => {
                     />
 
                     {/* Quick Presets */}
-                    <div className="flex flex-wrap gap-1 pt-1">
+                    <div className="flex flex-wrap gap-1">
                       {[3, 5, 7, 10].map((preset) => (
                         <button
                           key={preset}
@@ -2796,12 +2974,78 @@ export const CoachDashboardView: React.FC = () => {
                         </button>
                       ))}
                     </div>
+
+                    {/* Quantas Doses por Dia (Uma, Duas ou Três doses) */}
+                    <div className="pt-2 border-t border-[#2B2B2F] space-y-2">
+                      <label className="text-[11px] font-bold text-[#F5F5F7] flex items-center justify-between">
+                        <span>Quantas doses por dia:</span>
+                        <span className="text-[#D8B46A] font-extrabold text-xs">
+                          {studentCreatineDosesPerDay === 1
+                            ? "1 Dose / dia"
+                            : studentCreatineDosesPerDay === 2
+                            ? "2 Doses / dia"
+                            : "3 Doses / dia"}
+                        </span>
+                      </label>
+
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[1, 2, 3].map((doseCount) => (
+                          <button
+                            key={doseCount}
+                            type="button"
+                            onClick={() => {
+                              setStudentCreatineDosesPerDay(doseCount);
+                              if (doseCount === 1) {
+                                setStudentCreatineTimes(["08:00"]);
+                              } else if (doseCount === 2) {
+                                setStudentCreatineTimes(["08:00", "20:00"]);
+                              } else {
+                                setStudentCreatineTimes(["08:00", "14:00", "20:00"]);
+                              }
+                            }}
+                            className={`py-1.5 px-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                              studentCreatineDosesPerDay === doseCount
+                                ? "bg-[#D8B46A] text-[#0A0A0A] shadow-md shadow-[#D8B46A]/20"
+                                : "bg-[#121214] text-[#9B9BA1] hover:text-[#F5F5F7] border border-[#2B2B2F]"
+                            }`}
+                          >
+                            {doseCount === 1 ? "1 Dose" : doseCount === 2 ? "2 Doses" : "3 Doses"}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Horários das doses */}
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[10px] text-[#9B9BA1] font-semibold block">
+                          Horários programados:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {Array.from({ length: studentCreatineDosesPerDay }).map((_, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 bg-[#121214] p-1.5 rounded-xl border border-[#2B2B2F]">
+                              <span className="text-[10px] font-bold text-[#D8B46A] pl-1">
+                                {idx + 1}ª:
+                              </span>
+                              <input
+                                type="time"
+                                value={studentCreatineTimes[idx] || (idx === 0 ? "08:00" : idx === 1 ? "14:00" : "20:00")}
+                                onChange={(e) => {
+                                  const newTimes = [...studentCreatineTimes];
+                                  newTimes[idx] = e.target.value;
+                                  setStudentCreatineTimes(newTimes);
+                                }}
+                                className="w-full bg-transparent text-xs font-bold text-[#F5F5F7] focus:outline-none"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 <p className="text-[10px] text-[#9B9BA1] bg-[#1D1D1F] p-2.5 rounded-xl border border-[#2B2B2F] flex items-center gap-2">
-                  <span className="text-[#D8B46A] font-bold">ℹ Regra Padrão:</span>
-                  <span>Caso você não altere, o aluno tem meta automática de <strong>2500 ml</strong> de água e <strong>5g</strong> de creatina.</span>
+                  <span className="text-[#D8B46A] font-bold">ℹ Prescrição Vyra:</span>
+                  <span>Prescreva hidratação ({studentWaterTarget}ml) e creatina ({studentCreatineDose}g em {studentCreatineDosesPerDay} dose{studentCreatineDosesPerDay > 1 ? "s" : ""}/dia) ajustadas individualmente.</span>
                 </p>
               </div>
 
@@ -3194,54 +3438,238 @@ export const CoachDashboardView: React.FC = () => {
 
       {/* Tab: Radar */}
       {activeTab === "radar" && (
-        <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
-            <div>
-              <h3 className="text-sm font-bold text-[#F5F5F7]">{t("coach.radar")}</h3>
-              <p className="text-xs text-[#9B9BA1]">
-                Identificação precoce de alunos com risco de churn ou faltas consecutivas.
-              </p>
+        <div className="space-y-6">
+          {/* Bloco: Novos Alunos */}
+          <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#2B2B2F]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#FF6A2A]/15 text-[#FF6A2A] border border-[#FF6A2A]/30 flex items-center justify-center shadow-lg shadow-[#FF6A2A]/10">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-[#F5F5F7]">Novos Alunos</h3>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#FF6A2A]/20 text-[#FF6A2A] border border-[#FF6A2A]/30">
+                      {allNewStudents.length} {allNewStudents.length === 1 ? "aluno" : "alunos"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#9B9BA1] mt-0.5">
+                    Todos os alunos que entraram na plataforma — acompanhe quem já é mensalista ativo ou quem ainda está decidindo.
+                  </p>
+                </div>
+              </div>
+
+              {/* Filtros rápidos */}
+              <div className="flex items-center gap-1.5 bg-[#121214] p-1 rounded-xl border border-[#2B2B2F] self-start sm:self-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setNewStudentsFilter("all")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    newStudentsFilter === "all"
+                      ? "bg-[#D8B46A] text-[#0A0A0A] shadow-sm"
+                      : "text-[#9B9BA1] hover:text-[#F5F5F7]"
+                  }`}
+                >
+                  Todos ({allNewStudents.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewStudentsFilter("mensalista")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    newStudentsFilter === "mensalista"
+                      ? "bg-[#34C759] text-[#0A0A0A] shadow-sm"
+                      : "text-[#9B9BA1] hover:text-[#F5F5F7]"
+                  }`}
+                >
+                  Mensalistas ({mensalistasCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewStudentsFilter("decidindo")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    newStudentsFilter === "decidindo"
+                      ? "bg-[#FF9F0A] text-[#0A0A0A] shadow-sm"
+                      : "text-[#9B9BA1] hover:text-[#F5F5F7]"
+                  }`}
+                >
+                  Ainda Decidindo ({decidindoCount})
+                </button>
+              </div>
+            </div>
+
+            {/* Barra de busca de alunos */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-[#9B9BA1] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                id="radar-new-students-search-input"
+                type="text"
+                placeholder="Buscar novo aluno por nome, e-mail ou plano..."
+                value={newStudentsSearch}
+                onChange={(e) => setNewStudentsSearch(e.target.value)}
+                className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#6E6E73] focus:outline-none focus:border-[#D8B46A]"
+              />
+              {newStudentsSearch && (
+                <button
+                  type="button"
+                  onClick={() => setNewStudentsSearch("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#9B9BA1] hover:text-[#F5F5F7]"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Grid dos Novos Alunos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[500px] overflow-y-auto pr-1">
+              {filteredNewStudents.length === 0 ? (
+                <div className="col-span-2 p-8 text-center rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#9B9BA1]">
+                  Nenhum aluno encontrado para os critérios de busca.
+                </div>
+              ) : (
+                filteredNewStudents.map((std) => {
+                  const mensalista = isMensalista(std.plan);
+                  return (
+                    <div
+                      key={std.id}
+                      className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] hover:border-[#D8B46A]/40 transition-all flex flex-col justify-between gap-3 group"
+                    >
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#151515] border border-[#2B2B2F] flex items-center justify-center font-bold text-xs text-[#D8B46A] shrink-0 overflow-hidden">
+                            {std.avatar_url ? (
+                              <img
+                                src={std.avatar_url}
+                                alt={std.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              std.name.charAt(0).toUpperCase()
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <h4 className="text-xs font-black text-[#F5F5F7] group-hover:text-[#D8B46A] transition-colors">
+                                {std.name}
+                              </h4>
+                              {std.nickname && (
+                                <span className="text-[10px] text-[#9B9BA1]">({std.nickname})</span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-[#9B9BA1] font-mono truncate max-w-[200px]">
+                              {std.email}
+                            </p>
+                            {std.goal && (
+                              <p className="text-[10px] text-[#6E6E73] mt-0.5 truncate max-w-[220px]">
+                                Objetivo: {std.goal}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Tag de Status: Mensalista vs Ainda Decidindo */}
+                        <div className="shrink-0">
+                          {mensalista ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/30 shadow-sm">
+                              <Check className="w-3 h-3 stroke-[3]" />
+                              MENSALISTA
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase bg-[#FF9F0A]/15 text-[#FF9F0A] border border-[#FF9F0A]/30 shadow-sm">
+                              <Clock className="w-3 h-3" />
+                              AINDA DECIDINDO
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Informações e Ações do Coach */}
+                      <div className="pt-2 border-t border-[#2B2B2F]/60 flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-[#9B9BA1]">
+                          Plano: <strong className="text-[#F5F5F7] font-bold">{std.plan || "Decidindo"}</strong>
+                        </span>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const found = students.find((s) => s.id === std.id) || std;
+                              handleSelectStudent(found);
+                              setActiveTab("diet");
+                            }}
+                            className="px-2.5 py-1 rounded-xl text-[10px] font-bold bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/30 hover:bg-[#D8B46A] hover:text-[#0A0A0A] transition-all cursor-pointer"
+                          >
+                            Abrir Ficha
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const found = students.find((s) => s.id === std.id) || std;
+                              handleSelectStudent(found);
+                              setActiveTab("workouts");
+                            }}
+                            className="px-2.5 py-1 rounded-xl text-[10px] font-bold bg-[#151515] text-[#F5F5F7] border border-[#2B2B2F] hover:border-[#FF6A2A] transition-all cursor-pointer"
+                          >
+                            Prescrever Treino
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
-          <div className="space-y-3">
-            {radar.map((alert) => (
-              <div
-                key={alert.id}
-                className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
-                      alert.severity === "crit"
-                        ? "bg-[#FF453A]/20 text-[#FF453A]"
-                        : alert.severity === "warn"
-                        ? "bg-[#FF9F0A]/20 text-[#FF9F0A]"
-                        : "bg-[#6D9BFF]/20 text-[#6D9BFF]"
-                    }`}
-                  >
-                    <AlertTriangle className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#F5F5F7]">{alert.student}</h4>
-                    <p className="text-[11px] text-[#9B9BA1]">{alert.status}</p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => {
-                    const matched = students.find((s) => s.name.includes(alert.student.split(" ")[0]));
-                    if (matched) {
-                      handleSelectStudent(matched);
-                      setActiveTab("diet");
-                    }
-                  }}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/30 hover:bg-[#D8B46A] hover:text-[#0A0A0A] transition-all cursor-pointer"
-                >
-                  Abrir Ficha
-                </button>
+          {/* Bloco: Alertas de Risco de Churn e Faltas (Radar de Alertas) */}
+          <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+              <div>
+                <h3 className="text-sm font-bold text-[#F5F5F7]">Radar de Churn e Frequência</h3>
+                <p className="text-xs text-[#9B9BA1]">
+                  Identificação precoce de alunos com risco de churn ou faltas consecutivas.
+                </p>
               </div>
-            ))}
+            </div>
+
+            <div className="space-y-3">
+              {radar.map((alert) => (
+                <div
+                  key={alert.id}
+                  className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
+                        alert.severity === "crit"
+                          ? "bg-[#FF453A]/20 text-[#FF453A]"
+                          : alert.severity === "warn"
+                          ? "bg-[#FF9F0A]/20 text-[#FF9F0A]"
+                          : "bg-[#6D9BFF]/20 text-[#6D9BFF]"
+                      }`}
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-[#F5F5F7]">{alert.student}</h4>
+                      <p className="text-[11px] text-[#9B9BA1]">{alert.status}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const matched = students.find((s) => s.name.includes(alert.student.split(" ")[0]));
+                      if (matched) {
+                        handleSelectStudent(matched);
+                        setActiveTab("diet");
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/30 hover:bg-[#D8B46A] hover:text-[#0A0A0A] transition-all cursor-pointer"
+                  >
+                    Abrir Ficha
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

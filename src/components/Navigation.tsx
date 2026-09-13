@@ -56,9 +56,8 @@ export const Navigation: React.FC = () => {
     if (persona === "moderator") {
       return [
         { id: "moderator" as ActiveView, label: "Painel de Moderação", icon: ShieldCheck },
-        { id: "challenges" as ActiveView, label: "Desafios", icon: Trophy },
         { id: "community" as ActiveView, label: t("sec.community"), icon: MessageSquare },
-        { id: "profile" as ActiveView, label: "Perfil da Moderação", icon: User },
+        { id: "profile" as ActiveView, label: "Perfil", icon: User },
       ];
     }
     return [

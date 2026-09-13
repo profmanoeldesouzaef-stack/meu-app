@@ -1579,9 +1579,11 @@ api.put("/students/:id/vip-chat", (req, res) => {
 api.put("/students/:id/protocol", (req, res) => {
   const std = db.students.find((s) => s.id === req.params.id);
   if (!std) return res.status(404).json({ error: "Aluno não encontrado" });
-  const { water_ml, creatine_dose_g, vip_chat_unlocked } = req.body;
+  const { water_ml, creatine_dose_g, creatine_doses_per_day, creatine_times, vip_chat_unlocked } = req.body;
   if (water_ml !== undefined) (std as any).water_ml = Number(water_ml) || 2500;
   if (creatine_dose_g !== undefined) (std as any).creatine_dose_g = Number(creatine_dose_g) || 5.0;
+  if (creatine_doses_per_day !== undefined) (std as any).creatine_doses_per_day = Math.min(3, Math.max(1, Number(creatine_doses_per_day) || 1));
+  if (creatine_times !== undefined && Array.isArray(creatine_times)) (std as any).creatine_times = creatine_times;
   if (vip_chat_unlocked !== undefined) (std as any).vip_chat_unlocked = Boolean(vip_chat_unlocked);
 
   if (std.id === "std-1" || std.email === db.profile.email) {
@@ -1589,6 +1591,12 @@ api.put("/students/:id/protocol", (req, res) => {
     if (creatine_dose_g !== undefined) {
       db.profile.creatine_dose_g = Number(creatine_dose_g) || 5.0;
       db.profile.creatine_g = Number(creatine_dose_g) || 5.0;
+    }
+    if (creatine_doses_per_day !== undefined) {
+      (db.profile as any).creatine_doses_per_day = Math.min(3, Math.max(1, Number(creatine_doses_per_day) || 1));
+    }
+    if (creatine_times !== undefined && Array.isArray(creatine_times)) {
+      db.profile.creatine_times = creatine_times;
     }
     if (vip_chat_unlocked !== undefined) (db.profile as any).vip_chat_unlocked = Boolean(vip_chat_unlocked);
   }
@@ -3468,78 +3476,63 @@ api.post("/stripe-checkout", async (req, res) => {
 api.post(["/create-checkout-session", "/api/create-checkout-session"], async (req, res) => {
   try {
     const { priceId, planSlug, recurrence, userId, userEmail, successUrl, cancelUrl } = req.body;
-    const origin = req.headers.origin || "https://vyratraining.com";
 
-    const resolvedPlanSlug = planSlug || "reset12";
-    const resolvedRecurrence = recurrence || "monthly";
-
-    // Mapeamento dos Preços Oficiais do Vyra
-    const RECURRENCE_PRICE_MAP: Record<string, { amount: number; title: string; interval: "month" | "year" | null; interval_count?: number }> = {
-      monthly: { amount: 179.90, title: "Vyra Performance - Mensal", interval: "month", interval_count: 1 },
-      quarterly: { amount: 449.70, title: "Vyra Performance - Trimestral", interval: "month", interval_count: 3 },
-      semiannual: { amount: 779.40, title: "Vyra Performance - Semestral", interval: "month", interval_count: 6 },
-      annual: { amount: 1198.80, title: "Vyra Performance - Anual", interval: "year", interval_count: 1 },
-      reset12: { amount: 479.90, title: "Vyra Reset (12 Semanas)", interval: null },
+    const STRIPE_PRICE_MAP: Record<string, { id: string; mode: "payment" | "subscription" }> = {
+      reset12: { id: RESET_12_PRICE_ID, mode: "payment" },
+      monthly: { id: "price_1U9FMDF7VqDt14kN3LneAWDA", mode: "subscription" },
+      quarterly: { id: "price_1U9FMDF7VqDt14kNZhtT1hIO", mode: "subscription" },
+      semiannual: { id: "price_1U9FMDF7VqDt14kNRVRuJWd0", mode: "subscription" },
+      annual: { id: "price_1U9FMDF7VqDt14kNu6fxBRkh", mode: "subscription" },
+      test: { id: TEST_PRICE_ID, mode: "payment" },
     };
 
-    const targetUrlFallback = `https://vyratraining.com?plan=${encodeURIComponent(resolvedPlanSlug)}&cycle=${encodeURIComponent(resolvedRecurrence)}${userEmail ? `&email=${encodeURIComponent(userEmail)}` : ""}${userId ? `&uid=${encodeURIComponent(userId)}` : ""}`;
+    const resolvedPlanSlug = planSlug || "reset12";
+    const resolvedRecurrence = recurrence || (resolvedPlanSlug === "reset12" ? "single" : "monthly");
+
+    // Determina o priceId exato
+    const mappedPrice = STRIPE_PRICE_MAP[resolvedPlanSlug] || STRIPE_PRICE_MAP[resolvedRecurrence];
+    const effectivePriceId = priceId || mappedPrice?.id || (resolvedPlanSlug === "reset12" ? RESET_12_PRICE_ID : "price_1U9FMDF7VqDt14kN3LneAWDA");
+
+    const isOneTime = effectivePriceId === RESET_12_PRICE_ID || resolvedPlanSlug === "reset12" || resolvedRecurrence === "single";
+    const sessionMode = isOneTime ? "payment" : "subscription";
+
+    // URLs oficiais solicitadas
+    const officialSuccessUrl = successUrl || "https://vyratraining.com?payment=success";
+    const officialCancelUrl = cancelUrl || "https://vyratraining.com?payment=cancel";
+
+    const targetUrlFallback = `https://vyratraining.com?plan=${encodeURIComponent(resolvedPlanSlug)}&priceId=${encodeURIComponent(effectivePriceId)}&cycle=${encodeURIComponent(resolvedRecurrence)}${userEmail ? `&email=${encodeURIComponent(userEmail)}` : ""}${userId ? `&uid=${encodeURIComponent(userId)}` : ""}`;
 
     if (process.env.STRIPE_SECRET_KEY) {
       try {
         const Stripe = (await import("stripe")).default;
         const stripeClient = new (Stripe as any)(process.env.STRIPE_SECRET_KEY);
 
-        const planConfig = RECURRENCE_PRICE_MAP[resolvedRecurrence] || RECURRENCE_PRICE_MAP[resolvedPlanSlug] || RECURRENCE_PRICE_MAP.monthly;
-        const isOneTime = planConfig.interval === null;
-
         const sessionPayload: any = {
           payment_method_types: ["card"],
-          mode: isOneTime ? "payment" : "subscription",
-          success_url: successUrl || `${origin}/?session_id={CHECKOUT_SESSION_ID}&status=success`,
-          cancel_url: cancelUrl || `${origin}/?status=cancelled`,
+          mode: sessionMode,
+          success_url: officialSuccessUrl,
+          cancel_url: officialCancelUrl,
           client_reference_id: userId,
           customer_email: userEmail || undefined,
           metadata: {
             supabase_user_id: userId || "",
             plan_slug: resolvedPlanSlug,
             recurrence: resolvedRecurrence,
+            price_id: effectivePriceId,
           },
+          line_items: [{ price: effectivePriceId, quantity: 1 }],
         };
-
-        if (priceId && priceId.startsWith("price_")) {
-          sessionPayload.line_items = [{ price: priceId, quantity: 1 }];
-        } else {
-          sessionPayload.line_items = [
-            {
-              price_data: {
-                currency: "brl",
-                product_data: {
-                  name: planConfig.title,
-                  description: `Acesso ao protocolo ${planConfig.title} com treinos periodizados e nutrição de alta performance.`,
-                },
-                unit_amount: Math.round(planConfig.amount * 100),
-                ...(isOneTime ? {} : {
-                  recurring: {
-                    interval: planConfig.interval,
-                    interval_count: planConfig.interval_count || 1,
-                  }
-                }),
-              },
-              quantity: 1,
-            },
-          ];
-        }
 
         const session = await stripeClient.checkout.sessions.create(sessionPayload);
         if (session && session.url) {
           return res.json({ url: session.url, sessionId: session.id, success: true });
         }
       } catch (stripeErr: any) {
-        console.warn("[Stripe Checkout Session] Falling back to official portal redirect:", stripeErr.message);
+        console.warn("[Stripe Checkout Session] Stripe API error, falling back to portal:", stripeErr.message);
       }
     }
 
-    // Fallback seguro: redirecionamento para o portal oficial com parâmetros completos
+    // Fallback seguro se chave do Stripe não estiver configurada ou falhar na API
     return res.json({
       url: targetUrlFallback,
       fallback: true,
