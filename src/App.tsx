@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { supabase } from "./supabaseClient";
 import { AppProvider, useApp } from "./context/AppContext";
 import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
@@ -22,18 +23,13 @@ import { FormCheckerModal } from "./views/FormCheckerModal";
 import { PhotoGalleryView } from "./views/PhotoGalleryView";
 import { GaleriaView } from "./views/GaleriaView";
 import { WorkoutCompletionView } from "./views/WorkoutCompletionView";
-import { VyraLogo } from "./components/VyraLogo";
 
-const AppContent: React.FC = () => {
+// Componente principal de aluno/painel
+export const MainDashboard: React.FC<{ user?: any }> = () => {
   const {
-    user,
-    loggedIn,
-    authLoading,
     activeView,
-    setActiveView,
     theme,
     persona,
-    onboardingCompleted,
     milestoneCelebration,
     dismissMilestoneCelebration,
     chatNameColor,
@@ -42,36 +38,6 @@ const AppContent: React.FC = () => {
   } = useApp();
   const [formCheckerExercise, setFormCheckerExercise] = useState<string | null>(null);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState<boolean>(false);
-
-  // Strict role-based route guard
-  React.useEffect(() => {
-    if (persona === "student" && (activeView === "coach" || activeView === "moderator")) {
-      setActiveView("home");
-    }
-  }, [persona, activeView, setActiveView]);
-
-  // Guarda de Rotas: Aguarda o estado loading da sessão antes de forçar o redirecionamento para o login,
-  // prevenindo o "falso negativo" em que o app acha que o usuário está deslogado enquanto o código/token OAuth é processado.
-  if (authLoading) {
-    return (
-      <div className="fixed inset-0 z-50 bg-[#0A0A0A] flex flex-col items-center justify-center p-4 selection:bg-[#FF6A2A]">
-        <div className="w-16 h-16 mb-4 flex items-center justify-center animate-pulse">
-          <VyraLogo className="w-full h-full" />
-        </div>
-        <div className="flex items-center gap-2.5 text-xs font-bold text-[#9B9BA1] tracking-wider uppercase">
-          <div className="w-3.5 h-3.5 rounded-full border-2 border-[#D8B46A] border-t-transparent animate-spin" />
-          <span>Carregando Vyra...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // Roteamento direto: Se o usuário NÃO estiver autenticado, renderiza a tela de login.
-  // Se o usuário ESTIVER autenticado, nunca renderiza o componente de Login e vai direto para a visão principal (HomeView).
-  const isAuthenticated = Boolean(user || loggedIn);
-  if (!isAuthenticated) {
-    return <LoginModal />;
-  }
 
   return (
     <div
@@ -137,10 +103,49 @@ const AppContent: React.FC = () => {
   );
 };
 
-export default function App() {
-  return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
-  );
+export function App() {
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // 1. Pega a sessão inicial
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // 2. Escuta mudanças de sessão em tempo real (incluindo o retorno do Google OAuth)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Tela de carregamento enquanto o Supabase processa a URL/token
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-zinc-950 text-orange-500 font-semibold">
+        Sincronizando Vyra Training...
+      </div>
+    );
+  }
+
+  // SE TIVER SESSÃO: vai direto para a tela do app / dashboard
+  if (session?.user) {
+    return (
+      <AppProvider>
+        <MainDashboard user={session.user} />
+      </AppProvider>
+    );
+  }
+
+  // SE NÃO TIVER SESSÃO: exibe a tela de login
+  return <LoginModal />;
 }
+
+export default App;
+
