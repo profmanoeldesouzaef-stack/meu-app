@@ -23,10 +23,12 @@ import { PhotoGalleryView } from "./views/PhotoGalleryView";
 import { GaleriaView } from "./views/GaleriaView";
 import { WorkoutCompletionView } from "./views/WorkoutCompletionView";
 import { FirstTimeOnboardingModal } from "./components/FirstTimeOnboardingModal";
+import { VyraLogo } from "./components/VyraLogo";
 
 const AppContent: React.FC = () => {
   const {
     loggedIn,
+    authLoading,
     activeView,
     setActiveView,
     theme,
@@ -47,6 +49,22 @@ const AppContent: React.FC = () => {
       setActiveView("home");
     }
   }, [persona, activeView, setActiveView]);
+
+  // Guarda de Rotas: Aguarda o estado loading da sessão antes de forçar o redirecionamento para o login,
+  // prevenindo o "falso negativo" em que o app acha que o usuário está deslogado enquanto o código/token OAuth é processado.
+  if (authLoading) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#0A0A0A] flex flex-col items-center justify-center p-4 selection:bg-[#FF6A2A]">
+        <div className="w-16 h-16 mb-4 flex items-center justify-center animate-pulse">
+          <VyraLogo className="w-full h-full" />
+        </div>
+        <div className="flex items-center gap-2.5 text-xs font-bold text-[#9B9BA1] tracking-wider uppercase">
+          <div className="w-3.5 h-3.5 rounded-full border-2 border-[#D8B46A] border-t-transparent animate-spin" />
+          <span>Sincronizando sessão...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!loggedIn) {
     return <LoginModal />;

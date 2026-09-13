@@ -43,6 +43,9 @@ export interface CoachInviteInfo {
 }
 
 interface AppContextType {
+  user: any | null;
+  authLoading: boolean;
+  ensureUserProfile: (user: any) => Promise<void>;
   persona: Persona;
   lang: Lang;
   theme: Theme;
@@ -500,6 +503,18 @@ const dict = {
 const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<any | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const hasHash = window.location.hash.includes("access_token");
+        const hasCode = window.location.search.includes("code=");
+        const wasLoggedIn = localStorage.getItem("vyra_logged_in") === "true";
+        return hasHash || hasCode || wasLoggedIn;
+      }
+    } catch {}
+    return true;
+  });
   const [persona, setPersonaState] = useState<Persona>("student");
   const [lang, setLangState] = useState<Lang>("pt");
   const [theme, setThemeState] = useState<Theme>("dark");
@@ -1264,43 +1279,108 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [registeredModerators, registeredCoaches]
   );
 
+  // Criação Automática do Perfil (ensureUserProfile) para novos usuários OAuth
+  const ensureUserProfile = useCallback(async (usuario: any) => {
+    if (!usuario?.id) return;
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", usuario.id)
+        .maybeSingle();
+
+      if (!profile) {
+        await supabase.from("profiles").upsert(
+          {
+            id: usuario.id,
+            full_name: usuario.user_metadata?.full_name || usuario.user_metadata?.name || "Novo Aluno",
+            nickname: (usuario.user_metadata?.full_name || usuario.user_metadata?.name || usuario.email || "").split(" ")[0] || "Aluno",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+      }
+    } catch (err) {
+      console.warn("Aviso ao assegurar perfil no Supabase:", err);
+    }
+  }, []);
+
   // Sincronização e verificação de permissões do usuário logado no Supabase
   useEffect(() => {
-    // 1. Checa sessão ativa no Supabase
+    let isMounted = true;
+
+    // 1. Checa sessão ativa inicial no Supabase
     supabase.auth
       .getSession()
-      .then(({ data: { session } }) => {
+      .then(async ({ data: { session } }) => {
+        if (!isMounted) return;
         if (session?.user) {
+          setUser(session.user);
+          setLoggedInState(true);
+          localStorage.setItem("vyra_logged_in", "true");
           if (session.user.email) {
-            const userEmail = session.user.email.trim().toLowerCase();
-            setCurrentUserEmailState(userEmail);
-            setLoggedInState(true);
+            setCurrentUserEmailState(session.user.email.trim().toLowerCase());
           }
-          definirPerfil(session.user);
+          await ensureUserProfile(session.user);
+          await definirPerfil(session.user);
+        } else {
+          const hasOAuthParams =
+            typeof window !== "undefined" &&
+            (window.location.hash.includes("access_token") ||
+              window.location.search.includes("code="));
+          if (!hasOAuthParams && localStorage.getItem("vyra_logged_in") !== "true") {
+            setUser(null);
+            setLoggedInState(false);
+          }
         }
       })
-      .catch(() => {
-        // Fallback seguro caso Supabase offline ou em dev
+      .catch((err) => {
+        console.warn("Aviso ao verificar sessão inicial do Supabase:", err);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        const hasOAuthParams =
+          typeof window !== "undefined" &&
+          (window.location.hash.includes("access_token") ||
+            window.location.search.includes("code="));
+        if (!hasOAuthParams) {
+          setAuthLoading(false);
+        } else {
+          // Timeout de segurança se estiver em processo de troca de token OAuth
+          setTimeout(() => {
+            if (isMounted) setAuthLoading(false);
+          }, 2500);
+        }
       });
 
-    // 2. Ouve alterações de autenticação no Supabase
+    // 2. Auth Listener: Escuta alterações de autenticação e troca de código OAuth
     const {
-      data: { subscription: authListener },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
+        // Garante que a sessão seja reconhecida imediatamente
+        setUser(session.user);
+        setLoggedInState(true);
+        localStorage.setItem("vyra_logged_in", "true");
         if (session.user.email) {
-          const userEmail = session.user.email.trim().toLowerCase();
-          setCurrentUserEmailState(userEmail);
-          setLoggedInState(true);
+          setCurrentUserEmailState(session.user.email.trim().toLowerCase());
         }
-        definirPerfil(session.user);
+        await ensureUserProfile(session.user);
+        await definirPerfil(session.user);
+        if (isMounted) setAuthLoading(false);
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
+        setLoggedInState(false);
+        localStorage.setItem("vyra_logged_in", "false");
+        if (isMounted) setAuthLoading(false);
       }
     });
 
     return () => {
-      authListener?.unsubscribe();
+      isMounted = false;
+      subscription.unsubscribe();
     };
-  }, [definirPerfil]);
+  }, [definirPerfil, ensureUserProfile]);
 
   const addCoachEmail = useCallback(
     async (email: string): Promise<{ success: boolean; message: string }> => {
@@ -1663,6 +1743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn("Supabase signOut error:", err);
     }
+    setUser(null);
     localStorage.removeItem("vyra_logged_in");
     localStorage.removeItem("vyra_current_user_email");
     localStorage.removeItem("vyra_user_name");
@@ -1827,6 +1908,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        user,
+        authLoading,
+        ensureUserProfile,
         persona,
         lang,
         theme,

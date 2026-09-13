@@ -6,6 +6,18 @@ if (typeof window !== "undefined" && typeof (window as any).__DEV__ === "undefin
   (window as any).__DEV__ = (import.meta as any).env?.DEV ?? true;
 }
 
+// Global unhandledrejection interceptor for transient WebSocket disconnects
+if (typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", (event) => {
+    if (
+      event.reason?.message?.includes("WebSocket") ||
+      event.reason?.toString?.().includes("WebSocket")
+    ) {
+      event.preventDefault();
+    }
+  });
+}
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

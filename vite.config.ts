@@ -70,8 +70,13 @@ export default defineConfig({
     ],
   },
   server: {
-    host: '0.0.0.0',
+    host: true,
     port: 3000,
-    allowedHosts: 'all'
-  }
+    allowedHosts: 'all',
+    hmr: false,
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+  },
 });
