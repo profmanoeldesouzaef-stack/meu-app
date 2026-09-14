@@ -44,7 +44,11 @@ export const PaywallView: React.FC = () => {
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [redirectingPlan, setRedirectingPlan] = useState<string | null>(null);
-  const [selectedRecurrence, setSelectedRecurrence] = useState<RecurrenceKey>("quarterly");
+  const [selectedCycles, setSelectedCycles] = useState<Record<string, RecurrenceKey>>({
+    force: "quarterly",
+    shape: "quarterly",
+    performance: "quarterly",
+  });
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   // Carrega planos adicionais da API se disponíveis
@@ -59,12 +63,11 @@ export const PaywallView: React.FC = () => {
       .catch((err) => console.warn("Aviso ao carregar planos da API, usando protocolos canônicos:", err));
   }, []);
 
-  // Tabela e Configurações de Periodicidade & Preços
+  // Tabela Oficial de Preços Stripe
   const PERIODICITY_CONFIG: Record<
     RecurrenceKey,
     {
       label: string;
-      badgeText: string;
       discountText?: string;
       monthlyPrice: string;
       totalPrice: string;
@@ -74,38 +77,34 @@ export const PaywallView: React.FC = () => {
   > = {
     monthly: {
       label: "Mensal",
-      badgeText: "Sem fidelidade",
       discountText: undefined,
       monthlyPrice: "R$ 179,90",
       totalPrice: "R$ 179,90",
-      billingNote: "Cobrança de R$ 179,90 a cada mês",
+      billingNote: "Faturado R$ 179,90 mensalmente",
       stripePriceId: "price_1U9FMDF7VqDt14kN3LneAWDA",
     },
     quarterly: {
       label: "Trimestral",
-      badgeText: "Economize 17%",
-      discountText: "17% OFF",
-      monthlyPrice: "R$ 149,90",
-      totalPrice: "R$ 449,70",
-      billingNote: "Faturado R$ 449,70 a cada 3 meses",
+      discountText: "Economia de 7%",
+      monthlyPrice: "R$ 166,63",
+      totalPrice: "R$ 499,90",
+      billingNote: "Faturado R$ 499,90 a cada 3 meses",
       stripePriceId: "price_1U9FMDF7VqDt14kNZhtT1hIO",
     },
     semiannual: {
       label: "Semestral",
-      badgeText: "Economize 28%",
-      discountText: "28% OFF",
-      monthlyPrice: "R$ 129,90",
-      totalPrice: "R$ 779,40",
-      billingNote: "Faturado R$ 779,40 a cada 6 meses",
+      discountText: "Economia de 17%",
+      monthlyPrice: "R$ 149,98",
+      totalPrice: "R$ 899,90",
+      billingNote: "Faturado R$ 899,90 a cada 6 meses",
       stripePriceId: "price_1U9FMDF7VqDt14kNRVRuJWd0",
     },
     annual: {
       label: "Anual",
-      badgeText: "Economize 45% • Melhor Valor",
-      discountText: "45% OFF",
-      monthlyPrice: "R$ 99,90",
-      totalPrice: "R$ 1.198,80",
-      billingNote: "Faturado R$ 1.198,80 por ano (12 meses)",
+      discountText: "Economia de 19%",
+      monthlyPrice: "R$ 144,99",
+      totalPrice: "R$ 1.739,90",
+      billingNote: "Faturado R$ 1.739,90 por ano",
       stripePriceId: "price_1U9FMDF7VqDt14kNu6fxBRkh",
     },
   };
@@ -166,7 +165,6 @@ export const PaywallView: React.FC = () => {
   // Mescla protocolos padrão com eventuais planos cadastrados
   const protocolsToRender: ProtocolCardDefinition[] = [...DEFAULT_PROTOCOLS];
 
-  // Se houver planos específicos do banco que não coincidam com os slugs padrão
   if (plans && plans.length > 0) {
     plans.forEach((p) => {
       const pSlug = (p.slug || "").toLowerCase();
@@ -192,16 +190,42 @@ export const PaywallView: React.FC = () => {
     });
   }
 
+  const handleSelectCycle = (protocolSlug: string, cycleKey: RecurrenceKey) => {
+    setSelectedCycles((prev) => ({
+      ...prev,
+      [protocolSlug]: cycleKey,
+    }));
+  };
+
   // Fluxo de Pagamento Seguro via Stripe Checkout
-  const handleCheckout = async (protocolSlug: string) => {
+  const handleCheckout = async (e: React.MouseEvent<HTMLButtonElement>, protocolSlug: string) => {
+    // 1. Bloqueia explicitamente qualquer recarregamento ou submit de página
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
     setCheckoutError(null);
     setRedirectingPlan(protocolSlug);
 
-    const currentPeriodInfo = PERIODICITY_CONFIG[selectedRecurrence];
-    const targetPriceId = currentPeriodInfo.stripePriceId;
+    const chosenCycle = selectedCycles[protocolSlug] || "quarterly";
+    const currentPeriodInfo = PERIODICITY_CONFIG[chosenCycle];
+    const targetPriceId = currentPeriodInfo?.stripePriceId;
+
+    // 2. Validação estrita do priceId
+    if (!targetPriceId || !targetPriceId.startsWith("price_")) {
+      const invalidMsg = "ID do preço Stripe inválido para o período selecionado. Por favor, tente novamente.";
+      console.error("[ERRO STRIPE CHECKOUT]:", new Error(invalidMsg), { protocolSlug, chosenCycle, targetPriceId });
+      setCheckoutError(invalidMsg);
+      if (typeof window !== "undefined") {
+        window.alert(invalidMsg);
+      }
+      setRedirectingPlan(null);
+      return;
+    }
 
     try {
-      // 1. Vincula o usuário atual
+      // 3. Vincula o usuário atual
       let activeUser = user;
       if (!activeUser) {
         const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: null }));
@@ -211,54 +235,60 @@ export const PaywallView: React.FC = () => {
       const activeUserId = activeUser?.id;
       const activeUserEmail = activeUser?.email || currentUserEmail || "";
 
-      // 2. Chama a criação da sessão no backend
+      // 4. Origem e URLs de retorno solicitadas
+      const origin = typeof window !== "undefined" && window.location.origin
+        ? window.location.origin
+        : "https://vyratraining.com";
+
+      const successUrl = `${origin}/sucesso?session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${origin}/protocolos`;
+
+      // 5. Chama endpoint de checkout
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           priceId: targetPriceId,
           planSlug: protocolSlug,
-          recurrence: selectedRecurrence,
+          recurrence: chosenCycle,
           userId: activeUserId,
           userEmail: activeUserEmail,
-          successUrl: `${window.location.origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: `${window.location.origin}/?payment=cancel`,
+          successUrl,
+          cancelUrl,
         }),
       });
 
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `Erro HTTP ${res.status} ao iniciar sessão de checkout`);
+      }
+
       const data = await res.json().catch(() => null);
 
+      // 6. Se a resposta da API retornar uma URL da Stripe (url), redireciona diretamente
       if (data?.url) {
-        // Redirecionamento direto para a sessão oficial e segura da Stripe
-        if (typeof window !== "undefined") {
-          window.location.href = data.url;
-        } else if (typeof Linking !== "undefined" && Linking?.openURL) {
-          Linking.openURL(data.url);
-        }
+        window.location.href = data.url;
         return;
       }
 
-      // Fallback seguro se retornado url alternativa
-      const fallbackUrl = `https://vyratraining.com?plan=${encodeURIComponent(protocolSlug)}&priceId=${encodeURIComponent(targetPriceId)}&cycle=${encodeURIComponent(selectedRecurrence)}${
-        activeUserEmail ? `&email=${encodeURIComponent(activeUserEmail)}` : ""
-      }${activeUserId ? `&uid=${encodeURIComponent(activeUserId)}` : ""}`;
-
-      if (typeof window !== "undefined") {
-        window.location.href = fallbackUrl;
-      }
+      // Se não houver url válida retornada
+      throw new Error(data?.error || "A Stripe não retornou uma URL de checkout válida.");
     } catch (err: any) {
-      console.error("Erro ao iniciar Stripe Checkout:", err);
-      setCheckoutError("Não foi possível conectar ao checkout seguro da Stripe no momento. Tente novamente.");
+      // 7. Tratamento de erro: NÃO redireciona nem recarrega. Exibe alerta e console.error exato
+      console.error("[ERRO STRIPE CHECKOUT]:", err);
+      const errorMessage = err?.message || "Erro ao iniciar checkout";
+      setCheckoutError(errorMessage);
+      if (typeof window !== "undefined") {
+        window.alert(errorMessage);
+      }
     } finally {
-      setTimeout(() => setRedirectingPlan(null), 1500);
+      setRedirectingPlan(null);
     }
   };
 
-  const activePeriod = PERIODICITY_CONFIG[selectedRecurrence];
-
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 pb-28 md:pb-16 space-y-8 animate-in fade-in duration-300">
-      {/* Cabeçalho Principal Solicitado: "Escolha seu protocolo" */}
+      {/* Cabeçalho Principal: Apenas o título principal e subtítulo */}
       <div className="text-center space-y-3 max-w-2xl mx-auto">
         <span className="text-xs font-black tracking-widest text-[#D8B46A] uppercase bg-[#D8B46A]/15 px-3.5 py-1 rounded-full border border-[#D8B46A]/30 inline-block shadow-sm">
           VYRA HIGH PERFORMANCE PROTOCOLS
@@ -269,89 +299,6 @@ export const PaywallView: React.FC = () => {
         <p className="text-sm text-[#9B9BA1] leading-relaxed">
           Periodização avançada, acompanhamento nutricional dinâmico e suporte direto com nossa equipe de treinadores de elite.
         </p>
-      </div>
-
-      {/* Banner de Segurança e Vinculação Stripe */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-[#151515] border border-[#2B2B2F] flex flex-col sm:flex-row items-center justify-between gap-4 max-w-4xl mx-auto shadow-xl">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-[#34C759]/15 text-[#34C759] flex items-center justify-center shrink-0 border border-[#34C759]/30">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="text-xs sm:text-sm font-bold text-[#F5F5F7]">
-                Checkout Seguro &amp; Transação Criptografada via Stripe
-              </p>
-              <span className="px-2 py-0.5 rounded-full bg-[#34C759]/15 text-[#34C759] border border-[#34C759]/30 text-[9px] font-black uppercase">
-                ATIVO
-              </span>
-            </div>
-            <p className="text-[11px] text-[#9B9BA1] mt-0.5">
-              Ativação instantânea no seu usuário ({user?.email || currentUserEmail || "conta conectada"}) via Webhook oficial.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs font-bold text-[#D8B46A] shrink-0 bg-[#1D1D1F] px-3.5 py-2 rounded-xl border border-[#2B2B2F]">
-          <Lock className="w-3.5 h-3.5 text-[#34C759]" />
-          <span>SSL 256-bit Seguro</span>
-        </div>
-      </div>
-
-      {/* Seletor de Periodicidade: Mensal, Trimestral, Semestral, Anual */}
-      <div className="max-w-2xl mx-auto space-y-3">
-        <div className="text-center">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#9B9BA1]">
-            Selecione a periodicidade do protocolo:
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-1.5 rounded-2xl bg-[#151515] border border-[#2B2B2F]">
-          {(["monthly", "quarterly", "semiannual", "annual"] as const).map((cycleKey) => {
-            const config = PERIODICITY_CONFIG[cycleKey];
-            const isSelected = selectedRecurrence === cycleKey;
-
-            return (
-              <button
-                key={cycleKey}
-                type="button"
-                id={`periodicity-selector-${cycleKey}-btn`}
-                onClick={() => setSelectedRecurrence(cycleKey)}
-                className={`p-3 rounded-xl text-center transition-all cursor-pointer flex flex-col items-center justify-center relative ${
-                  isSelected
-                    ? "bg-[#D8B46A] text-[#0A0A0A] font-extrabold shadow-lg shadow-[#D8B46A]/20 scale-[1.02]"
-                    : "text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F]"
-                }`}
-              >
-                <span className="text-xs font-bold uppercase tracking-tight">{config.label}</span>
-                <span className={`text-xs font-black mt-0.5 ${isSelected ? "text-[#0A0A0A]" : "text-[#D8B46A]"}`}>
-                  {config.monthlyPrice}
-                  <span className="text-[10px] font-normal opacity-75">/mês</span>
-                </span>
-                {config.discountText && (
-                  <span
-                    className={`text-[9px] font-black uppercase tracking-tight px-1.5 py-0.5 rounded-full mt-1.5 ${
-                      isSelected ? "bg-[#0A0A0A] text-[#D8B46A]" : "bg-[#34C759]/20 text-[#34C759]"
-                    }`}
-                  >
-                    {config.discountText}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Resumo da Periodicidade Ativa */}
-        <div className="text-center text-xs font-semibold text-[#9B9BA1]">
-          {activePeriod.discountText ? (
-            <span className="text-[#34C759] font-bold">
-              ✓ {activePeriod.badgeText} ({activePeriod.billingNote})
-            </span>
-          ) : (
-            <span>{activePeriod.billingNote} • Cancele quando quiser</span>
-          )}
-        </div>
       </div>
 
       {/* Alerta de Erro de Checkout se houver */}
@@ -380,12 +327,11 @@ export const PaywallView: React.FC = () => {
         </div>
       )}
 
-      {/* Cards de Protocolos/Planos Restaurados */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+      {/* Cards de Protocolos com Seletor Embutido e Preço Dinâmico */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto items-stretch">
         {protocolsToRender.map((protocol) => {
           const isBlue = protocol.accentColor === "blue";
           const isPink = protocol.accentColor === "pink";
-          const isGold = protocol.accentColor === "gold";
 
           const cardStyles = isPink
             ? "border-pink-500/50 bg-gradient-to-b from-[#201018] via-[#161215] to-[#151515] shadow-2xl shadow-pink-500/10 hover:border-pink-400"
@@ -411,63 +357,97 @@ export const PaywallView: React.FC = () => {
             ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:brightness-110 shadow-lg shadow-blue-500/25"
             : "bg-gradient-to-r from-[#D8B46A] to-[#B38E32] text-[#0A0A0A] hover:brightness-110 shadow-lg shadow-[#D8B46A]/25";
 
+          const currentCycle = selectedCycles[protocol.slug] || "quarterly";
+          const pricing = PERIODICITY_CONFIG[currentCycle];
           const isRedirectingThisCard = redirectingPlan === protocol.slug;
 
           return (
             <div
               key={protocol.id}
               id={`protocol-card-${protocol.slug}`}
-              className={`p-6 sm:p-7 rounded-3xl border transition-all duration-200 flex flex-col justify-between relative overflow-hidden group ${cardStyles}`}
+              className={`p-6 sm:p-7 rounded-3xl border transition-all duration-200 flex flex-col justify-between relative group ${cardStyles}`}
             >
-              {/* Selo Popular / Destaque */}
-              {protocol.isPopular && (
-                <div className="absolute top-0 right-0">
-                  <div className="bg-gradient-to-l from-[#FF6A2A] to-[#D8B46A] text-[#0A0A0A] text-[9px] font-black tracking-widest uppercase px-4 py-1 rounded-bl-xl shadow-md flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" />
-                    <span>MAIS ESCOLHIDO</span>
-                  </div>
-                </div>
-              )}
-
               <div className="space-y-4">
-                {/* Tag e Identificador */}
-                <div className="flex items-center justify-between gap-2 pr-16">
+                {/* Cabeçalho do Card: Tag de categoria & Selo Destaque sem sobreposição */}
+                <div className="flex items-center justify-between gap-2 flex-wrap min-h-[28px]">
                   <span
                     className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border ${badgeStyles}`}
                   >
                     {protocol.badge}
                   </span>
+
+                  {protocol.isPopular && (
+                    <span className="bg-gradient-to-r from-[#FF6A2A] to-[#D8B46A] text-[#0A0A0A] text-[9px] font-black tracking-wider uppercase px-2.5 py-1 rounded-full shadow-md flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      <span>MAIS ESCOLHIDO</span>
+                    </span>
+                  )}
                 </div>
 
-                {/* Nome do Protocolo e Descrição */}
-                <div>
+                {/* Título e Descrição com tipografia clara e sem sobreposição */}
+                <div className="space-y-1.5">
                   <h3 className="text-2xl font-black text-[#F5F5F7] tracking-tight group-hover:text-white transition-colors">
                     {protocol.name}
                   </h3>
-                  <p className="text-xs text-[#9B9BA1] mt-1.5 leading-relaxed min-h-[36px]">
+                  <p className="text-xs text-[#9B9BA1] leading-relaxed min-h-[44px]">
                     {protocol.description}
                   </p>
                 </div>
 
-                {/* Preço Calculado com base na Periodicidade Selecionada */}
-                <div className="pt-3 pb-2 border-t border-[#2B2B2F]/80">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#9B9BA1] block mb-1">
-                    Investimento no plano {activePeriod.label}:
+                {/* Seletor de Período Embutido: 4 botões compactos */}
+                <div className="pt-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1.5">
+                    Selecione a Periodicidade:
                   </span>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl sm:text-4xl font-black text-[#F5F5F7]">
-                      {activePeriod.monthlyPrice}
-                    </span>
-                    <span className="text-xs font-semibold text-[#9B9BA1]">/mês</span>
+                  <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-zinc-950/80 border border-zinc-800">
+                    {(["monthly", "quarterly", "semiannual", "annual"] as const).map((cycleKey) => {
+                      const isSelected = currentCycle === cycleKey;
+                      const conf = PERIODICITY_CONFIG[cycleKey];
+
+                      return (
+                        <button
+                          key={cycleKey}
+                          type="button"
+                          id={`card-${protocol.slug}-period-${cycleKey}-btn`}
+                          onClick={() => handleSelectCycle(protocol.slug, cycleKey)}
+                          className={`py-2 px-1 text-center rounded-xl text-[11px] transition-all cursor-pointer truncate flex flex-col items-center justify-center ${
+                            isSelected
+                              ? "border border-amber-500 bg-amber-500/10 text-white font-bold shadow-sm"
+                              : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-200 hover:border-zinc-700 font-medium"
+                          }`}
+                        >
+                          <span className="leading-none">{conf.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <p className="text-[11px] text-[#D8B46A] font-medium mt-1">
-                    {activePeriod.billingNote}
+                </div>
+
+                {/* Preço Dinâmico: Valor mensal em destaque + Subtexto faturamento + Badge economia */}
+                <div className="pt-3 pb-2 border-t border-[#2B2B2F]/80">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl sm:text-4xl font-black text-[#F5F5F7] tracking-tight">
+                        {pricing.monthlyPrice}
+                      </span>
+                      <span className="text-xs font-semibold text-[#9B9BA1]">/mês</span>
+                    </div>
+
+                    {pricing.discountText && (
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                        {pricing.discountText}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-zinc-400 mt-1 font-medium">
+                    {pricing.billingNote}
                   </p>
                 </div>
 
-                {/* Lista de Benefícios com Ícones de Check */}
-                <div className="space-y-2.5 pt-2">
-                  <span className="text-[11px] font-bold text-[#9B9BA1] uppercase tracking-wider block">
+                {/* Lista de Benefícios com ícones de verificação */}
+                <div className="space-y-2 pt-2 border-t border-[#2B2B2F]/60">
+                  <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">
                     Incluso no protocolo:
                   </span>
                   <div className="space-y-2">
@@ -483,29 +463,29 @@ export const PaywallView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Botão de Ação Principal: Assinar Agora / Começar Protocolo */}
+              {/* Botão de Ação: "Assinar Protocolo" */}
               <div className="pt-6 mt-4 border-t border-[#2B2B2F]/40">
                 <button
                   id={`btn-subscribe-protocol-${protocol.slug}`}
                   type="button"
                   disabled={Boolean(redirectingPlan)}
-                  onClick={() => handleCheckout(protocol.slug)}
+                  onClick={(e) => handleCheckout(e, protocol.slug)}
                   className={`w-full py-3.5 px-4 rounded-2xl font-black text-xs tracking-wider uppercase transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 active:scale-[0.98] ${btnStyles}`}
                 >
                   {isRedirectingThisCard ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Conectando ao Stripe...</span>
+                      <span>Gerando pagamento...</span>
                     </>
                   ) : (
                     <>
-                      <span>Assinar Agora ({activePeriod.label})</span>
+                      <span>Assinar Protocolo</span>
                       <ArrowRight className="w-4 h-4 stroke-[2.5] group-hover:translate-x-1 transition-transform" />
                     </>
                   )}
                 </button>
                 <p className="text-[10px] text-center text-[#9B9BA1] mt-2">
-                  Liberação automática instantânea • 7 dias de garantia
+                  Checkout seguro Stripe • {pricing.label} ({pricing.monthlyPrice}/mês)
                 </p>
               </div>
             </div>

@@ -45,6 +45,10 @@ export const CheckoutView: React.FC = () => {
       const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: null }));
       const user = authData?.user;
 
+      const origin = typeof window !== "undefined" && window.location.origin
+        ? window.location.origin
+        : "https://vyratraining.com";
+
       // 2. Chamar endpoint da API para gerar checkout do Stripe
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
@@ -55,8 +59,8 @@ export const CheckoutView: React.FC = () => {
           recurrence: targetSlug === "reset12" ? "single" : "monthly",
           userId: user?.id,
           userEmail: user?.email || currentUserEmail,
-          successUrl: "https://vyratraining.com?payment=success",
-          cancelUrl: "https://vyratraining.com?payment=cancel",
+          successUrl: `${origin}/sucesso?session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${origin}/protocolos`,
         }),
       });
 

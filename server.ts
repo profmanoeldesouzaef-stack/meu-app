@@ -3497,10 +3497,10 @@ api.post(["/create-checkout-session", "/api/create-checkout-session"], async (re
     const sessionMode = isOneTime ? "payment" : "subscription";
 
     // URLs oficiais solicitadas
-    const officialSuccessUrl = successUrl || "https://vyratraining.com?payment=success";
-    const officialCancelUrl = cancelUrl || "https://vyratraining.com?payment=cancel";
+    const officialSuccessUrl = successUrl || (process.env.APP_URL ? `${process.env.APP_URL}/sucesso?session_id={CHECKOUT_SESSION_ID}` : "https://vyratraining.com/sucesso?session_id={CHECKOUT_SESSION_ID}");
+    const officialCancelUrl = cancelUrl || (process.env.APP_URL ? `${process.env.APP_URL}/protocolos` : "https://vyratraining.com/protocolos");
 
-    const targetUrlFallback = `https://vyratraining.com?plan=${encodeURIComponent(resolvedPlanSlug)}&priceId=${encodeURIComponent(effectivePriceId)}&cycle=${encodeURIComponent(resolvedRecurrence)}${userEmail ? `&email=${encodeURIComponent(userEmail)}` : ""}${userId ? `&uid=${encodeURIComponent(userId)}` : ""}`;
+    const targetUrlFallback = `https://vyratraining.com/protocolos?plan=${encodeURIComponent(resolvedPlanSlug)}&priceId=${encodeURIComponent(effectivePriceId)}&cycle=${encodeURIComponent(resolvedRecurrence)}${userEmail ? `&email=${encodeURIComponent(userEmail)}` : ""}${userId ? `&uid=${encodeURIComponent(userId)}` : ""}`;
 
     if (process.env.STRIPE_SECRET_KEY) {
       try {

@@ -525,7 +525,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const [anamnesisDone, setAnamnesisDoneState] = useState(false);
   const [photosDone, setPhotosDoneState] = useState(false);
   const [subscription, setSubscriptionState] = useState<Subscription>({ active: false });
-  const [activeView, setActiveView] = useState<ActiveView>("home");
+  const [activeView, setActiveView] = useState<ActiveView>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const path = window.location.pathname.toLowerCase();
+        const search = window.location.search.toLowerCase();
+        if (path.includes("/protocolos") || search.includes("view=protocolos") || search.includes("view=paywall")) {
+          return "paywall";
+        }
+        if (path.includes("/sucesso") || search.includes("payment=success")) {
+          return "home";
+        }
+      }
+    } catch {}
+    return "home";
+  });
   const [selectedPlan, setSelectedPlan] = useState<{ plan: Plan; cycle: BillingCycle } | null>(null);
 
   const [onboardingCompleted, setOnboardingCompletedState] = useState<boolean>(() => {
