@@ -505,7 +505,9 @@ const dict = {
 
 const AppContext = createContext<AppContextType | null>(null);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<any | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
@@ -811,7 +813,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const hasVipChatColors = consecutiveMonths >= 5 || vipChatUnlocked;
 
-  // User email & registered roles state (sem e-mail pré-definido)
+  // User email & registered roles state
   const [currentUserEmail, setCurrentUserEmailState] = useState<string>(() => {
     try {
       return localStorage.getItem("vyra_current_user_email") || "";
@@ -821,16 +823,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
   const [currentUserName, setCurrentUserNameState] = useState<string>(() => {
     try {
-      return localStorage.getItem("vyra_user_name") || "";
+      return localStorage.getItem("vyra_user_name") || "Aluno Vyra";
     } catch {
-      return "";
+      return "Aluno Vyra";
     }
   });
   const [currentUserNickname, setCurrentUserNicknameState] = useState<string>(() => {
     try {
-      return localStorage.getItem("vyra_user_nickname") || "";
+      return localStorage.getItem("vyra_user_nickname") || "Aluno";
     } catch {
-      return "";
+      return "Aluno";
     }
   });
   const [registeredModerators, setRegisteredModerators] = useState<string[]>([

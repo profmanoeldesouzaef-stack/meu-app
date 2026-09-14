@@ -4,7 +4,6 @@ import { AppProvider, useApp } from "./context/AppContext";
 import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
 import { NotificationBanner } from "./components/NotificationBanner";
-import { LoginModal } from "./components/LoginModal";
 import { MilestoneCelebrationModal } from "./components/MilestoneCelebrationModal";
 import { ChatColorPickerModal } from "./components/ChatColorPickerModal";
 import { HomeView } from "./views/HomeView";
@@ -23,10 +22,12 @@ import { FormCheckerModal } from "./views/FormCheckerModal";
 import { PhotoGalleryView } from "./views/PhotoGalleryView";
 import { GaleriaView } from "./views/GaleriaView";
 import { WorkoutCompletionView } from "./views/WorkoutCompletionView";
+import { LoginModal } from "./components/LoginModal";
 
 // Componente principal de aluno/painel
-export const MainDashboard: React.FC<{ user?: any }> = () => {
+export const MainDashboard: React.FC<{ user?: any }> = ({ user }) => {
   const {
+    user: contextUser,
     activeView,
     theme,
     persona,
@@ -38,6 +39,8 @@ export const MainDashboard: React.FC<{ user?: any }> = () => {
   } = useApp();
   const [formCheckerExercise, setFormCheckerExercise] = useState<string | null>(null);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState<boolean>(false);
+
+  const currentUser = user || contextUser;
 
   return (
     <div
@@ -97,7 +100,7 @@ export const MainDashboard: React.FC<{ user?: any }> = () => {
         currentNameColor={chatNameColor}
         currentTextColor={chatTextColor}
         onSave={(nameColor, textColor) => setChatColors(nameColor, textColor)}
-        authorName={persona === "coach" ? "Coach Mari" : "Rafael Costa"}
+        authorName={persona === "coach" ? "Coach Mari" : (currentUser?.user_metadata?.full_name || "Aluno Vyra")}
       />
     </div>
   );
@@ -109,12 +112,18 @@ export function App() {
 
   useEffect(() => {
     // 1. Pega a sessão inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.warn("Erro ao obter sessão:", err);
+        setLoading(false);
+      });
 
-    // 2. Escuta mudanças de sessão em tempo real (incluindo o retorno do Google OAuth)
+    // 2. Escuta mudanças de sessão em tempo real (incluindo login e logout)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, currentSession) => {
@@ -125,7 +134,7 @@ export function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Tela de carregamento enquanto o Supabase processa a URL/token
+  // Tela de sincronização enquanto o Supabase processa a URL/token
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-950 text-orange-500 font-semibold">
@@ -134,7 +143,7 @@ export function App() {
     );
   }
 
-  // SE TIVER SESSÃO: vai direto para a tela do app / dashboard
+  // Se houver sessão ativa: renderiza a área interna do app
   if (session?.user) {
     return (
       <AppProvider>
@@ -143,7 +152,7 @@ export function App() {
     );
   }
 
-  // SE NÃO TIVER SESSÃO: exibe a tela de login
+  // Se não houver sessão ativa: renderiza a tela de login tradicional
   return <LoginModal />;
 }
 
