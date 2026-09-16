@@ -18,19 +18,22 @@ import {
   Lock,
   Sparkles,
   Calendar,
+  Tag,
+  FlaskConical,
 } from "lucide-react";
 
 import { STRIPE_LINKS } from "../config/stripeLinks";
 import { STRIPE_PRICES, STRIPE_PAYMENT_LINKS, PAYMENT_LINKS } from "../config/stripePrices";
 
-export type RecurrenceKey = "monthly" | "quarterly" | "semiannual" | "annual";
-export type PortugueseCycle = "mensal" | "trimestral" | "semestral" | "anual";
+export type RecurrenceKey = "monthly" | "quarterly" | "semiannual" | "annual" | "test";
+export type PortugueseCycle = "mensal" | "trimestral" | "semestral" | "anual" | "teste";
 
 export const CYCLE_TO_PT: Record<RecurrenceKey, PortugueseCycle> = {
   monthly: "mensal",
   quarterly: "trimestral",
   semiannual: "semestral",
   annual: "anual",
+  test: "teste",
 };
 
 export const CYCLE_LABELS: Record<RecurrenceKey, string> = {
@@ -38,6 +41,7 @@ export const CYCLE_LABELS: Record<RecurrenceKey, string> = {
   quarterly: "Trimestral",
   semiannual: "Semestral",
   annual: "Anual",
+  test: "Teste (R$ 1,00)",
 };
 
 // Re-exporta a configuração estática centralizada de links
@@ -78,6 +82,32 @@ export const PaywallView: React.FC = () => {
     forge: "quarterly",
   });
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  // Estados do Campo de Cupom de Desconto
+  const [couponInputs, setCouponInputs] = useState<Record<string, string>>({});
+  const [appliedCoupons, setAppliedCoupons] = useState<Record<string, string>>({});
+  const [couponFeedback, setCouponFeedback] = useState<Record<string, string>>({});
+
+  const handleCouponChange = (cardKey: string, val: string) => {
+    setCouponInputs((prev) => ({ ...prev, [cardKey]: val.toUpperCase() }));
+    if (!val.trim()) {
+      setAppliedCoupons((prev) => {
+        const next = { ...prev };
+        delete next[cardKey];
+        return next;
+      });
+    }
+  };
+
+  const handleApplyCoupon = (cardKey: string) => {
+    const code = (couponInputs[cardKey] || "").trim().toUpperCase();
+    if (!code) {
+      setCouponFeedback((prev) => ({ ...prev, [cardKey]: "Digite um cupom válido." }));
+      return;
+    }
+    setAppliedCoupons((prev) => ({ ...prev, [cardKey]: code }));
+    setCouponFeedback((prev) => ({ ...prev, [cardKey]: `Cupom ${code} aplicado com sucesso!` }));
+  };
 
   // Carrega planos adicionais da API se disponíveis
   useEffect(() => {
@@ -197,33 +227,44 @@ export const PaywallView: React.FC = () => {
     setCheckoutError(null);
     const normalizedSlug = protocolSlug === "force" ? "forge" : protocolSlug;
 
-    let targetUrl: string;
+    let checkoutUrl: string;
 
     // Card Reset 12: ao clicar em "Garantir Vaga no Ciclo", execute: window.location.href = STRIPE_PAYMENT_LINKS.reset12;
     if (normalizedSlug === "reset12") {
-      targetUrl = STRIPE_PAYMENT_LINKS.reset12;
+      checkoutUrl = STRIPE_PAYMENT_LINKS.reset12;
     } else {
-      // Cards Vyra Shape & Vyra Forge: ao clicar em "Assinar Protocolo", pegue a periodicidade selecionada no seletor interno do card (mensal, trimestral, semestral ou anual) e execute: window.location.href = STRIPE_PAYMENT_LINKS[periodoSelecionado];
+      // Cards Vyra Shape & Vyra Forge: ao clicar em "Assinar Protocolo", pegue a periodicidade selecionada no seletor interno do card
       const chosenCycle = selectedCycles[protocolSlug] || "quarterly";
-      const periodoSelecionado = CYCLE_TO_PT[chosenCycle] || "trimestral";
-      targetUrl = STRIPE_PAYMENT_LINKS[periodoSelecionado];
+      if (chosenCycle === "test") {
+        checkoutUrl = STRIPE_PAYMENT_LINKS.teste;
+      } else {
+        const periodoSelecionado = CYCLE_TO_PT[chosenCycle] || "trimestral";
+        checkoutUrl = (STRIPE_PAYMENT_LINKS as any)[periodoSelecionado] || STRIPE_PAYMENT_LINKS.trimestral;
+      }
     }
 
-    if (targetUrl) {
-      let finalUrl = targetUrl;
+    if (checkoutUrl) {
+      // Captura o texto digitado no campo de cupom
+      const cupomDigitado = (couponInputs[protocolSlug] || appliedCoupons[protocolSlug] || "").trim();
+      if (cupomDigitado) {
+        const separator = checkoutUrl.includes("?") ? "&" : "?";
+        checkoutUrl += `${separator}prefilled_promo_code=${encodeURIComponent(cupomDigitado.toUpperCase())}`;
+      }
+
+      // Prefill email e referência do usuário se disponíveis
       try {
         const emailToPrefill = user?.email || currentUserEmail;
-        if (emailToPrefill && finalUrl.includes("buy.stripe.com")) {
-          const separator = finalUrl.includes("?") ? "&" : "?";
-          finalUrl = `${finalUrl}${separator}prefilled_email=${encodeURIComponent(emailToPrefill)}`;
+        if (emailToPrefill && checkoutUrl.includes("buy.stripe.com")) {
+          const separator = checkoutUrl.includes("?") ? "&" : "?";
+          checkoutUrl += `${separator}prefilled_email=${encodeURIComponent(emailToPrefill)}`;
           if (user?.id) {
-            finalUrl = `${finalUrl}&client_reference_id=${encodeURIComponent(user.id)}`;
+            checkoutUrl += `&client_reference_id=${encodeURIComponent(user.id)}`;
           }
         }
       } catch {}
 
       if (typeof window !== "undefined") {
-        window.location.href = finalUrl;
+        window.location.href = checkoutUrl;
       }
     }
   };
@@ -378,6 +419,32 @@ export const PaywallView: React.FC = () => {
                         );
                       })}
                     </div>
+
+                    {/* Opção / Aba de Teste (R$ 1,00) */}
+                    <button
+                      type="button"
+                      id={`card-${protocol.slug}-period-test-btn`}
+                      onClick={() => handleSelectCycle(protocol.slug, "test")}
+                      className={`w-full mt-2 py-1.5 px-3 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center justify-between border ${
+                        currentCycle === "test"
+                          ? "border-amber-400 bg-amber-400/15 text-amber-300 shadow-sm"
+                          : "border-zinc-800/80 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 hover:border-zinc-700"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <FlaskConical className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Teste (R$ 1,00)</span>
+                      </span>
+                      <span
+                        className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
+                          currentCycle === "test"
+                            ? "bg-amber-400 text-zinc-950 font-extrabold"
+                            : "bg-amber-400/15 text-amber-400 border border-amber-400/30"
+                        }`}
+                      >
+                        R$ 1,00
+                      </span>
+                    </button>
                   </div>
                 )}
 
@@ -400,17 +467,35 @@ export const PaywallView: React.FC = () => {
                       Pagamento único • 12 semanas de acompanhamento
                     </p>
                   </div>
+                ) : currentCycle === "test" ? (
+                  <div className="pt-3 pb-2 border-t border-[#2B2B2F]/80">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl sm:text-4xl font-black text-amber-400 tracking-tight">
+                          R$ 1,00
+                        </span>
+                      </div>
+
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+                        MODO TESTE
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-zinc-400 mt-1 font-medium">
+                      Ambiente de teste • Cobrança simbólica de R$ 1,00 via Stripe
+                    </p>
+                  </div>
                 ) : (
                   <div className="pt-3 pb-2 border-t border-[#2B2B2F]/80">
                     <div className="flex items-baseline justify-between gap-2">
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-3xl sm:text-4xl font-black text-[#F5F5F7] tracking-tight">
-                          {priceData.valorMensal}
+                          {priceData?.valorMensal || "R$ 166,63"}
                         </span>
                         <span className="text-xs font-semibold text-[#9B9BA1]">/mês</span>
                       </div>
 
-                      {priceData.desconto && (
+                      {priceData?.desconto && (
                         <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
                           {priceData.desconto}
                         </span>
@@ -418,7 +503,7 @@ export const PaywallView: React.FC = () => {
                     </div>
 
                     <p className="text-[11px] text-zinc-400 mt-1 font-medium">
-                      {priceData.faturamento}
+                      {priceData?.faturamento || "Faturado a cada 3 meses"}
                     </p>
                   </div>
                 )}
@@ -441,8 +526,53 @@ export const PaywallView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Componente de Cupom de Desconto */}
+              <div className="pt-4 pb-1 border-t border-[#2B2B2F]/40 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor={`coupon-input-${protocol.slug}`}
+                    className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5"
+                  >
+                    <Tag className="w-3 h-3 text-[#D8B46A]" />
+                    <span>Código de Cupom</span>
+                  </label>
+                  {appliedCoupons[protocol.slug] && (
+                    <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      APLICADO
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    id={`coupon-input-${protocol.slug}`}
+                    value={couponInputs[protocol.slug] ?? ""}
+                    onChange={(e) => handleCouponChange(protocol.slug, e.target.value)}
+                    placeholder="CÓDIGO DE CUPOM"
+                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white uppercase placeholder:uppercase placeholder:text-zinc-600 focus:outline-none focus:border-[#D8B46A] focus:ring-1 focus:ring-[#D8B46A] font-mono tracking-wider transition-colors"
+                  />
+                  <button
+                    type="button"
+                    id={`coupon-apply-btn-${protocol.slug}`}
+                    onClick={() => handleApplyCoupon(protocol.slug)}
+                    className="px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white border border-zinc-700 transition-colors cursor-pointer shrink-0"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+                {couponFeedback[protocol.slug] && (
+                  <p className={`text-[10px] font-medium ${
+                    couponFeedback[protocol.slug].includes("sucesso") || couponFeedback[protocol.slug].includes("aplicado")
+                      ? "text-emerald-400"
+                      : "text-amber-400"
+                  }`}>
+                    {couponFeedback[protocol.slug]}
+                  </p>
+                )}
+              </div>
+
               {/* Botão de Ação: "Garantir Vaga no Ciclo" para Reset 12 OU "Assinar Protocolo" para planos recorrentes */}
-              <div className="pt-6 mt-4 border-t border-[#2B2B2F]/40">
+              <div className="pt-2 mt-2 border-t border-[#2B2B2F]/40">
                 <button
                   id={`btn-subscribe-protocol-${protocol.slug}`}
                   type="button"
@@ -470,7 +600,9 @@ export const PaywallView: React.FC = () => {
                 <p className="text-[10px] text-center text-[#9B9BA1] mt-2">
                   {protocol.isClosedCycle
                     ? "Checkout seguro Stripe • 12 semanas de acompanhamento"
-                    : `Checkout seguro Stripe • ${CYCLE_LABELS[currentCycle]} (${priceData.valorMensal}/mês)`}
+                    : currentCycle === "test"
+                    ? "Checkout seguro Stripe • Teste (R$ 1,00)"
+                    : `Checkout seguro Stripe • ${CYCLE_LABELS[currentCycle]} (${priceData?.valorMensal || "R$ 166,63"}/mês)`}
                 </p>
               </div>
             </div>

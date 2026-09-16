@@ -1,7 +1,7 @@
 // src/config/stripePrices.ts
 
 export const STRIPE_PAYMENT_LINKS = {
-  // Assinaturas Recorrentes (Vyra Shape & Vyra Forge)
+  // Assinaturas Recorrentes Oficiais
   mensal: 'https://buy.stripe.com/test_5kQfZh9ZiaXveHNayk04801',      // R$ 179,90/mês
   trimestral: 'https://buy.stripe.com/test_4gM8wP7Ra5Db2Z56i404803',  // R$ 499,90 (3 meses)
   semestral: 'https://buy.stripe.com/test_cNi28r4EYd5DarxeOA04804',   // R$ 899,90 (6 meses)
@@ -9,6 +9,10 @@ export const STRIPE_PAYMENT_LINKS = {
 
   // Protocolo Intensivo Fechado
   reset12: 'https://buy.stripe.com/test_3cI00j7RaghP4399ug04800',     // R$ 479,90
+
+  // Modo Teste (Vyra Forge / Shape - R$ 1,00)
+  // price_1UCUoSF7VqDt14kNlN81QRA1
+  teste: 'https://buy.stripe.com/test_9B68wP1sM5DbgPV9ug04805',       // R$ 1,00
 };
 
 export const STRIPE_PRICES = {
@@ -46,6 +50,14 @@ export const STRIPE_PRICES = {
       desconto: '19% OFF',
       link: STRIPE_PAYMENT_LINKS.anual,
     },
+    teste: {
+      id: 'price_1UCUoSF7VqDt14kNlN81QRA1',
+      valorMensal: 'R$ 1,00',
+      total: 'R$ 1,00',
+      faturamento: 'Ambiente de teste • Cobrança simbólica de R$ 1,00',
+      desconto: 'TESTE',
+      link: STRIPE_PAYMENT_LINKS.teste,
+    },
   },
 
   // Protocolo Intensivo Fechado (Reset 12)
@@ -57,7 +69,7 @@ export const STRIPE_PRICES = {
   },
 
   // ID de Teste
-  teste: 'to_1UCUp1F7VqDt14kNn5tQetgc',
+  teste: 'price_1UCUoSF7VqDt14kNlN81QRA1',
 };
 
 // Mapa por Price ID para compatibilidade
@@ -67,6 +79,7 @@ export const PAYMENT_LINKS: Record<string, string> = {
   'price_1U9FMDF7VqDt14kNRVRuJWd0': STRIPE_PAYMENT_LINKS.semestral,
   'price_1U9FMDF7VqDt14kNu6fxBRkh': STRIPE_PAYMENT_LINKS.anual,
   'price_1UDGQQF7VqDt14kNHfhR3RlZ': STRIPE_PAYMENT_LINKS.reset12,
+  'price_1UCUoSF7VqDt14kNlN81QRA1': STRIPE_PAYMENT_LINKS.teste,
 };
 
 export const handleCheckout = (priceIdOrPeriod: string, userEmail?: string) => {
