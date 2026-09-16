@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { Linking } from "react-native";
 import { useApp } from "../context/AppContext";
 import { supabase } from "../lib/supabase";
+import { STRIPE_LINKS } from "../config/stripeLinks";
+import { STRIPE_PRICES } from "../config/stripePrices";
 import {
   ShieldCheck,
   ArrowLeft,
@@ -25,66 +27,53 @@ export const CheckoutView: React.FC = () => {
   const plan = selectedPlan?.plan;
 
   const STRIPE_PRICES_MAP: Record<string, string> = {
-    reset12: "price_1UDGQQF7VqDt14kNHfhR3RlZ",
-    monthly: "price_1U9FMDF7VqDt14kN3LneAWDA",
-    quarterly: "price_1U9FMDF7VqDt14kNZhtT1hIO",
-    semiannual: "price_1U9FMDF7VqDt14kNRVRuJWd0",
-    annual: "price_1U9FMDF7VqDt14kNu6fxBRkh",
+    reset12: STRIPE_PRICES.reset12.id,
+    monthly: STRIPE_PRICES.assinaturas.mensal.id,
+    quarterly: STRIPE_PRICES.assinaturas.trimestral.id,
+    semiannual: STRIPE_PRICES.assinaturas.semestral.id,
+    annual: STRIPE_PRICES.assinaturas.anual.id,
     test: "price_1UCUo4F7VqDt14kNAJolBpkp",
   };
 
-  const handleSubscribeExternal = async (planSlug?: string) => {
+  const handleSubscribeExternal = (planSlug?: string) => {
+    const targetSlug = planSlug || plan?.slug || "monthly";
+
+    let targetUrl = "#";
+
+    if (targetSlug === "reset12") {
+      targetUrl = STRIPE_LINKS.reset12?.unico || "#";
+    } else {
+      const linkKey =
+        targetSlug === "quarterly" ? "trimestral" :
+        targetSlug === "semiannual" ? "semestral" :
+        targetSlug === "annual" ? "anual" : "mensal";
+
+      // Suporta Shape e Forge a partir da config estática
+      targetUrl =
+        (STRIPE_LINKS.shape as any)[linkKey] ||
+        (STRIPE_LINKS.forge as any)[linkKey] ||
+        "#";
+    }
+
+    if (!targetUrl || targetUrl === "#" || targetUrl.includes("...") || !targetUrl.startsWith("http")) {
+      alert("Link de pagamento em configuração");
+      return;
+    }
+
     setLoadingCheckout(true);
-    const targetSlug = planSlug || plan?.slug || "reset12";
-    const selectedPriceId = targetSlug === "reset12"
-      ? STRIPE_PRICES_MAP.reset12
-      : STRIPE_PRICES_MAP.monthly;
-
+    let finalUrl = targetUrl;
     try {
-      // 1. Obter dados do usuário no Supabase
-      const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: null }));
-      const user = authData?.user;
-
-      const origin = typeof window !== "undefined" && window.location.origin
-        ? window.location.origin
-        : "https://vyratraining.com";
-
-      // 2. Chamar endpoint da API para gerar checkout do Stripe
-      const res = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          priceId: selectedPriceId,
-          planSlug: targetSlug,
-          recurrence: targetSlug === "reset12" ? "single" : "monthly",
-          userId: user?.id,
-          userEmail: user?.email || currentUserEmail,
-          successUrl: `${origin}/sucesso?session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: `${origin}/protocolos`,
-        }),
-      });
-
-      const data = await res.json().catch(() => null);
-      const targetUrl =
-        data?.url ||
-        `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&priceId=${encodeURIComponent(selectedPriceId)}${
-          user?.email ? `&email=${encodeURIComponent(user.email)}` : ""
-        }`;
-
-      // 3. Redirecionar imediatamente para a session.url retornada pelo Stripe
-      if (typeof window !== "undefined") {
-        window.location.href = targetUrl;
-      } else if (typeof Linking !== "undefined" && Linking?.openURL) {
-        Linking.openURL(targetUrl);
+      const emailToPrefill = currentUserEmail;
+      if (emailToPrefill && finalUrl.includes("buy.stripe.com")) {
+        const separator = finalUrl.includes("?") ? "&" : "?";
+        finalUrl = `${finalUrl}${separator}prefilled_email=${encodeURIComponent(emailToPrefill)}`;
       }
-    } catch (err) {
-      console.warn("Erro ao redirecionar para o checkout:", err);
-      const fallbackUrl = `https://vyratraining.com?plan=${encodeURIComponent(targetSlug)}&priceId=${encodeURIComponent(selectedPriceId)}`;
-      if (typeof window !== "undefined") {
-        window.location.href = fallbackUrl;
-      }
-    } finally {
-      setTimeout(() => setLoadingCheckout(false), 1200);
+    } catch {}
+
+    if (typeof window !== "undefined") {
+      window.location.href = finalUrl;
+    } else if (typeof Linking !== "undefined" && Linking?.openURL) {
+      Linking.openURL(finalUrl);
     }
   };
 

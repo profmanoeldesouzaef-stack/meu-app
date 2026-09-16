@@ -20,7 +20,29 @@ import {
   Calendar,
 } from "lucide-react";
 
+import { STRIPE_LINKS } from "../config/stripeLinks";
+import { STRIPE_PRICES, STRIPE_PAYMENT_LINKS, PAYMENT_LINKS } from "../config/stripePrices";
+
 export type RecurrenceKey = "monthly" | "quarterly" | "semiannual" | "annual";
+export type PortugueseCycle = "mensal" | "trimestral" | "semestral" | "anual";
+
+export const CYCLE_TO_PT: Record<RecurrenceKey, PortugueseCycle> = {
+  monthly: "mensal",
+  quarterly: "trimestral",
+  semiannual: "semestral",
+  annual: "anual",
+};
+
+export const CYCLE_LABELS: Record<RecurrenceKey, string> = {
+  monthly: "Mensal",
+  quarterly: "Trimestral",
+  semiannual: "Semestral",
+  annual: "Anual",
+};
+
+// Re-exporta a configuração estática centralizada de links
+export const PROTOCOL_PAYMENT_LINKS = STRIPE_LINKS;
+export { STRIPE_PAYMENT_LINKS };
 
 interface ProtocolCardDefinition {
   id: string;
@@ -30,6 +52,13 @@ interface ProtocolCardDefinition {
   isPopular?: boolean;
   accentColor: "blue" | "pink" | "gold";
   description: string;
+  isClosedCycle?: boolean;
+  precoUnico?: {
+    valorVista: string;
+    parcelado?: string;
+    billingNote: string;
+    buttonText: string;
+  };
   perks: string[];
 }
 
@@ -45,9 +74,8 @@ export const PaywallView: React.FC = () => {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [redirectingPlan, setRedirectingPlan] = useState<string | null>(null);
   const [selectedCycles, setSelectedCycles] = useState<Record<string, RecurrenceKey>>({
-    force: "quarterly",
     shape: "quarterly",
-    performance: "quarterly",
+    forge: "quarterly",
   });
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
@@ -63,74 +91,12 @@ export const PaywallView: React.FC = () => {
       .catch((err) => console.warn("Aviso ao carregar planos da API, usando protocolos canônicos:", err));
   }, []);
 
-  // Tabela Oficial de Preços Stripe
-  const PERIODICITY_CONFIG: Record<
-    RecurrenceKey,
-    {
-      label: string;
-      discountText?: string;
-      monthlyPrice: string;
-      totalPrice: string;
-      billingNote: string;
-      stripePriceId: string;
-    }
-  > = {
-    monthly: {
-      label: "Mensal",
-      discountText: undefined,
-      monthlyPrice: "R$ 179,90",
-      totalPrice: "R$ 179,90",
-      billingNote: "Faturado R$ 179,90 mensalmente",
-      stripePriceId: "price_1U9FMDF7VqDt14kN3LneAWDA",
-    },
-    quarterly: {
-      label: "Trimestral",
-      discountText: "Economia de 7%",
-      monthlyPrice: "R$ 166,63",
-      totalPrice: "R$ 499,90",
-      billingNote: "Faturado R$ 499,90 a cada 3 meses",
-      stripePriceId: "price_1U9FMDF7VqDt14kNZhtT1hIO",
-    },
-    semiannual: {
-      label: "Semestral",
-      discountText: "Economia de 17%",
-      monthlyPrice: "R$ 149,98",
-      totalPrice: "R$ 899,90",
-      billingNote: "Faturado R$ 899,90 a cada 6 meses",
-      stripePriceId: "price_1U9FMDF7VqDt14kNRVRuJWd0",
-    },
-    annual: {
-      label: "Anual",
-      discountText: "Economia de 19%",
-      monthlyPrice: "R$ 144,99",
-      totalPrice: "R$ 1.739,90",
-      billingNote: "Faturado R$ 1.739,90 por ano",
-      stripePriceId: "price_1U9FMDF7VqDt14kNu6fxBRkh",
-    },
-  };
-
   // Os 3 protocolos canônicos de alta performance Vyra
   const DEFAULT_PROTOCOLS: ProtocolCardDefinition[] = [
     {
-      id: "protocolo-hipertrofia",
-      slug: "force",
-      name: "Protocolo Hipertrofia",
-      badge: "GANHO DE MASSA & FORÇA",
-      accentColor: "blue",
-      description: "Construção de massa muscular densa, hipertrofia acelerada e progressão planejada de cargas.",
-      perks: [
-        "Acesso integral à biblioteca de treinos de força e hipertrofia",
-        "Periodização científica com sobrecarga progressiva",
-        "Plano nutricional anabólico calibrado para ganho limpo",
-        "Suporte direto e acompanhamento com treinadores",
-        "Análise biomecânica de execuções com IA Vyra",
-        "Comunidade exclusiva e ranking de performance",
-      ],
-    },
-    {
-      id: "protocolo-emagrecimento",
+      id: "protocolo-shape",
       slug: "shape",
-      name: "Protocolo Emagrecimento & Definição",
+      name: "Vyra Shape",
       badge: "DEFINIÇÃO & TONIFICAÇÃO",
       isPopular: true,
       accentColor: "pink",
@@ -145,19 +111,42 @@ export const PaywallView: React.FC = () => {
       ],
     },
     {
-      id: "protocolo-performance",
-      slug: "performance",
-      name: "Protocolo Performance",
-      badge: "ALTA PERFORMANCE & DISCIPLINA",
-      accentColor: "gold",
-      description: "Treinamento avançado para condicionamento de elite, força máxima e transformação corporal profunda.",
+      id: "protocolo-forge",
+      slug: "forge",
+      name: "Vyra Forge",
+      badge: "GANHO DE MASSA & FORÇA",
+      accentColor: "blue",
+      description: "Construção de massa muscular densa, hipertrofia acelerada e progressão planejada de cargas.",
       perks: [
-        "Periodização completa dividida em mesociclos e picos de força",
-        "Técnicas avançadas de intensificação e testes de carga (1RM)",
-        "Plano nutricional dinâmico ajustado aos ciclos de esforço",
-        "Suporte prioritário com equipe técnica de coaches chefes",
-        "Acesso prioritário a desafios, workshops e certificados",
-        "Garantia de evolução constante e métricas detalhadas",
+        "Acesso integral à biblioteca de treinos de força e hipertrofia",
+        "Periodização científica com sobrecarga progressiva",
+        "Plano nutricional anabólico calibrado para ganho limpo",
+        "Suporte direto e acompanhamento com treinadores",
+        "Análise biomecânica de execuções com IA Vyra",
+        "Comunidade exclusiva e ranking de performance",
+      ],
+    },
+    {
+      id: "protocolo-reset12",
+      slug: "reset12",
+      name: "Reset 12",
+      badge: "Ciclo Intensivo 12 Semanas",
+      accentColor: "gold",
+      isClosedCycle: true,
+      precoUnico: {
+        valorVista: STRIPE_PRICES.reset12.valor,
+        parcelado: "à vista ou até 12x",
+        billingNote: "Pagamento único • 12 semanas de acompanhamento",
+        buttonText: "Garantir Vaga no Ciclo",
+      },
+      description: "Reprogramação metabólica profunda, foco absoluto e transformação corporal de curto/médio prazo em 84 dias de acompanhamento diário.",
+      perks: [
+        "Protocolo fechado e intensivo de 12 semanas (84 dias)",
+        "Fase 1: Detox metabólico e quebra de platô",
+        "Fase 2: Aceleração máxima de queima e tônus muscular",
+        "Fase 3: Consolidação e definição estética duradoura",
+        "Plano nutricional progressivo reajustado a cada ciclo",
+        "Check-ins estratégicos para garantir 100% de adesão",
       ],
     },
   ];
@@ -170,7 +159,7 @@ export const PaywallView: React.FC = () => {
       const pSlug = (p.slug || "").toLowerCase();
       if (pSlug === "test") return;
       const alreadyExists = protocolsToRender.some(
-        (dp) => dp.slug === pSlug || (pSlug === "reset12" && dp.slug === "performance")
+        (dp) => dp.slug === pSlug || (pSlug === "force" && dp.slug === "forge") || (pSlug === "performance" && dp.slug === "reset12")
       );
       if (!alreadyExists) {
         protocolsToRender.push({
@@ -197,8 +186,8 @@ export const PaywallView: React.FC = () => {
     }));
   };
 
-  // Fluxo de Pagamento Seguro via Stripe Checkout
-  const handleCheckout = async (e: React.MouseEvent<HTMLButtonElement>, protocolSlug: string) => {
+  // Fluxo de Pagamento Seguro via Stripe (Redirecionamento Direto)
+  const handleCheckout = (e: React.MouseEvent<HTMLButtonElement>, protocolSlug: string) => {
     // 1. Bloqueia explicitamente qualquer recarregamento ou submit de página
     if (e) {
       e.preventDefault();
@@ -206,83 +195,36 @@ export const PaywallView: React.FC = () => {
     }
 
     setCheckoutError(null);
-    setRedirectingPlan(protocolSlug);
+    const normalizedSlug = protocolSlug === "force" ? "forge" : protocolSlug;
 
-    const chosenCycle = selectedCycles[protocolSlug] || "quarterly";
-    const currentPeriodInfo = PERIODICITY_CONFIG[chosenCycle];
-    const targetPriceId = currentPeriodInfo?.stripePriceId;
+    let targetUrl: string;
 
-    // 2. Validação estrita do priceId
-    if (!targetPriceId || !targetPriceId.startsWith("price_")) {
-      const invalidMsg = "ID do preço Stripe inválido para o período selecionado. Por favor, tente novamente.";
-      console.error("[ERRO STRIPE CHECKOUT]:", new Error(invalidMsg), { protocolSlug, chosenCycle, targetPriceId });
-      setCheckoutError(invalidMsg);
-      if (typeof window !== "undefined") {
-        window.alert(invalidMsg);
-      }
-      setRedirectingPlan(null);
-      return;
+    // Card Reset 12: ao clicar em "Garantir Vaga no Ciclo", execute: window.location.href = STRIPE_PAYMENT_LINKS.reset12;
+    if (normalizedSlug === "reset12") {
+      targetUrl = STRIPE_PAYMENT_LINKS.reset12;
+    } else {
+      // Cards Vyra Shape & Vyra Forge: ao clicar em "Assinar Protocolo", pegue a periodicidade selecionada no seletor interno do card (mensal, trimestral, semestral ou anual) e execute: window.location.href = STRIPE_PAYMENT_LINKS[periodoSelecionado];
+      const chosenCycle = selectedCycles[protocolSlug] || "quarterly";
+      const periodoSelecionado = CYCLE_TO_PT[chosenCycle] || "trimestral";
+      targetUrl = STRIPE_PAYMENT_LINKS[periodoSelecionado];
     }
 
-    try {
-      // 3. Vincula o usuário atual
-      let activeUser = user;
-      if (!activeUser) {
-        const { data: authData } = await supabase.auth.getUser().catch(() => ({ data: null }));
-        activeUser = authData?.user;
-      }
+    if (targetUrl) {
+      let finalUrl = targetUrl;
+      try {
+        const emailToPrefill = user?.email || currentUserEmail;
+        if (emailToPrefill && finalUrl.includes("buy.stripe.com")) {
+          const separator = finalUrl.includes("?") ? "&" : "?";
+          finalUrl = `${finalUrl}${separator}prefilled_email=${encodeURIComponent(emailToPrefill)}`;
+          if (user?.id) {
+            finalUrl = `${finalUrl}&client_reference_id=${encodeURIComponent(user.id)}`;
+          }
+        }
+      } catch {}
 
-      const activeUserId = activeUser?.id;
-      const activeUserEmail = activeUser?.email || currentUserEmail || "";
-
-      // 4. Origem e URLs de retorno solicitadas
-      const origin = typeof window !== "undefined" && window.location.origin
-        ? window.location.origin
-        : "https://vyratraining.com";
-
-      const successUrl = `${origin}/sucesso?session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${origin}/protocolos`;
-
-      // 5. Chama endpoint de checkout
-      const res = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          priceId: targetPriceId,
-          planSlug: protocolSlug,
-          recurrence: chosenCycle,
-          userId: activeUserId,
-          userEmail: activeUserEmail,
-          successUrl,
-          cancelUrl,
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.error || `Erro HTTP ${res.status} ao iniciar sessão de checkout`);
-      }
-
-      const data = await res.json().catch(() => null);
-
-      // 6. Se a resposta da API retornar uma URL da Stripe (url), redireciona diretamente
-      if (data?.url) {
-        window.location.href = data.url;
-        return;
-      }
-
-      // Se não houver url válida retornada
-      throw new Error(data?.error || "A Stripe não retornou uma URL de checkout válida.");
-    } catch (err: any) {
-      // 7. Tratamento de erro: NÃO redireciona nem recarrega. Exibe alerta e console.error exato
-      console.error("[ERRO STRIPE CHECKOUT]:", err);
-      const errorMessage = err?.message || "Erro ao iniciar checkout";
-      setCheckoutError(errorMessage);
       if (typeof window !== "undefined") {
-        window.alert(errorMessage);
+        window.location.href = finalUrl;
       }
-    } finally {
-      setRedirectingPlan(null);
     }
   };
 
@@ -358,7 +300,8 @@ export const PaywallView: React.FC = () => {
             : "bg-gradient-to-r from-[#D8B46A] to-[#B38E32] text-[#0A0A0A] hover:brightness-110 shadow-lg shadow-[#D8B46A]/25";
 
           const currentCycle = selectedCycles[protocol.slug] || "quarterly";
-          const pricing = PERIODICITY_CONFIG[currentCycle];
+          const ptKey = CYCLE_TO_PT[currentCycle] || "trimestral";
+          const priceData = STRIPE_PRICES.assinaturas[ptKey];
           const isRedirectingThisCard = redirectingPlan === protocol.slug;
 
           return (
@@ -394,56 +337,91 @@ export const PaywallView: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Seletor de Período Embutido: 4 botões compactos */}
-                <div className="pt-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1.5">
-                    Selecione a Periodicidade:
-                  </span>
-                  <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-zinc-950/80 border border-zinc-800">
-                    {(["monthly", "quarterly", "semiannual", "annual"] as const).map((cycleKey) => {
-                      const isSelected = currentCycle === cycleKey;
-                      const conf = PERIODICITY_CONFIG[cycleKey];
-
-                      return (
-                        <button
-                          key={cycleKey}
-                          type="button"
-                          id={`card-${protocol.slug}-period-${cycleKey}-btn`}
-                          onClick={() => handleSelectCycle(protocol.slug, cycleKey)}
-                          className={`py-2 px-1 text-center rounded-xl text-[11px] transition-all cursor-pointer truncate flex flex-col items-center justify-center ${
-                            isSelected
-                              ? "border border-amber-500 bg-amber-500/10 text-white font-bold shadow-sm"
-                              : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-200 hover:border-zinc-700 font-medium"
-                          }`}
-                        >
-                          <span className="leading-none">{conf.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Preço Dinâmico: Valor mensal em destaque + Subtexto faturamento + Badge economia */}
-                <div className="pt-3 pb-2 border-t border-[#2B2B2F]/80">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl sm:text-4xl font-black text-[#F5F5F7] tracking-tight">
-                        {pricing.monthlyPrice}
+                {/* Seletor de Período Embutido para planos recorrentes OU banner de ciclo fechado para Reset 12 */}
+                {protocol.isClosedCycle ? (
+                  <div className="pt-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90 block mb-1.5 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-[#D8B46A]" />
+                      <span>Formato do Protocolo:</span>
+                    </span>
+                    <div className="p-2.5 rounded-2xl bg-[#D8B46A]/10 border border-[#D8B46A]/30 flex items-center justify-between gap-2">
+                      <span className="text-xs font-black text-[#F5F5F7]">Ciclo Fechado • 12 Semanas (84 Dias)</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/30 shrink-0">
+                        Sem Recorrência
                       </span>
-                      <span className="text-xs font-semibold text-[#9B9BA1]">/mês</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pt-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1.5">
+                      Selecione a Periodicidade:
+                    </span>
+                    <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-zinc-950/80 border border-zinc-800">
+                      {(["monthly", "quarterly", "semiannual", "annual"] as const).map((cycleKey) => {
+                        const isSelected = currentCycle === cycleKey;
+                        const label = CYCLE_LABELS[cycleKey];
+
+                        return (
+                          <button
+                            key={cycleKey}
+                            type="button"
+                            id={`card-${protocol.slug}-period-${cycleKey}-btn`}
+                            onClick={() => handleSelectCycle(protocol.slug, cycleKey)}
+                            className={`py-2 px-1 text-center rounded-xl text-[11px] transition-all cursor-pointer truncate flex flex-col items-center justify-center ${
+                              isSelected
+                                ? "border border-amber-500 bg-amber-500/10 text-white font-bold shadow-sm"
+                                : "bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-200 hover:border-zinc-700 font-medium"
+                            }`}
+                          >
+                            <span className="leading-none">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Preço: Valor Único para Reset 12 OU Preço Dinâmico para planos periódicos */}
+                {protocol.isClosedCycle ? (
+                  <div className="pt-3 pb-2 border-t border-[#2B2B2F]/80">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl sm:text-4xl font-black text-[#F5F5F7] tracking-tight">
+                          {STRIPE_PRICES.reset12.valor}
+                        </span>
+                      </div>
+
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+                        Ciclo Fechado
+                      </span>
                     </div>
 
-                    {pricing.discountText && (
-                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                        {pricing.discountText}
-                      </span>
-                    )}
+                    <p className="text-[11px] text-zinc-400 mt-1 font-medium">
+                      Pagamento único • 12 semanas de acompanhamento
+                    </p>
                   </div>
+                ) : (
+                  <div className="pt-3 pb-2 border-t border-[#2B2B2F]/80">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl sm:text-4xl font-black text-[#F5F5F7] tracking-tight">
+                          {priceData.valorMensal}
+                        </span>
+                        <span className="text-xs font-semibold text-[#9B9BA1]">/mês</span>
+                      </div>
 
-                  <p className="text-[11px] text-zinc-400 mt-1 font-medium">
-                    {pricing.billingNote}
-                  </p>
-                </div>
+                      {priceData.desconto && (
+                        <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                          {priceData.desconto}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-zinc-400 mt-1 font-medium">
+                      {priceData.faturamento}
+                    </p>
+                  </div>
+                )}
 
                 {/* Lista de Benefícios com ícones de verificação */}
                 <div className="space-y-2 pt-2 border-t border-[#2B2B2F]/60">
@@ -463,7 +441,7 @@ export const PaywallView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Botão de Ação: "Assinar Protocolo" */}
+              {/* Botão de Ação: "Garantir Vaga no Ciclo" para Reset 12 OU "Assinar Protocolo" para planos recorrentes */}
               <div className="pt-6 mt-4 border-t border-[#2B2B2F]/40">
                 <button
                   id={`btn-subscribe-protocol-${protocol.slug}`}
@@ -477,6 +455,11 @@ export const PaywallView: React.FC = () => {
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Gerando pagamento...</span>
                     </>
+                  ) : protocol.isClosedCycle ? (
+                    <>
+                      <span>Garantir Vaga no Ciclo</span>
+                      <ArrowRight className="w-4 h-4 stroke-[2.5] group-hover:translate-x-1 transition-transform" />
+                    </>
                   ) : (
                     <>
                       <span>Assinar Protocolo</span>
@@ -485,7 +468,9 @@ export const PaywallView: React.FC = () => {
                   )}
                 </button>
                 <p className="text-[10px] text-center text-[#9B9BA1] mt-2">
-                  Checkout seguro Stripe • {pricing.label} ({pricing.monthlyPrice}/mês)
+                  {protocol.isClosedCycle
+                    ? "Checkout seguro Stripe • 12 semanas de acompanhamento"
+                    : `Checkout seguro Stripe • ${CYCLE_LABELS[currentCycle]} (${priceData.valorMensal}/mês)`}
                 </p>
               </div>
             </div>
