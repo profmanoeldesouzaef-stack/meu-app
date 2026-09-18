@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { Coach } from "../types";
 import {
   Shield,
+  User,
   Plus,
   Check,
   UserCheck,
@@ -26,6 +27,7 @@ export const ModeratorView: React.FC = () => {
     addModeratorEmail,
     loginWithEmail,
     setActiveView,
+    setPersona,
   } = useApp();
 
   const [coaches, setCoaches] = useState<Coach[]>([]);
@@ -142,18 +144,50 @@ export const ModeratorView: React.FC = () => {
           </p>
         </div>
 
-        {/* Current Moderator Badge */}
-        <div className="px-4 py-2.5 rounded-2xl bg-[#151515] border border-[#2B2B2F] flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-[#6D9BFF]/20 text-[#6D9BFF] flex items-center justify-center">
-            <Shield className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-[#9B9BA1] uppercase block">
-              Moderador Conectado
-            </span>
-            <span className="text-xs font-bold text-[#F5F5F7]">
-              {currentUserEmail}
-            </span>
+        {/* Actions & Current Moderator Badge */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Botão de Troca Rápida para Área do Aluno */}
+          <button
+            id="mod-header-switch-aluno-btn"
+            type="button"
+            onClick={() => {
+              setPersona("student");
+              setActiveView("home");
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#FF6A2A] transition-all cursor-pointer shadow-sm"
+            title="Acessar a Área do Aluno (Treinos, Dieta e Início)"
+          >
+            <User className="w-3.5 h-3.5 text-[#FF6A2A]" />
+            <span>Área do Aluno</span>
+          </button>
+
+          {/* Botão de Troca Rápida para Painel do Coach */}
+          <button
+            id="mod-header-switch-coach-btn"
+            type="button"
+            onClick={() => {
+              setPersona("coach");
+              setActiveView("coach");
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#D8B46A] transition-all cursor-pointer shadow-sm"
+            title="Acessar o Painel do Coach"
+          >
+            <UserCheck className="w-3.5 h-3.5 text-[#D8B46A]" />
+            <span>Painel do Coach</span>
+          </button>
+
+          <div className="px-4 py-2 rounded-2xl bg-[#151515] border border-[#2B2B2F] flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-xl bg-[#6D9BFF]/20 text-[#6D9BFF] flex items-center justify-center">
+              <Shield className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <span className="text-[9px] font-bold text-[#9B9BA1] uppercase block">
+                Moderador
+              </span>
+              <span className="text-xs font-bold text-[#F5F5F7]">
+                {currentUserEmail}
+              </span>
+            </div>
           </div>
         </div>
       </div>

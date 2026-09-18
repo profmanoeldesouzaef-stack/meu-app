@@ -42,11 +42,13 @@ import {
 } from "lucide-react";
 import { SavedCardsModal } from "../components/SavedCardsModal";
 import { CoachFinancialModal, CoachStudentsModal } from "../components/CoachModals";
+import { compressImage } from "../utils/imageCompressor";
 
 export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOpenColorPicker }) => {
   const {
     t,
     persona,
+    setPersona,
     lang,
     setLang,
     theme,
@@ -114,6 +116,9 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const [photoFront, setPhotoFront] = useState<string>("");
   const [photoSide, setPhotoSide] = useState<string>("");
   const [photoBack, setPhotoBack] = useState<string>("");
+  const [photoFrontBlob, setPhotoFrontBlob] = useState<Blob | null>(null);
+  const [photoSideBlob, setPhotoSideBlob] = useState<Blob | null>(null);
+  const [photoBackBlob, setPhotoBackBlob] = useState<Blob | null>(null);
 
   // Protocols Catalogue
   const PROTOCOLS = [
@@ -466,18 +471,34 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
     }
   };
 
-  const handleSlotUpload = (slot: "front" | "side" | "back", e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSlotUpload = async (slot: "front" | "side" | "back", e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          if (slot === "front") setPhotoFront(reader.result);
-          if (slot === "side") setPhotoSide(reader.result);
-          if (slot === "back") setPhotoBack(reader.result);
+      try {
+        // Pré-compressão imediata no upload para otimização de render e economia de memória
+        const { blob, dataUrl } = await compressImage(file, 1280, 1280, 0.82);
+        if (slot === "front") {
+          setPhotoFront(dataUrl);
+          setPhotoFrontBlob(blob);
+        } else if (slot === "side") {
+          setPhotoSide(dataUrl);
+          setPhotoSideBlob(blob);
+        } else if (slot === "back") {
+          setPhotoBack(dataUrl);
+          setPhotoBackBlob(blob);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.warn("[AVALIAÇÃO] Erro na pré-compressão da foto:", err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") {
+            if (slot === "front") setPhotoFront(reader.result);
+            if (slot === "side") setPhotoSide(reader.result);
+            if (slot === "back") setPhotoBack(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -491,29 +512,176 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
     const chestVal = chestCm !== "" ? parseFloat(chestCm) : null;
     const thighVal = thighCm !== "" ? parseFloat(thighCm) : null;
 
-    const newEntry: any = {
-      id: `ass-${Date.now()}`,
-      date: new Date().toISOString().split("T")[0],
-      photos: [photoFront, photoSide, photoBack].filter(Boolean),
-      photo_front: photoFront || undefined,
-      photo_side: photoSide || undefined,
-      photo_back: photoBack || undefined,
-      notes: assessmentNotes,
-      measurements: {
-        arm_cm: armVal,
-        waist_cm: waistVal,
-        chest_cm: chestVal,
-        thigh_cm: thighVal,
-        weight_kg: weightVal,
-      },
-      coach_feedback: "Atualização do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
-    };
-
-    const existingAssessments = profile?.assessments || [];
-    const updatedAssessments = [newEntry, ...existingAssessments];
+    // 1. Obtenção e validação estrita do user_id da sessão autenticada atual
+    let currentUserId: string | null = null;
+    let currentUserEmail: string | null = null;
 
     try {
-      // 1. Atualização via API
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (!authErr && authData?.user?.id) {
+        currentUserId = authData.user.id;
+        currentUserEmail = authData.user.email || null;
+      } else {
+        const { data: sessionData } = await supabase.auth.getSession();
+        currentUserId = sessionData?.session?.user?.id || null;
+        currentUserEmail = sessionData?.session?.user?.email || null;
+      }
+    } catch (eAuth) {
+      console.warn("[AVALIAÇÃO] Aviso ao verificar sessão:", eAuth);
+    }
+
+    if (!currentUserId) {
+      const authErrorMsg = "Sessão expirada ou não autenticada. Faça login para enviar sua avaliação.";
+      console.error("[AVALIAÇÃO] Usuário não autenticado:", authErrorMsg);
+      setAssessmentFeedback({
+        type: "error",
+        text: authErrorMsg,
+      });
+      setAssessmentSaving(false);
+      return;
+    }
+
+    console.log("[AVALIAÇÃO] Usuário autenticado validado:", currentUserId);
+
+    try {
+      // 2. Upload das 3 fotos no Supabase Storage com compressão garantida
+      console.log('[AVALIAÇÃO] Iniciando upload das fotos...');
+
+      const uploadedUrls: { front?: string; side?: string; back?: string } = {};
+      const slots: Array<{ slot: "front" | "side" | "back"; dataUrl: string; blob: Blob | null }> = [
+        { slot: "front", dataUrl: photoFront, blob: photoFrontBlob },
+        { slot: "side", dataUrl: photoSide, blob: photoSideBlob },
+        { slot: "back", dataUrl: photoBack, blob: photoBackBlob },
+      ];
+
+      for (const item of slots) {
+        if (!item.dataUrl) continue;
+
+        let blobToUpload = item.blob;
+        if (!blobToUpload) {
+          try {
+            const comp = await compressImage(item.dataUrl, 1280, 1280, 0.82);
+            blobToUpload = comp.blob;
+          } catch (cErr) {
+            console.warn(`[AVALIAÇÃO] Falha ao comprimir imagem do slot ${item.slot}:`, cErr);
+            const res = await fetch(item.dataUrl);
+            blobToUpload = await res.blob();
+          }
+        }
+
+        const fileName = `${currentUserId}/${item.slot}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
+        let uploadError: any = null;
+        let finalPublicUrl = "";
+
+        // Tentativa primária no bucket 'assessment_photos'
+        const primaryBucket = "assessment_photos";
+        const { data: upData, error: errPrimary } = await supabase.storage
+          .from(primaryBucket)
+          .upload(fileName, blobToUpload, {
+            contentType: "image/jpeg",
+            upsert: true,
+          });
+
+        if (errPrimary) {
+          // Se o bucket não existir no projeto, tenta fallback para 'challenge_photos'
+          if (errPrimary.message?.includes("Bucket not found") || (errPrimary as any).statusCode === "404" || (errPrimary as any).status === 404) {
+            const fallbackBucket = "challenge_photos";
+            const { data: fbData, error: errFallback } = await supabase.storage
+              .from(fallbackBucket)
+              .upload(fileName, blobToUpload, {
+                contentType: "image/jpeg",
+                upsert: true,
+              });
+
+            if (errFallback) {
+              uploadError = errFallback;
+            } else {
+              const { data: pubUrlData } = supabase.storage
+                .from(fallbackBucket)
+                .getPublicUrl(fbData?.path || fileName);
+              finalPublicUrl = pubUrlData?.publicUrl || "";
+            }
+          } else {
+            uploadError = errPrimary;
+          }
+        } else {
+          const { data: pubUrlData } = supabase.storage
+            .from(primaryBucket)
+            .getPublicUrl(upData?.path || fileName);
+          finalPublicUrl = pubUrlData?.publicUrl || "";
+        }
+
+        if (uploadError) {
+          console.log('[AVALIAÇÃO] Erro foto:', uploadError);
+          const realStorageMsg = uploadError.message || uploadError.error_description || JSON.stringify(uploadError);
+          setAssessmentFeedback({
+            type: "error",
+            text: `Erro no Supabase Storage ao enviar foto (${item.slot}): ${realStorageMsg}`,
+          });
+          setAssessmentSaving(false);
+          return;
+        }
+
+        uploadedUrls[item.slot] = finalPublicUrl || item.dataUrl;
+      }
+
+      // 3. Estruturação dos dados da avaliação
+      const newEntry: any = {
+        id: `ass-${Date.now()}`,
+        date: new Date().toISOString().split("T")[0],
+        photos: [uploadedUrls.front || photoFront, uploadedUrls.side || photoSide, uploadedUrls.back || photoBack].filter(Boolean),
+        photo_front: uploadedUrls.front || photoFront || undefined,
+        photo_side: uploadedUrls.side || photoSide || undefined,
+        photo_back: uploadedUrls.back || photoBack || undefined,
+        notes: assessmentNotes,
+        measurements: {
+          arm_cm: armVal,
+          waist_cm: waistVal,
+          chest_cm: chestVal,
+          thigh_cm: thighVal,
+          weight_kg: weightVal,
+        },
+        coach_feedback: "Atualização do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
+      };
+
+      // 4. Inserção no Supabase (tabela assessments) com user_id da sessão autenticada atual
+      const { error: insertError } = await supabase.from("assessments").insert({
+        user_id: currentUserId,
+        user_email: currentUserEmail,
+        date: newEntry.date,
+        photos: newEntry.photos,
+        photo_front: newEntry.photo_front || null,
+        photo_side: newEntry.photo_side || null,
+        photo_back: newEntry.photo_back || null,
+        measurements: newEntry.measurements,
+        notes: assessmentNotes || null,
+        created_at: new Date().toISOString(),
+      });
+
+      if (insertError) {
+        console.log('[AVALIAÇÃO] Erro insert:', insertError);
+        const realInsertMsg = insertError.message || insertError.details || insertError.hint || JSON.stringify(insertError);
+        setAssessmentFeedback({
+          type: "error",
+          text: `Erro no banco de dados ao salvar avaliação (tabela assessments): ${realInsertMsg}`,
+        });
+        setAssessmentSaving(false);
+        return;
+      }
+
+      // 5. Atualização complementar no banco (profiles) e sincronização local
+      try {
+        await supabase.from("profiles").upsert({
+          id: currentUserId,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (errDb) {
+        console.warn("[AVALIAÇÃO] Aviso ao sincronizar perfil no Supabase:", errDb);
+      }
+
+      const existingAssessments = profile?.assessments || [];
+      const updatedAssessments = [newEntry, ...existingAssessments];
+
       const profilePatch: Record<string, any> = {
         assessments: updatedAssessments,
         last_assessment_date: newEntry.date,
@@ -527,46 +695,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
       const updated = await api.updateProfile(profilePatch);
       setProfile(updated);
 
-      // 2. Insert no Supabase (assessments e sincronização de perimetria em profiles)
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          // Atualiza perfil no Supabase
-          const profileDbUpdate: Record<string, any> = {
-            id: user.id,
-            last_assessment_date: newEntry.date,
-            updated_at: new Date().toISOString(),
-          };
-          if (weightVal !== null) profileDbUpdate.weight_kg = weightVal;
-          if (armVal !== null) profileDbUpdate.arm_cm = armVal;
-          if (waistVal !== null) profileDbUpdate.waist_cm = waistVal;
-          if (chestVal !== null) profileDbUpdate.chest_cm = chestVal;
-          if (thighVal !== null) profileDbUpdate.thigh_cm = thighVal;
-
-          await supabase.from("profiles").upsert(profileDbUpdate);
-
-          // Insere registro na tabela assessments
-          await supabase.from("assessments").insert({
-            user_id: user.id,
-            user_email: user.email,
-            date: newEntry.date,
-            photos: [photoFront, photoSide, photoBack].filter(Boolean),
-            photo_front: photoFront || null,
-            photo_side: photoSide || null,
-            photo_back: photoBack || null,
-            measurements: newEntry.measurements,
-            notes: assessmentNotes,
-            created_at: new Date().toISOString(),
-          });
-        }
-      } catch (errDb) {
-        console.warn("Aviso ao persistir avaliação no Supabase:", errDb);
-      }
-
-      // 3. Feedback visual de sucesso imediato para o aluno
+      // 6. Confirmação de Sucesso
       setAssessmentFeedback({
         type: "success",
-        text: "Ciclo de 20 Dias atualizado! Seus dados foram enviados com sucesso ao Coach.",
+        text: "Ciclo de 20 Dias atualizado! Seus dados e fotos foram enviados com sucesso ao Coach.",
       });
 
       sendNotification(
@@ -575,17 +707,16 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         "coach"
       );
 
-      // Fecha o modal suavemente após exibir o feedback de confirmação
       setTimeout(() => {
         setShowAssessmentModal(false);
         setAssessmentFeedback(null);
         setAssessmentSaving(false);
-      }, 1500);
+      }, 1600);
     } catch (e: any) {
-      console.error("Error saving assessment:", e);
+      console.error("[AVALIAÇÃO] Erro inesperado ao salvar avaliação:", e);
       setAssessmentFeedback({
         type: "error",
-        text: "Não foi possível enviar a avaliação. Tente novamente.",
+        text: e?.message || "Erro inesperado ao enviar avaliação. Tente novamente.",
       });
       setAssessmentSaving(false);
     }
@@ -675,41 +806,101 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           </div>
         </div>
 
-        {/* Atalho Direto ao Painel de Controle */}
-        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#1A1A1E] via-[#151515] to-[#121214] border border-[#2B2B2F] shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div
-              className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${
-                isMod
-                  ? "bg-[#6D9BFF]/15 text-[#6D9BFF] border-[#6D9BFF]/30"
-                  : "bg-[#D8B46A]/15 text-[#D8B46A] border-[#D8B46A]/30"
-              }`}
-            >
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
+        {/* Alternador de Áreas: Aluno, Coach e Moderador */}
+        <div className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-[#D8B46A]" />
               <h3 className="text-sm font-bold text-[#F5F5F7]">
-                {isMod ? "Central de Moderação" : "Painel Central do Coach"}
+                Acessar Outras Áreas da Plataforma
               </h3>
-              <p className="text-xs text-[#9B9BA1] mt-0.5">
-                {isMod
-                  ? "Acesse a moderação de posts, comentários e denúncias da comunidade."
-                  : "Acesse a gestão completa de alunos, treinos, radar e métricas financeiras."}
-              </p>
             </div>
+            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1]">
+              Perfil Atual: {isMod ? "Moderador" : "Coach"}
+            </span>
           </div>
 
-          <button
-            id={isMod ? "goto-moderator-dashboard-btn" : "goto-coach-dashboard-btn"}
-            onClick={() => setActiveView(isMod ? "moderator" : "coach")}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 shadow-lg ${
-              isMod
-                ? "bg-[#6D9BFF] text-white hover:bg-[#5B89EE]"
-                : "bg-gradient-to-r from-[#D8B46A] to-[#B38E32] text-[#0A0A0A] hover:brightness-110"
-            }`}
-          >
-            {isMod ? "Abrir Painel de Moderação" : "Abrir Painel do Coach"}
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            {/* Botão Área do Aluno */}
+            <button
+              id="profile-coach-switch-aluno-btn"
+              type="button"
+              onClick={() => {
+                setPersona("student");
+                setActiveView("home");
+              }}
+              className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-left hover:border-[#FF6A2A]/50 transition-all cursor-pointer flex flex-col justify-between gap-2 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#FF6A2A] uppercase tracking-wider">
+                  Área do Aluno
+                </span>
+                <User className="w-4 h-4 text-[#FF6A2A]" />
+              </div>
+              <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                Ver como aluno: treinos diários, dieta, perimetria e comunidade.
+              </p>
+              <span className="text-[11px] font-bold text-[#FF6A2A] group-hover:translate-x-0.5 transition-transform mt-1 block">
+                Ir para Área do Aluno →
+              </span>
+            </button>
+
+            {/* Botão Painel do Coach */}
+            <button
+              id="profile-coach-switch-coach-btn"
+              type="button"
+              onClick={() => {
+                setPersona("coach");
+                setActiveView("coach");
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
+                !isMod
+                  ? "bg-[#D8B46A]/15 border-[#D8B46A] shadow-md shadow-[#D8B46A]/10"
+                  : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#D8B46A]/50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#D8B46A] uppercase tracking-wider">
+                  Painel do Coach
+                </span>
+                <UserCheck className="w-4 h-4 text-[#D8B46A]" />
+              </div>
+              <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                Prescrição de treinos, ajuste de macros, CRM e inteligência IA.
+              </p>
+              <span className="text-[11px] font-bold text-[#D8B46A] group-hover:translate-x-0.5 transition-transform mt-1 block">
+                {!isMod ? "● Painel Aberto" : "Abrir Painel do Coach →"}
+              </span>
+            </button>
+
+            {/* Botão Moderação */}
+            <button
+              id="profile-coach-switch-mod-btn"
+              type="button"
+              onClick={() => {
+                setPersona("moderator");
+                setActiveView("moderator");
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
+                isMod
+                  ? "bg-[#6D9BFF]/15 border-[#6D9BFF] shadow-md shadow-[#6D9BFF]/10"
+                  : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#6D9BFF]/50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#6D9BFF] uppercase tracking-wider">
+                  Moderação
+                </span>
+                <Shield className="w-4 h-4 text-[#6D9BFF]" />
+              </div>
+              <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                Governança master, credenciamento de novos coaches e segurança.
+              </p>
+              <span className="text-[11px] font-bold text-[#6D9BFF] group-hover:translate-x-0.5 transition-transform mt-1 block">
+                {isMod ? "● Painel Aberto" : "Abrir Moderação →"}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Language & Theme Controls */}
@@ -2003,6 +2194,98 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] hover:border-[#FF6A2A]"
           >
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          </button>
+        </div>
+      </div>
+
+      {/* Alternador de Áreas: Aluno, Coach e Moderador */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck className="w-5 h-5 text-[#D8B46A]" />
+            <h3 className="text-sm font-bold text-[#F5F5F7]">
+              Central de Acesso & Perfis
+            </h3>
+          </div>
+          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#FF6A2A]/20 text-[#FF6A2A] border border-[#FF6A2A]/30">
+            Área do Aluno Ativa
+          </span>
+        </div>
+        <p className="text-xs text-[#9B9BA1]">
+          Alterne instantaneamente para acessar o Painel do Coach ou a Governança de Moderação:
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          {/* Aluno Card */}
+          <button
+            id="profile-student-switch-aluno-btn"
+            type="button"
+            onClick={() => {
+              setPersona("student");
+              setActiveView("home");
+            }}
+            className="p-3.5 rounded-2xl bg-[#FF6A2A]/15 border border-[#FF6A2A] text-left transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-lg shadow-[#FF6A2A]/10"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-[#FF6A2A] uppercase tracking-wider">
+                Área do Aluno
+              </span>
+              <User className="w-4 h-4 text-[#FF6A2A]" />
+            </div>
+            <p className="text-[11px] text-[#9B9BA1] leading-tight">
+              Treinos, dieta flexível, perimetria de 20 dias e fotos.
+            </p>
+            <span className="text-[11px] font-bold text-[#FF6A2A] mt-1 block">
+              ● Você está aqui
+            </span>
+          </button>
+
+          {/* Coach Card */}
+          <button
+            id="profile-student-switch-coach-btn"
+            type="button"
+            onClick={() => {
+              setPersona("coach");
+              setActiveView("coach");
+            }}
+            className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-left hover:border-[#D8B46A]/50 transition-all cursor-pointer flex flex-col justify-between gap-2 group"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-[#D8B46A] uppercase tracking-wider">
+                Painel do Coach
+              </span>
+              <UserCheck className="w-4 h-4 text-[#D8B46A]" />
+            </div>
+            <p className="text-[11px] text-[#9B9BA1] leading-tight">
+              Prescrição de treinos, ajuste de macros, CRM e inteligência IA.
+            </p>
+            <span className="text-[11px] font-bold text-[#D8B46A] group-hover:translate-x-0.5 transition-transform mt-1 block">
+              Abrir Painel do Coach →
+            </span>
+          </button>
+
+          {/* Moderador Card */}
+          <button
+            id="profile-student-switch-mod-btn"
+            type="button"
+            onClick={() => {
+              setPersona("moderator");
+              setActiveView("moderator");
+            }}
+            className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-left hover:border-[#6D9BFF]/50 transition-all cursor-pointer flex flex-col justify-between gap-2 group"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-[#6D9BFF] uppercase tracking-wider">
+                Moderação
+              </span>
+              <Shield className="w-4 h-4 text-[#6D9BFF]" />
+            </div>
+            <p className="text-[11px] text-[#9B9BA1] leading-tight">
+              Credenciamento de treinadores, moderação de posts e segurança.
+            </p>
+            <span className="text-[11px] font-bold text-[#6D9BFF] group-hover:translate-x-0.5 transition-transform mt-1 block">
+              Abrir Moderação →
+            </span>
           </button>
         </div>
       </div>

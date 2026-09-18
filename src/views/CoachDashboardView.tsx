@@ -14,6 +14,8 @@ import {
   Student,
 } from "../types";
 import {
+  User,
+  Shield,
   UserCheck,
   TrendingUp,
   CreditCard,
@@ -72,7 +74,7 @@ import { VeteranBadge } from "../lib/patents";
 import { FinanceCRMTableWeb } from "../components/FinanceCRMTableWeb";
 
 export const CoachDashboardView: React.FC = () => {
-  const { t, lang, currentUserEmail, setInviteData, setActiveView, setVipChatUnlocked } = useApp();
+  const { t, lang, currentUserEmail, setInviteData, setActiveView, setPersona, setVipChatUnlocked } = useApp();
   const [activeTab, setActiveTab] = useState<
     "overview" | "pending_students" | "students_finance" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
   >("overview");
@@ -1109,12 +1111,44 @@ export const CoachDashboardView: React.FC = () => {
           </h1>
         </div>
 
-        {savedSuccess && (
-          <div className="px-4 py-2 rounded-2xl bg-[#34C759]/20 border border-[#34C759] text-[#34C759] text-xs font-extrabold flex items-center gap-2 animate-in zoom-in-95">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>{saveMessage}</span>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {savedSuccess && (
+            <div className="px-4 py-2 rounded-2xl bg-[#34C759]/20 border border-[#34C759] text-[#34C759] text-xs font-extrabold flex items-center gap-2 animate-in zoom-in-95">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{saveMessage}</span>
+            </div>
+          )}
+
+          {/* Botão de Troca Rápida para Área do Aluno */}
+          <button
+            id="coach-header-switch-aluno-btn"
+            type="button"
+            onClick={() => {
+              setPersona("student");
+              setActiveView("home");
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#FF6A2A] transition-all cursor-pointer shadow-sm"
+            title="Acessar a Área do Aluno (Treinos, Dieta e Início)"
+          >
+            <User className="w-3.5 h-3.5 text-[#FF6A2A]" />
+            <span>Área do Aluno</span>
+          </button>
+
+          {/* Botão de Troca Rápida para Moderação */}
+          <button
+            id="coach-header-switch-mod-btn"
+            type="button"
+            onClick={() => {
+              setPersona("moderator");
+              setActiveView("moderator");
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#6D9BFF] transition-all cursor-pointer shadow-sm"
+            title="Acessar o Painel de Moderação"
+          >
+            <Shield className="w-3.5 h-3.5 text-[#6D9BFF]" />
+            <span>Moderação</span>
+          </button>
+        </div>
       </div>
 
       {/* Navigation Tabs */}

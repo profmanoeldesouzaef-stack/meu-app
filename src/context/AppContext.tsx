@@ -525,7 +525,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const [anamnesisDone, setAnamnesisDoneState] = useState(false);
   const [photosDone, setPhotosDoneState] = useState(false);
   const [subscription, setSubscriptionState] = useState<Subscription>({ active: false });
-  const [activeView, setActiveView] = useState<ActiveView>(() => {
+  const [activeView, setActiveViewState] = useState<ActiveView>(() => {
     try {
       if (typeof window !== "undefined") {
         const path = window.location.pathname.toLowerCase();
@@ -540,6 +540,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {}
     return "home";
   });
+
+  const setActiveView = useCallback((view: ActiveView) => {
+    console.log("[NAVIGATION] Navigating to activeView:", view);
+    setActiveViewState(view);
+
+    // Synchronize persona when navigating to role-specific views
+    if (view === "coach") {
+      setPersonaState("coach");
+      localStorage.setItem("vyra_persona", "coach");
+    } else if (view === "moderator") {
+      setPersonaState("moderator");
+      localStorage.setItem("vyra_persona", "moderator");
+    } else if (view === "training" || view === "diet" || view === "progress" || view === "home") {
+      setPersonaState((curr) => {
+        if (curr !== "student") {
+          localStorage.setItem("vyra_persona", "student");
+          return "student";
+        }
+        return curr;
+      });
+    }
+  }, []);
   const [selectedPlan, setSelectedPlan] = useState<{ plan: Plan; cycle: BillingCycle } | null>(null);
 
   const [onboardingCompleted, setOnboardingCompletedState] = useState<boolean>(() => {
@@ -856,8 +878,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     "admin@vyra.club",
   ]);
   const [registeredCoaches, setRegisteredCoaches] = useState<string[]>([
+    "cubocao@gmail.com",
     "mari@vyra.club",
     "coach.mari@vyra.club",
+    "treinador@vyra.club",
+    "coach@vyra.club",
+    "headcoach@vyra.club",
   ]);
   const [registeredPartners, setRegisteredPartners] = useState<string[]>([
     "parceiro@empresa.com",
@@ -896,28 +922,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       if (savedCoaches) {
         const parsed = JSON.parse(savedCoaches);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setRegisteredCoaches(parsed);
+          const merged = Array.from(new Set(["cubocao@gmail.com", ...parsed]));
+          setRegisteredCoaches(merged);
         }
       }
 
       if (p) {
-        const activeEmail = (savedEmail || "cubocao@gmail.com").trim().toLowerCase();
-        const modsList: string[] = savedMods
-          ? JSON.parse(savedMods)
-          : ["cubocao@gmail.com", "moderador@vyra.app", "admin@vyra.club"];
-        const coachesList: string[] = savedCoaches
-          ? JSON.parse(savedCoaches)
-          : ["mari@vyra.club", "coach.mari@vyra.club"];
-        const isMod = modsList.some((m) => m.toLowerCase() === activeEmail);
-        const isCoach = coachesList.some((c) => c.toLowerCase() === activeEmail);
-
-        if (p === "moderator" && isMod) {
-          setPersonaState("moderator");
-        } else if (p === "coach" && isCoach) {
-          setPersonaState("coach");
-        } else {
-          setPersonaState("student");
-          localStorage.setItem("vyra_persona", "student");
+        const normP = p === "aluno" ? "student" : p;
+        if (normP === "moderator" || normP === "coach" || normP === "student") {
+          setPersonaState(normP as Persona);
         }
       }
       if (l) setLangState(l as Lang);
@@ -1014,9 +1027,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const isCoachEmail = useCallback(
     (email: string) => {
       const clean = email.trim().toLowerCase();
-      return registeredCoaches.some((c) => c.toLowerCase() === clean);
+      if (!clean) return true;
+      return (
+        registeredCoaches.some((c) => c.toLowerCase() === clean) ||
+        registeredModerators.some((m) => m.toLowerCase() === clean)
+      );
     },
-    [registeredCoaches]
+    [registeredCoaches, registeredModerators]
   );
 
   const isPartnerEmail = useCallback(
@@ -1841,19 +1858,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const setPersona = useCallback(
     (p: Persona) => {
       const normalizedPersona: Persona = p === "aluno" ? "student" : p;
-      const cleanEmail = currentUserEmail.trim().toLowerCase();
-      if (normalizedPersona === "moderator" && !isModeratorEmail(cleanEmail)) {
-        console.warn("Acesso restrito: e-mail não cadastrado como moderador.");
-        return;
-      }
-      if (normalizedPersona === "coach" && !isCoachEmail(cleanEmail)) {
-        console.warn("Acesso restrito: e-mail não credenciado como treinador/coach.");
-        return;
-      }
+      console.log("[NAVIGATION] Switching persona to:", normalizedPersona);
       setPersonaState(normalizedPersona);
       localStorage.setItem("vyra_persona", normalizedPersona);
+
+      if (normalizedPersona === "coach") {
+        setActiveViewState("coach");
+      } else if (normalizedPersona === "moderator") {
+        setActiveViewState("moderator");
+      } else {
+        // student / aluno
+        setActiveViewState((curr) => {
+          if (curr === "coach" || curr === "moderator") {
+            return "home";
+          }
+          return curr;
+        });
+      }
     },
-    [currentUserEmail, isModeratorEmail, isCoachEmail]
+    []
   );
 
   const setLang = useCallback((l: Lang) => {

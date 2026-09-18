@@ -18,6 +18,7 @@ export const Navigation: React.FC = () => {
   const {
     activeView,
     setActiveView,
+    setPersona,
     t,
     persona,
     subscription,
@@ -30,7 +31,7 @@ export const Navigation: React.FC = () => {
   const isTabLocked = (id: ActiveView) => {
     if (persona !== "student") return false;
     if (id === "training" || id === "diet") {
-      return !subscription.active || !anamnesisDone || !photosDone;
+      return !subscription.active;
     }
     if (id === "challenges") {
       return !subscription.active;
@@ -43,19 +44,46 @@ export const Navigation: React.FC = () => {
     setActiveView("community");
   };
 
+  const handleNavClick = (id: ActiveView) => {
+    console.log("[NAVIGATION] Navigation item clicked:", id);
+    if (id === "community") {
+      handleOpenCommunity();
+      return;
+    }
+    if (id === "home") {
+      setPersona("student");
+      setActiveView("home");
+      return;
+    }
+    if (id === "coach") {
+      setPersona("coach");
+      setActiveView("coach");
+      return;
+    }
+    if (id === "moderator") {
+      setPersona("moderator");
+      setActiveView("moderator");
+      return;
+    }
+    setActiveView(id);
+  };
+
   // Dedicated navigation per role
   const getNavItems = () => {
     if (persona === "coach") {
       return [
         { id: "coach" as ActiveView, label: "Painel do Coach", icon: ShieldCheck },
+        { id: "home" as ActiveView, label: "Área do Aluno", icon: Home },
         { id: "challenges" as ActiveView, label: "Desafios", icon: Trophy },
         { id: "community" as ActiveView, label: t("sec.community"), icon: MessageSquare },
-        { id: "profile" as ActiveView, label: "Perfil do Coach", icon: User },
+        { id: "profile" as ActiveView, label: "Perfil", icon: User },
       ];
     }
     if (persona === "moderator") {
       return [
-        { id: "moderator" as ActiveView, label: "Painel de Moderação", icon: ShieldCheck },
+        { id: "moderator" as ActiveView, label: "Moderação", icon: ShieldCheck },
+        { id: "coach" as ActiveView, label: "Painel do Coach", icon: ShieldCheck },
+        { id: "home" as ActiveView, label: "Área do Aluno", icon: Home },
         { id: "community" as ActiveView, label: t("sec.community"), icon: MessageSquare },
         { id: "profile" as ActiveView, label: "Perfil", icon: User },
       ];
@@ -88,10 +116,7 @@ export const Navigation: React.FC = () => {
                 <button
                   key={item.id}
                   id={`nav-desktop-${item.id}`}
-                  onClick={() => {
-                    if (item.id === "community") handleOpenCommunity();
-                    else setActiveView(item.id);
-                  }}
+                  onClick={() => handleNavClick(item.id)}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer relative ${
                     isActive
                       ? isCoachTab
@@ -174,10 +199,7 @@ export const Navigation: React.FC = () => {
               <button
                 key={item.id}
                 id={`nav-mobile-${item.id}`}
-                onClick={() => {
-                  if (item.id === "community") handleOpenCommunity();
-                  else setActiveView(item.id);
-                }}
+                onClick={() => handleNavClick(item.id)}
                 className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all relative ${
                   isActive
                     ? persona === "coach"
