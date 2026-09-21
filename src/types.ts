@@ -43,6 +43,8 @@ export interface UserProfile {
   full_name?: string;
   nickname: string;
   email: string;
+  phone?: string;
+  whatsapp?: string;
   avatar_url?: string;
   role?: "coach" | "student" | "moderator";
   is_coach?: boolean;
@@ -92,6 +94,8 @@ export interface Student {
   name: string;
   nickname: string;
   email: string;
+  phone?: string;
+  whatsapp?: string;
   avatar_url?: string;
   plan: string;
   goal: string;
@@ -230,6 +234,24 @@ export interface Diet {
   fats_pct: number;
   foods: FoodItem[];
   diet_released?: boolean;
+}
+
+export interface DietTemplate {
+  id: string;
+  title: string;
+  category: "cutting" | "bulking" | "recomposition" | "maintenance" | "low_carb" | "custom";
+  description?: string;
+  target_kcal: number;
+  protein_pct: number;
+  carbs_pct: number;
+  fats_pct: number;
+  target_protein_g?: number;
+  target_carbs_g?: number;
+  target_fats_g?: number;
+  coach_notes?: string;
+  foods: FoodItem[];
+  created_at?: string;
+  is_template?: boolean;
 }
 
 export interface ProgressEntry {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
-import { Coach } from "../types";
+import { Coach, Student } from "../types";
 import {
   Shield,
   User,
@@ -16,7 +16,9 @@ import {
   Trash2,
   Lock,
   Users,
+  MessageCircle,
 } from "lucide-react";
+import { CoachWhatsAppModule } from "../components/CoachWhatsAppModule";
 
 export const ModeratorView: React.FC = () => {
   const {
@@ -30,7 +32,9 @@ export const ModeratorView: React.FC = () => {
     setPersona,
   } = useApp();
 
+  const [activeModTab, setActiveModTab] = useState<"governance" | "whatsapp">("governance");
   const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [coachName, setCoachName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -41,6 +45,7 @@ export const ModeratorView: React.FC = () => {
   const [modFeedback, setModFeedback] = useState<string | null>(null);
 
   useEffect(() => {
+    // Load coaches
     api
       .getCoaches()
       .then((data) => {
@@ -62,6 +67,18 @@ export const ModeratorView: React.FC = () => {
         ]);
       })
       .finally(() => setLoading(false));
+
+    // Load students for WhatsApp communication
+    api
+      .getStudents()
+      .then((data) => {
+        if (data && data.length > 0) {
+          setStudents(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not load students in ModeratorView:", err);
+      });
   }, []);
 
   const handleAddCoach = async (e: React.FormEvent) => {
@@ -192,8 +209,50 @@ export const ModeratorView: React.FC = () => {
         </div>
       </div>
 
-      {/* Primary Task: Credenciar Novo Coach por E-mail */}
-      <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+      {/* Tab Selector: Governança & Credenciamento vs Comunicação WhatsApp */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[#151515] border border-[#2B2B2F]">
+        <button
+          id="mod-tab-governance-btn"
+          type="button"
+          onClick={() => setActiveModTab("governance")}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeModTab === "governance"
+              ? "bg-[#6D9BFF] text-white shadow-md shadow-[#6D9BFF]/20"
+              : "text-[#9B9BA1] hover:text-[#F5F5F7]"
+          }`}
+        >
+          <Shield className="w-4 h-4" />
+          <span>Credenciamento de Coaches & Acessos</span>
+        </button>
+
+        <button
+          id="mod-tab-whatsapp-btn"
+          type="button"
+          onClick={() => setActiveModTab("whatsapp")}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeModTab === "whatsapp"
+              ? "bg-[#25D366] text-black shadow-md shadow-[#25D366]/20"
+              : "text-[#9B9BA1] hover:text-[#F5F5F7]"
+          }`}
+        >
+          <MessageCircle className="w-4 h-4 fill-current" />
+          <span>Comunicação WhatsApp dos Alunos ({students.length})</span>
+        </button>
+      </div>
+
+      {activeModTab === "whatsapp" ? (
+        <CoachWhatsAppModule
+          students={students}
+          onUpdateStudentPhone={(stdId, newPhone) => {
+            setStudents((prev) =>
+              prev.map((s) => (s.id === stdId ? { ...s, phone: newPhone } : s))
+            );
+          }}
+        />
+      ) : (
+        <>
+          {/* Primary Task: Credenciar Novo Coach por E-mail */}
+          <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center">
             <UserCheck className="w-5 h-5" />
@@ -399,6 +458,8 @@ export const ModeratorView: React.FC = () => {
           <p className="text-xs font-medium text-[#6D9BFF] mt-1">{modFeedback}</p>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

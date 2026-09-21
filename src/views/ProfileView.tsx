@@ -39,6 +39,7 @@ import {
   DollarSign,
   X,
   AlertCircle,
+  MessageSquare,
 } from "lucide-react";
 import { SavedCardsModal } from "../components/SavedCardsModal";
 import { CoachFinancialModal, CoachStudentsModal } from "../components/CoachModals";
@@ -119,6 +120,11 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const [photoFrontBlob, setPhotoFrontBlob] = useState<Blob | null>(null);
   const [photoSideBlob, setPhotoSideBlob] = useState<Blob | null>(null);
   const [photoBackBlob, setPhotoBackBlob] = useState<Blob | null>(null);
+
+  // Estados reais do Supabase (feedbacks_coach e avaliacoes_ciclo)
+  const [coachFeedbacks, setCoachFeedbacks] = useState<any[]>([]);
+  const [cycleAssessments, setCycleAssessments] = useState<any[]>([]);
+  const [phone, setPhone] = useState("");
 
   // Protocols Catalogue
   const PROTOCOLS = [
@@ -237,31 +243,72 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             if (cached.medical_history) setMedicalHistory(cached.medical_history);
           }
 
-          // 3. SELECT oficial direto na tabela 'profiles' do Supabase filtrando por user.id
+          // 3. SELECT oficial direto na tabela 'perfis' e fallback em 'profiles'
+          let dbPerfil: any = null;
+          const { data: perfilData, error: perfilError } = await supabase
+            .from("perfis")
+            .select("*")
+            .eq("id", targetUserId)
+            .maybeSingle();
+
+          if (perfilError) {
+            console.error("[ERRO SUPABASE]:", perfilError.message, perfilError.details);
+          } else if (perfilData) {
+            dbPerfil = perfilData;
+          }
+
           const { data: dbProfile, error: dbError } = await supabase
             .from("profiles")
             .select("*")
             .eq("id", targetUserId)
             .maybeSingle();
 
-          if (dbError) {
+          if (dbError && !dbPerfil) {
             console.warn("[Supabase] Aviso ao consultar tabela profiles:", dbError.message);
+          }
+
+          // 3.1 Consulta real das avaliações do ciclo (avaliacoes_ciclo)
+          const { data: avaliacoesData, error: avError } = await supabase
+            .from("avaliacoes_ciclo")
+            .select("*")
+            .eq("user_id", targetUserId)
+            .order("created_at", { ascending: false });
+
+          if (avError) {
+            console.error("[ERRO SUPABASE]:", avError.message, avError.details);
+          } else if (avaliacoesData && isMounted) {
+            setCycleAssessments(avaliacoesData);
+          }
+
+          // 3.2 Consulta real dos feedbacks e apontamentos do coach (feedbacks_coach)
+          const { data: feedbacksData, error: fbError } = await supabase
+            .from("feedbacks_coach")
+            .select("*")
+            .eq("aluno_id", targetUserId)
+            .order("created_at", { ascending: false });
+
+          if (fbError) {
+            console.error("[ERRO SUPABASE]:", fbError.message, fbError.details);
+          } else if (feedbacksData && isMounted) {
+            setCoachFeedbacks(feedbacksData);
           }
 
           const meta = user?.user_metadata || {};
 
           if (isMounted) {
-            const resolvedFullName = dbProfile?.full_name || meta.full_name || meta.name || cached?.full_name || "";
+            const resolvedFullName = dbPerfil?.nome || dbProfile?.full_name || meta.full_name || meta.name || cached?.full_name || "";
             const resolvedNickname = dbProfile?.nickname || meta.nickname || (resolvedFullName ? resolvedFullName.split(" ")[0] : cached?.nickname || "");
-            const resolvedAvatar = dbProfile?.avatar_url || meta.avatar_url || cached?.avatar_url || "";
-            const resolvedHeight = dbProfile?.height_cm || meta.height_cm || cached?.height_cm || "";
-            const resolvedWeight = dbProfile?.weight_kg || meta.weight_kg || cached?.weight_kg || "";
+            const resolvedAvatar = dbPerfil?.avatar_url || dbProfile?.avatar_url || meta.avatar_url || cached?.avatar_url || "";
+            const resolvedHeight = dbPerfil?.altura_cm || dbProfile?.height_cm || meta.height_cm || cached?.height_cm || "";
+            const resolvedWeight = dbPerfil?.peso_kg || dbProfile?.weight_kg || meta.weight_kg || cached?.weight_kg || "";
             const resolvedAge = dbProfile?.age || meta.age || cached?.age || "";
-            const resolvedGoal = dbProfile?.primary_goal || dbProfile?.goal || meta.primary_goal || meta.goal || cached?.primary_goal || "";
+            const resolvedGoal = dbPerfil?.protocolo_atual || dbProfile?.primary_goal || dbProfile?.goal || meta.primary_goal || meta.goal || cached?.primary_goal || "";
             const resolvedDiet = dbProfile?.dietary_restrictions || meta.dietary_restrictions || cached?.dietary_restrictions || "";
             const resolvedMed = dbProfile?.medical_history || meta.medical_history || cached?.medical_history || "";
+            const resolvedPhone = dbPerfil?.telefone || "";
 
-            if (dbProfile?.role) setSupabaseRole(dbProfile.role);
+            if (resolvedPhone) setPhone(resolvedPhone);
+            if (dbPerfil?.cargo || dbPerfil?.role || dbProfile?.role) setSupabaseRole(dbPerfil?.cargo || dbPerfil?.role || dbProfile?.role);
             if (resolvedFullName) setFullName(resolvedFullName);
             if (resolvedNickname) setNickname(resolvedNickname);
             if (resolvedAvatar) setAvatarUrl(resolvedAvatar);
@@ -280,10 +327,14 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
               id: targetUserId,
               full_name: resolvedFullName || prev?.full_name || "",
               nickname: resolvedNickname || prev?.nickname || "",
-              email: dbProfile?.email || user?.email || currentUserEmail || prev?.email || "",
+              email: dbPerfil?.email || dbProfile?.email || user?.email || currentUserEmail || prev?.email || "",
               avatar_url: resolvedAvatar || prev?.avatar_url || "",
+              phone: resolvedPhone || (prev as any)?.phone || "",
               height_cm: (resolvedHeight ? Number(resolvedHeight) : prev?.height_cm) as number,
               weight_kg: (resolvedWeight ? Number(resolvedWeight) : prev?.weight_kg) as number,
+              cargo: dbPerfil?.cargo || dbPerfil?.role || (prev as any)?.cargo || "aluno",
+              role: dbPerfil?.role || dbPerfil?.cargo || (prev as any)?.role || "aluno",
+              protocolo_atual: dbPerfil?.protocolo_atual || (prev as any)?.protocolo_atual || "Vyra Shape",
               assessments: prev?.assessments || [],
             } as UserProfile));
           }
@@ -371,15 +422,42 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         .upsert(fullPayload, { onConflict: "id" });
 
       if (fullUpsertError) {
-        console.warn("[Supabase] Aviso no upsert estendido de profiles:", fullUpsertError.message);
+        console.error("[ERRO SUPABASE]:", fullUpsertError.message, fullUpsertError.details);
         // Fallback garantido: upsert com as colunas base da tabela profiles
         const { error: baseUpsertError } = await supabase
           .from("profiles")
           .upsert(basePayload, { onConflict: "id" });
 
         if (baseUpsertError) {
+          console.error("[ERRO SUPABASE]:", baseUpsertError.message, baseUpsertError.details);
+          alert(`Erro ao salvar no banco: ${baseUpsertError.message}`);
           throw new Error(`Erro no Supabase: ${baseUpsertError.message}`);
         }
+      }
+
+      // 2.1 Persistência real na tabela oficial 'perfis'
+      const { data: perfilData, error: perfilError } = await supabase
+        .from("perfis")
+        .upsert(
+          {
+            id: user.id,
+            nome: cleanName,
+            cargo: (profile as any)?.cargo || (profile as any)?.role || (isCoach ? "coach" : "aluno"),
+            role: (profile as any)?.role || (isCoach ? "coach" : "aluno"),
+            telefone: phone || (profile as any)?.phone || null,
+            protocolo_atual: (profile as any)?.protocolo_atual || (profile as any)?.plan || "Vyra Shape",
+            email: user.email,
+            avatar_url: avatarUrl || null,
+            peso_kg: numWeight,
+            altura_cm: numHeight,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+
+      if (perfilError) {
+        console.error("[ERRO SUPABASE]:", perfilError.message, perfilError.details);
+        alert(`Erro ao salvar no banco: ${perfilError.message}`);
       }
 
       // 3. Persistência permanente de metadados no Supabase Auth (auth.users)
@@ -644,7 +722,31 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         coach_feedback: "Atualização do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
       };
 
-      // 4. Inserção no Supabase (tabela assessments) com user_id da sessão autenticada atual
+      // 4. Inserção prioritária no Supabase na tabela oficial 'avaliacoes_ciclo'
+      const { data: cicloInsertData, error: cicloInsertError } = await supabase
+        .from("avaliacoes_ciclo")
+        .insert({
+          user_id: currentUserId,
+          user_email: currentUserEmail,
+          braco: armVal,
+          torax: chestVal,
+          cintura: waistVal,
+          peso: weightVal,
+          observacoes: assessmentNotes || null,
+          foto_frente_url: uploadedUrls.front || photoFront || null,
+          foto_lado_url: uploadedUrls.side || photoSide || null,
+          foto_costas_url: uploadedUrls.back || photoBack || null,
+          fotos: [uploadedUrls.front || photoFront, uploadedUrls.side || photoSide, uploadedUrls.back || photoBack].filter(Boolean),
+          coach_feedback: "Avaliação do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
+          created_at: new Date().toISOString(),
+        });
+
+      if (cicloInsertError) {
+        console.error("[ERRO SUPABASE]:", cicloInsertError.message, cicloInsertError.details);
+        alert(`Erro ao salvar no banco: ${cicloInsertError.message}`);
+      }
+
+      // 4.1 Inserção de compatibilidade na tabela 'assessments'
       const { error: insertError } = await supabase.from("assessments").insert({
         user_id: currentUserId,
         user_email: currentUserEmail,
@@ -659,14 +761,24 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
       });
 
       if (insertError) {
-        console.log('[AVALIAÇÃO] Erro insert:', insertError);
-        const realInsertMsg = insertError.message || insertError.details || insertError.hint || JSON.stringify(insertError);
-        setAssessmentFeedback({
-          type: "error",
-          text: `Erro no banco de dados ao salvar avaliação (tabela assessments): ${realInsertMsg}`,
-        });
-        setAssessmentSaving(false);
-        return;
+        console.error("[ERRO SUPABASE]:", insertError.message, insertError.details);
+      }
+
+      // 4.2 Atualização no perfil 'perfis'
+      try {
+        const { error: perfilUpdateErr } = await supabase
+          .from("perfis")
+          .update({
+            peso_kg: weightVal,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", currentUserId);
+
+        if (perfilUpdateErr) {
+          console.error("[ERRO SUPABASE]:", perfilUpdateErr.message, perfilUpdateErr.details);
+        }
+      } catch (errPerfil) {
+        console.warn("[AVALIAÇÃO] Aviso ao atualizar perfis:", errPerfil);
       }
 
       // 5. Atualização complementar no banco (profiles) e sincronização local
@@ -1664,6 +1776,81 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           </div>
         )}
       </div>
+      )}
+
+      {/* Feedbacks e Apontamentos Reais do Coach (feedbacks_coach) - EXCLUSIVO DO ALUNO */}
+      {!isCoach && (
+        <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#2B2B2F]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center shrink-0">
+                <MessageSquare className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#F5F5F7]">
+                  Feedbacks & Apontamentos do Coach
+                </h3>
+                <p className="text-[11px] text-[#9B9BA1]">
+                  Orientações técnicas, feedbacks de avaliações e calibrações de protocolo
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] font-black uppercase text-[#D8B46A] bg-[#D8B46A]/10 border border-[#D8B46A]/30 px-2.5 py-1 rounded-full">
+              {coachFeedbacks.length} Registros
+            </span>
+          </div>
+
+          {coachFeedbacks.length === 0 ? (
+            <div className="p-5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center space-y-1">
+              <p className="text-xs font-bold text-[#F5F5F7]">Nenhum feedback registrado ainda</p>
+              <p className="text-[11px] text-[#9B9BA1]">
+                Assim que você enviar uma atualização biométrica de 20 dias, os apontamentos do Coach aparecerão aqui sincronizados em tempo real com o banco.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {coachFeedbacks.map((fb) => (
+                <div
+                  key={fb.id}
+                  className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-2 hover:border-[#D8B46A]/40 transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[#D8B46A]">
+                        {fb.coach_nome || "Coach Vyra"}
+                      </span>
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-[#D8B46A]/15 text-[#D8B46A] border border-[#D8B46A]/30">
+                        {fb.tipo || "geral"}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#9B9BA1]">
+                      {new Date(fb.created_at).toLocaleDateString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-[#F5F5F7] whitespace-pre-wrap leading-relaxed">
+                    {fb.mensagem}
+                  </p>
+
+                  {fb.apontamentos && (
+                    <div className="p-3 rounded-xl bg-[#141416] border border-[#2B2B2F] text-[11px] text-[#D8B46A] space-y-1">
+                      <span className="font-bold text-[10px] uppercase tracking-wider text-[#9B9BA1] block">
+                        Apontamentos Técnicos & Ajustes:
+                      </span>
+                      <p className="whitespace-pre-wrap text-[#E5E5EA]">{fb.apontamentos}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Assessment Modal (Fotos e Perimetria do Ciclo de 20 Dias) */}

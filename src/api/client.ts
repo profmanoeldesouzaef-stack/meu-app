@@ -2,6 +2,7 @@ import {
   Plan,
   Workout,
   Diet,
+  DietTemplate,
   ProgressEntry,
   Challenge,
   ChallengeEvent,
@@ -431,6 +432,19 @@ export const api = {
     }),
   deleteWorkoutLibrary: (id: string) =>
     request<{ ok: boolean }>(`/coach/workout-library/${id}`, { method: "DELETE" }),
+  getDietLibrary: () => request<DietTemplate[]>("/coach/diet-library"),
+  saveDietLibrary: (template: DietTemplate) =>
+    request<DietTemplate>("/coach/diet-library", {
+      method: "POST",
+      body: JSON.stringify(template),
+    }),
+  deleteDietLibrary: (id: string) =>
+    request<{ ok: boolean }>(`/coach/diet-library/${id}`, { method: "DELETE" }),
+  bulkAssignDiet: (student_ids: string[], diet: Diet, template_title?: string) =>
+    request<{ ok: boolean; count: number; message: string }>("/coach/assign-diet-bulk", {
+      method: "POST",
+      body: JSON.stringify({ student_ids, diet, template_title }),
+    }),
   getChallengePhotos: (params?: { category?: string; search?: string }) => {
     const q = new URLSearchParams();
     if (params?.category) q.append("category", params.category);

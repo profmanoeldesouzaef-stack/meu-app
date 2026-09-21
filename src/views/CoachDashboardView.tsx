@@ -8,6 +8,7 @@ import {
   Partner,
   Workout,
   Diet,
+  DietTemplate,
   Challenge,
   ChallengeEvent,
   Broadcast,
@@ -63,6 +64,10 @@ import {
   Sparkles,
   Tag,
   Mail,
+  MessageSquare,
+  Camera,
+  Ruler,
+  ClipboardList,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { appStorage } from "../utils/storage";
@@ -70,13 +75,16 @@ import { SubstituteExerciseModal } from "../components/SubstituteExerciseModal";
 import { BulkSendWorkoutModal } from "../components/BulkSendWorkoutModal";
 import { CoachWorkoutLibrary } from "../components/CoachWorkoutLibrary";
 import { CoachDietFoodPresets } from "../components/CoachDietFoodPresets";
+import { CoachDietLibrary } from "../components/CoachDietLibrary";
+import { BulkSendDietModal } from "../components/BulkSendDietModal";
 import { VeteranBadge } from "../lib/patents";
 import { FinanceCRMTableWeb } from "../components/FinanceCRMTableWeb";
+import { CoachWhatsAppModule } from "../components/CoachWhatsAppModule";
 
 export const CoachDashboardView: React.FC = () => {
-  const { t, lang, currentUserEmail, setInviteData, setActiveView, setPersona, setVipChatUnlocked } = useApp();
+  const { t, lang, user, userProfile, currentUserName, currentUserEmail, setInviteData, setActiveView, setPersona, setVipChatUnlocked } = useApp();
   const [activeTab, setActiveTab] = useState<
-    "overview" | "pending_students" | "students_finance" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "radar" | "broadcast" | "challenges"
+    "overview" | "whatsapp" | "pending_students" | "students_finance" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "diet_library" | "radar" | "broadcast" | "challenges"
   >("overview");
 
   // Pending Students state (Onboarding anamnesis & release queue)
@@ -120,6 +128,17 @@ export const CoachDashboardView: React.FC = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>("std-1");
   const [studentSearchQuery, setStudentSearchQuery] = useState("");
   const [studentFilterPlan, setStudentFilterPlan] = useState<string>("all");
+
+  // Auditoria Supabase: avaliacoes_ciclo e feedbacks_coach
+  const [studentAssessments, setStudentAssessments] = useState<any[]>([]);
+  const [loadingAssessments, setLoadingAssessments] = useState(false);
+  const [studentFeedbacks, setStudentFeedbacks] = useState<any[]>([]);
+  const [loadingFeedbacks, setLoadingFeedbacks] = useState(false);
+  const [coachFeedbackMsg, setCoachFeedbackMsg] = useState("");
+  const [coachFeedbackNotes, setCoachFeedbackNotes] = useState("");
+  const [coachFeedbackType, setCoachFeedbackType] = useState<"geral" | "avaliacao" | "ajuste_treino" | "ajuste_dieta">("avaliacao");
+  const [sendingCoachFeedback, setSendingCoachFeedback] = useState(false);
+  const [assessmentPhotoModal, setAssessmentPhotoModal] = useState<string | null>(null);
 
   const isMensalista = (plan?: string) => {
     if (!plan) return false;
@@ -193,6 +212,11 @@ export const CoachDashboardView: React.FC = () => {
   const [workoutLibrary, setWorkoutLibrary] = useState<Workout[]>([]);
   const [showSendWorkoutModal, setShowSendWorkoutModal] = useState(false);
   const [workoutToBulkSend, setWorkoutToBulkSend] = useState<Workout | null>(null);
+
+  // Diet Library & Bulk Send state
+  const [dietLibrary, setDietLibrary] = useState<DietTemplate[]>([]);
+  const [showSendDietModal, setShowSendDietModal] = useState(false);
+  const [dietToBulkSend, setDietToBulkSend] = useState<DietTemplate | null>(null);
 
   // Exercise Substitute state
   const [substituteModalIdx, setSubstituteModalIdx] = useState<number | null>(null);
@@ -289,14 +313,16 @@ export const CoachDashboardView: React.FC = () => {
       api.getChallengeEvent().catch(() => null),
       api.getChallenges().catch(() => []),
       api.getWorkoutLibrary().catch(() => []),
+      api.getDietLibrary().catch(() => []),
       api.getCoachGuidelines().catch(() => []),
       api.getPendingStudents().catch(() => []),
-    ]).then(([kp, rd, cp, pt, wk, dt, stds, chEvt, chItems, wLib, cGuidelines, pStds]) => {
+    ]).then(([kp, rd, cp, pt, wk, dt, stds, chEvt, chItems, wLib, dLib, cGuidelines, pStds]) => {
       setKpis(kp);
       setRadar(rd);
       setCoupons(cp);
       setPartners(pt);
       if (wLib) setWorkoutLibrary(wLib);
+      if (dLib) setDietLibrary(dLib);
       if (wk) setWorkout(wk);
       if (dt) setDiet(dt);
       if (cGuidelines && cGuidelines.length > 0) setActiveGuidelines(cGuidelines);
@@ -346,6 +372,18 @@ export const CoachDashboardView: React.FC = () => {
     setReleasingId(`workout-${studentId}`);
     try {
       await api.releaseStudentWorkout(studentId);
+
+      // Persistência real na tabela 'perfis' do Supabase
+      const { error: perfilErr } = await supabase
+        .from("perfis")
+        .update({ workout_released: true, updated_at: new Date().toISOString() })
+        .eq("id", studentId);
+
+      if (perfilErr) {
+        console.error("[ERRO SUPABASE]:", perfilErr.message, perfilErr.details);
+        alert(`Erro ao salvar no banco: ${perfilErr.message}`);
+      }
+
       setPendingStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, workout_released: true } : s))
       );
@@ -353,8 +391,9 @@ export const CoachDashboardView: React.FC = () => {
         prev.map((s) => (s.id === studentId ? { ...s, workout_released: true } : s))
       );
       showNotification("Treino liberado com sucesso para o aluno!");
-    } catch (err) {
-      console.error("Erro ao liberar treino:", err);
+    } catch (err: any) {
+      console.error("[ERRO SUPABASE]:", err.message || err);
+      alert(`Erro ao salvar no banco: ${err.message || err}`);
       showNotification("Erro ao liberar treino do aluno.");
     } finally {
       setReleasingId(null);
@@ -365,6 +404,18 @@ export const CoachDashboardView: React.FC = () => {
     setReleasingId(`diet-${studentId}`);
     try {
       await api.releaseStudentDiet(studentId);
+
+      // Persistência real na tabela 'perfis' do Supabase
+      const { error: perfilErr } = await supabase
+        .from("perfis")
+        .update({ diet_released: true, updated_at: new Date().toISOString() })
+        .eq("id", studentId);
+
+      if (perfilErr) {
+        console.error("[ERRO SUPABASE]:", perfilErr.message, perfilErr.details);
+        alert(`Erro ao salvar no banco: ${perfilErr.message}`);
+      }
+
       setPendingStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, diet_released: true } : s))
       );
@@ -372,8 +423,9 @@ export const CoachDashboardView: React.FC = () => {
         prev.map((s) => (s.id === studentId ? { ...s, diet_released: true } : s))
       );
       showNotification("Dieta liberada com sucesso para o aluno!");
-    } catch (err) {
-      console.error("Erro ao liberar dieta:", err);
+    } catch (err: any) {
+      console.error("[ERRO SUPABASE]:", err.message || err);
+      alert(`Erro ao salvar no banco: ${err.message || err}`);
       showNotification("Erro ao liberar dieta do aluno.");
     } finally {
       setReleasingId(null);
@@ -488,6 +540,21 @@ export const CoachDashboardView: React.FC = () => {
         creatine_doses_per_day: studentCreatineDosesPerDay,
         creatine_times: studentCreatineTimes,
       });
+
+      // Persistência direta em 'perfis' no Supabase
+      const { error: perfilErr } = await supabase
+        .from("perfis")
+        .update({
+          protocolo_atual: selectedStudent.plan || "Vyra Shape",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selectedStudent.id);
+
+      if (perfilErr) {
+        console.error("[ERRO SUPABASE]:", perfilErr.message, perfilErr.details);
+        alert(`Erro ao salvar no banco: ${perfilErr.message}`);
+      }
+
       setStudents((prev) =>
         prev.map((s) =>
           s.id === selectedStudent.id
@@ -504,11 +571,107 @@ export const CoachDashboardView: React.FC = () => {
       showNotification(
         `Prescrição salva: ${updated.water_ml}ml de água e ${updated.creatine_dose_g}g de creatina (${studentCreatineDosesPerDay}x ao dia) para ${selectedStudent.name}!`
       );
-    } catch (e) {
-      console.error("Error saving student protocol:", e);
+    } catch (e: any) {
+      console.error("[ERRO SUPABASE]:", e.message || e);
+      alert(`Erro ao salvar no banco: ${e.message || e}`);
       showNotification("Erro ao salvar prescrição de hidratação e creatina.");
     } finally {
       setSavingProtocol(false);
+    }
+  };
+
+  // Carrega avaliações (avaliacoes_ciclo) e feedbacks (feedbacks_coach) do aluno selecionado
+  useEffect(() => {
+    if (!selectedStudent?.id && !selectedStudent?.email) return;
+    let isMounted = true;
+
+    const loadStudentData = async () => {
+      setLoadingAssessments(true);
+      setLoadingFeedbacks(true);
+      try {
+        // Busca avaliações na tabela 'avaliacoes_ciclo'
+        const { data: avData, error: avErr } = await supabase
+          .from("avaliacoes_ciclo")
+          .select("*")
+          .or(`user_id.eq.${selectedStudent.id},user_email.eq.${selectedStudent.email}`)
+          .order("created_at", { ascending: false });
+
+        if (avErr) {
+          console.error("[ERRO SUPABASE]:", avErr.message, avErr.details);
+        } else if (avData && isMounted) {
+          setStudentAssessments(avData);
+        }
+
+        // Busca feedbacks na tabela 'feedbacks_coach'
+        const { data: fbData, error: fbErr } = await supabase
+          .from("feedbacks_coach")
+          .select("*")
+          .or(`aluno_id.eq.${selectedStudent.id},aluno_email.eq.${selectedStudent.email}`)
+          .order("created_at", { ascending: false });
+
+        if (fbErr) {
+          console.error("[ERRO SUPABASE]:", fbErr.message, fbErr.details);
+        } else if (fbData && isMounted) {
+          setStudentFeedbacks(fbData);
+        }
+      } catch (err: any) {
+        console.error("[ERRO SUPABASE]:", err.message || err);
+      } finally {
+        if (isMounted) {
+          setLoadingAssessments(false);
+          setLoadingFeedbacks(false);
+        }
+      }
+    };
+
+    loadStudentData();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedStudentId, selectedStudent?.id, selectedStudent?.email]);
+
+  const handleSendCoachFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent) return;
+    if (!coachFeedbackMsg.trim()) {
+      alert("Por favor, digite a mensagem de feedback para o aluno.");
+      return;
+    }
+
+    setSendingCoachFeedback(true);
+    try {
+      const payload = {
+        aluno_id: selectedStudent.id,
+        aluno_email: selectedStudent.email,
+        coach_id: user?.id || null,
+        coach_nome: currentUserName || coachInviteName || "Coach Manoel",
+        mensagem: coachFeedbackMsg.trim(),
+        apontamentos: coachFeedbackNotes.trim() || null,
+        tipo: coachFeedbackType,
+        created_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from("feedbacks_coach")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[ERRO SUPABASE]:", error.message, error.details);
+        alert(`Erro ao salvar no banco: ${error.message}`);
+        return;
+      }
+
+      setStudentFeedbacks((prev) => [data || payload, ...prev]);
+      setCoachFeedbackMsg("");
+      setCoachFeedbackNotes("");
+      showNotification(`Feedback salvo no Supabase com sucesso para ${selectedStudent.name}!`);
+    } catch (err: any) {
+      console.error("[ERRO SUPABASE]:", err.message || err);
+      alert(`Erro ao salvar no banco: ${err.message || err}`);
+    } finally {
+      setSendingCoachFeedback(false);
     }
   };
 
@@ -620,6 +783,92 @@ export const CoachDashboardView: React.FC = () => {
     setWorkout(libWorkout);
     setActiveTab("workouts");
     showNotification(`Protocolo "${libWorkout.title}" carregado no editor!`);
+  };
+
+  // Diet Library Handlers
+  const handleOpenBulkSendDiet = (targetDiet?: DietTemplate) => {
+    setDietToBulkSend(targetDiet || null);
+    setShowSendDietModal(true);
+  };
+
+  const handleSaveDietTemplateToLibrary = async (template: DietTemplate) => {
+    try {
+      const saved = await api.saveDietLibrary(template);
+      setDietLibrary((prev) => {
+        const existingIdx = prev.findIndex((d) => d.id === saved.id);
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          updated[existingIdx] = saved;
+          return updated;
+        }
+        return [saved, ...prev];
+      });
+      showNotification(`Dieta "${saved.title}" salva na Biblioteca!`);
+    } catch (e) {
+      console.error("Error saving diet template to library:", e);
+    }
+  };
+
+  const handleSaveCurrentDietToLibrary = async (
+    title?: string,
+    category: DietTemplate["category"] = "cutting",
+    notes: string = ""
+  ) => {
+    if (!diet) return;
+    try {
+      const templateToSave: DietTemplate = {
+        id: `diet-lib-${Date.now()}`,
+        title: title || `Protocolo ${category.toUpperCase()} - ${diet.kcal || 2000} kcal`,
+        category,
+        description: `Dieta com foco em aporte calórico de ${diet.kcal || 2000} kcal e equilíbrio de macros.`,
+        coach_notes: notes || "Seguir a risca a divisão das refeições e a hidratação diária.",
+        target_kcal: diet.kcal || diet.target_kcal || 2000,
+        protein_pct: diet.protein_pct || 35,
+        carbs_pct: diet.carbs_pct || 40,
+        fats_pct: diet.fats_pct || 25,
+        target_protein_g: diet.target_protein_g || Math.round(((diet.kcal || 2000) * ((diet.protein_pct || 35) / 100)) / 4),
+        target_carbs_g: diet.target_carbs_g || Math.round(((diet.kcal || 2000) * ((diet.carbs_pct || 40) / 100)) / 4),
+        target_fats_g: diet.target_fats_g || Math.round(((diet.kcal || 2000) * ((diet.fats_pct || 25) / 100)) / 9),
+        foods: diet.foods || [],
+        created_at: new Date().toISOString(),
+        is_template: true,
+      };
+      const saved = await api.saveDietLibrary(templateToSave);
+      setDietLibrary((prev) => [saved, ...prev.filter((d) => d.id !== saved.id)]);
+      showNotification(`Dieta "${saved.title}" salva na Biblioteca de Dietas!`);
+    } catch (e) {
+      console.error("Error saving student diet to library:", e);
+    }
+  };
+
+  const handleDeleteDietFromLibrary = async (id: string) => {
+    if (!confirm("Deseja remover este protocolo de dieta da biblioteca?")) return;
+    try {
+      await api.deleteDietLibrary(id);
+      setDietLibrary((prev) => prev.filter((d) => d.id !== id));
+      showNotification("Dieta removida da biblioteca.");
+    } catch (e) {
+      console.error("Error deleting diet from library:", e);
+    }
+  };
+
+  const handleApplyDietFromLibrary = (template: DietTemplate) => {
+    const newDiet: Diet = {
+      id: `diet-${Date.now()}`,
+      kcal: template.target_kcal,
+      target_kcal: template.target_kcal,
+      protein_pct: template.protein_pct,
+      carbs_pct: template.carbs_pct,
+      fats_pct: template.fats_pct,
+      target_protein_g: template.target_protein_g,
+      target_carbs_g: template.target_carbs_g,
+      target_fats_g: template.target_fats_g,
+      foods: template.foods || [],
+      diet_released: true,
+    };
+    setDiet(newDiet);
+    setActiveTab("diet");
+    showNotification(`Dieta "${template.title}" carregada no editor para ${selectedStudent?.name || "o aluno"}!`);
   };
 
   const handleSelectSubstitute = (substituteName: string) => {
@@ -1063,6 +1312,11 @@ export const CoachDashboardView: React.FC = () => {
   const tabs = [
     { id: "overview", label: t("coach.overview"), icon: TrendingUp },
     {
+      id: "whatsapp",
+      label: "Comunicação WhatsApp",
+      icon: MessageCircle,
+    },
+    {
       id: "pending_students",
       label: `Alunos Pendentes ${
         pendingStudents.filter((s) => !s.workout_released || !s.diet_released).length > 0
@@ -1082,6 +1336,7 @@ export const CoachDashboardView: React.FC = () => {
     { id: "workouts", label: t("coach.workouts"), icon: Dumbbell },
     { id: "library", label: "Biblioteca de Treinos", icon: BookOpen },
     { id: "diet", label: t("coach.diet"), icon: UtensilsCrossed },
+    { id: "diet_library", label: "Biblioteca de Dietas", icon: BookOpen },
     { id: "finance", label: "Cupons & Parceiros", icon: CreditCard },
     { id: "radar", label: t("coach.radar"), icon: AlertTriangle },
     { id: "broadcast", label: t("coach.broadcast"), icon: Megaphone },
@@ -1634,7 +1889,48 @@ export const CoachDashboardView: React.FC = () => {
               <span>Gerar e Copiar Link</span>
             </button>
           </div>
+
+          {/* Quick Access Card: Módulo de Comunicação WhatsApp */}
+          <div className="p-6 rounded-3xl bg-gradient-to-br from-[#112419] via-[#151515] to-[#121214] border border-[#25D366]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-[#25D366]/20 text-[#25D366] flex items-center justify-center shrink-0">
+                <MessageCircle className="w-6 h-6 fill-current" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#25D366] block">
+                  Disparos & Lembretes
+                </span>
+                <h3 className="text-base font-bold text-[#F5F5F7]">
+                  Módulo de Comunicação via WhatsApp
+                </h3>
+                <p className="text-xs text-[#9B9BA1] mt-0.5">
+                  Modelos de alinhamento de protocolo, lembretes de avaliação periódica (ciclo de 20 dias) e fila de disparo para toda a turma.
+                </p>
+              </div>
+            </div>
+            <button
+              id="overview-btn-open-whatsapp"
+              type="button"
+              onClick={() => setActiveTab("whatsapp")}
+              className="px-5 py-3 rounded-2xl text-xs font-extrabold bg-[#25D366] hover:bg-[#20bd5a] text-black shrink-0 flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#25D366]/20 cursor-pointer active:scale-95"
+            >
+              <MessageCircle className="w-4 h-4 fill-current" />
+              <span>Acessar WhatsApp ({students.length} alunos)</span>
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Tab: Comunicação WhatsApp */}
+      {activeTab === "whatsapp" && (
+        <CoachWhatsAppModule
+          students={students}
+          onUpdateStudentPhone={(stdId, newPhone) => {
+            setStudents((prev) =>
+              prev.map((s) => (s.id === stdId ? { ...s, phone: newPhone } : s))
+            );
+          }}
+        />
       )}
 
       {/* Tab: Conversar com a IA (Metodologia do Coach) */}
@@ -2778,7 +3074,29 @@ export const CoachDashboardView: React.FC = () => {
                 </h3>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  id="switch-to-diet-library-btn"
+                  type="button"
+                  onClick={() => setActiveTab("diet_library")}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#D8B46A] border border-[#D8B46A]/40 hover:bg-[#D8B46A]/10 flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Acessar o acervo de dietas prontas"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Biblioteca de Dietas</span>
+                </button>
+
+                <button
+                  id="save-current-diet-to-library-btn"
+                  type="button"
+                  onClick={() => handleSaveCurrentDietToLibrary()}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] text-[#34C759] border border-[#34C759]/40 hover:bg-[#34C759]/10 flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Guardar a dieta atual deste aluno na Biblioteca como modelo"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Salvar na Biblioteca</span>
+                </button>
+
                 <button
                   id="open-ai-diet-generator"
                   onClick={() => setShowAiDietModal(true)}
@@ -3140,6 +3458,344 @@ export const CoachDashboardView: React.FC = () => {
             </div>
           )}
 
+          {/* AUDITORIA SUPABASE: AVALIAÇÕES DO CICLO (avaliacoes_ciclo) E FEEDBACKS DO COACH (feedbacks_coach) */}
+          {selectedStudent && (
+            <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#2B2B2F]">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-[#D8B46A]/20 text-[#D8B46A] flex items-center justify-center shrink-0">
+                    <ClipboardList className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-[#F5F5F7] flex items-center gap-2">
+                      <span>Avaliações do Ciclo & Feedbacks Técnicos</span>
+                      <span className="text-[10px] font-black uppercase text-[#34C759] bg-[#34C759]/15 border border-[#34C759]/30 px-2 py-0.5 rounded-full">
+                        Supabase Live
+                      </span>
+                    </h3>
+                    <p className="text-xs text-[#9B9BA1]">
+                      Dados reais persistidos em <code className="text-[#D8B46A]">avaliacoes_ciclo</code> e <code className="text-[#D8B46A]">feedbacks_coach</code> para {selectedStudent.name}.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#F5F5F7] bg-[#1D1D1F] px-3 py-1.5 rounded-xl border border-[#2B2B2F] flex items-center gap-1.5">
+                    <Ruler className="w-3.5 h-3.5 text-[#34C759]" />
+                    <span>{studentAssessments.length} Avaliaç{studentAssessments.length === 1 ? "ão" : "ões"}</span>
+                  </span>
+                  <span className="text-xs font-bold text-[#F5F5F7] bg-[#1D1D1F] px-3 py-1.5 rounded-xl border border-[#2B2B2F] flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-[#D8B46A]" />
+                    <span>{studentFeedbacks.length} Feedback{studentFeedbacks.length === 1 ? "" : "s"}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Coluna Esquerda: Histórico de Avaliações do Ciclo (avaliacoes_ciclo) */}
+                <div className="lg:col-span-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-[#F5F5F7] uppercase tracking-wider flex items-center gap-2">
+                      <Camera className="w-4 h-4 text-[#34C759]" />
+                      <span>Avaliações do Ciclo (20 Dias)</span>
+                    </h4>
+                    {loadingAssessments && (
+                      <span className="text-[11px] text-[#9B9BA1] flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Carregando...
+                      </span>
+                    )}
+                  </div>
+
+                  {studentAssessments.length === 0 ? (
+                    <div className="p-6 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center space-y-2">
+                      <Ruler className="w-8 h-8 text-[#9B9BA1]/40 mx-auto" />
+                      <p className="text-xs font-bold text-[#F5F5F7]">Nenhuma avaliação enviada ainda</p>
+                      <p className="text-[11px] text-[#9B9BA1] max-w-xs mx-auto">
+                        Quando {selectedStudent.name} preencher as medidas e enviar as 3 fotos do ciclo de 20 dias, elas aparecerão aqui direto do Supabase.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                      {studentAssessments.map((ass, idx) => (
+                        <div
+                          key={ass.id || idx}
+                          className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-3 hover:border-[#34C759]/40 transition-all"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-[#F5F5F7]">
+                              Ciclo #{studentAssessments.length - idx}
+                            </span>
+                            <span className="text-[11px] text-[#9B9BA1]">
+                              {ass.created_at ? new Date(ass.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Data não informada"}
+                            </span>
+                          </div>
+
+                          {/* Medidas */}
+                          <div className="grid grid-cols-4 gap-2">
+                            <div className="p-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-center">
+                              <span className="text-[9px] font-bold text-[#9B9BA1] uppercase block">Peso</span>
+                              <span className="text-xs font-black text-[#F5F5F7]">
+                                {ass.peso ? `${ass.peso} kg` : "—"}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-center">
+                              <span className="text-[9px] font-bold text-[#9B9BA1] uppercase block">Braço</span>
+                              <span className="text-xs font-black text-[#F5F5F7]">
+                                {ass.braco ? `${ass.braco} cm` : "—"}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-center">
+                              <span className="text-[9px] font-bold text-[#9B9BA1] uppercase block">Tórax</span>
+                              <span className="text-xs font-black text-[#F5F5F7]">
+                                {ass.torax ? `${ass.torax} cm` : "—"}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-center">
+                              <span className="text-[9px] font-bold text-[#9B9BA1] uppercase block">Cintura</span>
+                              <span className="text-xs font-black text-[#F5F5F7]">
+                                {ass.cintura ? `${ass.cintura} cm` : "—"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Observações do Aluno */}
+                          {ass.observacoes && (
+                            <div className="p-2.5 rounded-xl bg-[#121214] border border-[#2B2B2F] text-[11px] text-[#9B9BA1]">
+                              <strong className="text-[#F5F5F7] block text-[10px] uppercase">Observações do Aluno:</strong>
+                              {ass.observacoes}
+                            </div>
+                          )}
+
+                          {/* Fotos do Shape: Frente, Lado, Costas */}
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">
+                              Fotos Registradas (3 Ângulos):
+                            </span>
+                            <div className="grid grid-cols-3 gap-2">
+                              {/* Foto Frente */}
+                              <div className="space-y-1 text-center">
+                                <div
+                                  onClick={() => ass.foto_frente_url && setAssessmentPhotoModal(ass.foto_frente_url)}
+                                  className="w-full h-24 rounded-xl bg-[#121214] border border-[#2B2B2F] overflow-hidden flex items-center justify-center cursor-pointer hover:border-[#34C759] transition-all"
+                                >
+                                  {ass.foto_frente_url ? (
+                                    <img
+                                      src={ass.foto_frente_url}
+                                      alt="Frente"
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ) : (
+                                    <span className="text-[10px] text-[#9B9BA1]">Sem foto</span>
+                                  )}
+                                </div>
+                                <span className="text-[9px] font-bold text-[#9B9BA1] block">Frente</span>
+                              </div>
+
+                              {/* Foto Lado */}
+                              <div className="space-y-1 text-center">
+                                <div
+                                  onClick={() => ass.foto_lado_url && setAssessmentPhotoModal(ass.foto_lado_url)}
+                                  className="w-full h-24 rounded-xl bg-[#121214] border border-[#2B2B2F] overflow-hidden flex items-center justify-center cursor-pointer hover:border-[#34C759] transition-all"
+                                >
+                                  {ass.foto_lado_url ? (
+                                    <img
+                                      src={ass.foto_lado_url}
+                                      alt="Lado"
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ) : (
+                                    <span className="text-[10px] text-[#9B9BA1]">Sem foto</span>
+                                  )}
+                                </div>
+                                <span className="text-[9px] font-bold text-[#9B9BA1] block">Lado</span>
+                              </div>
+
+                              {/* Foto Costas */}
+                              <div className="space-y-1 text-center">
+                                <div
+                                  onClick={() => ass.foto_costas_url && setAssessmentPhotoModal(ass.foto_costas_url)}
+                                  className="w-full h-24 rounded-xl bg-[#121214] border border-[#2B2B2F] overflow-hidden flex items-center justify-center cursor-pointer hover:border-[#34C759] transition-all"
+                                >
+                                  {ass.foto_costas_url ? (
+                                    <img
+                                      src={ass.foto_costas_url}
+                                      alt="Costas"
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ) : (
+                                    <span className="text-[10px] text-[#9B9BA1]">Sem foto</span>
+                                  )}
+                                </div>
+                                <span className="text-[9px] font-bold text-[#9B9BA1] block">Costas</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Coluna Direita: Feedback do Coach (feedbacks_coach) */}
+                <div className="lg:col-span-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-[#F5F5F7] uppercase tracking-wider flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-[#D8B46A]" />
+                      <span>Emitir Feedback Técnico (feedbacks_coach)</span>
+                    </h4>
+                    {loadingFeedbacks && (
+                      <span className="text-[11px] text-[#9B9BA1] flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Carregando...
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Form de Envio de Feedback Real para o Aluno */}
+                  <form onSubmit={handleSendCoachFeedback} className="p-4 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[11px] font-bold text-[#F5F5F7]">
+                        Tipo de Orientação:
+                      </label>
+                      <select
+                        value={coachFeedbackType}
+                        onChange={(e) => setCoachFeedbackType(e.target.value as any)}
+                        className="px-2.5 py-1 rounded-lg bg-[#121214] border border-[#2B2B2F] text-xs font-bold text-[#D8B46A] focus:outline-none focus:border-[#D8B46A]"
+                      >
+                        <option value="avaliacao">Avaliação do Ciclo</option>
+                        <option value="ajuste_treino">Ajuste de Treino</option>
+                        <option value="ajuste_dieta">Ajuste de Dieta</option>
+                        <option value="geral">Feedback Geral</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-[#9B9BA1]">
+                        Mensagem Direta para o Aluno <span className="text-[#FF453A]">*</span>
+                      </label>
+                      <textarea
+                        required
+                        rows={3}
+                        value={coachFeedbackMsg}
+                        onChange={(e) => setCoachFeedbackMsg(e.target.value)}
+                        placeholder={`Olá ${selectedStudent.name}, analisei seu shape do ciclo de 20 dias e seu progresso está excelente...`}
+                        className="w-full px-3 py-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#9B9BA1]/50 focus:outline-none focus:border-[#D8B46A]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-[#9B9BA1]">
+                        Apontamentos Técnicos & Calibração (Opcional)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={coachFeedbackNotes}
+                        onChange={(e) => setCoachFeedbackNotes(e.target.value)}
+                        placeholder="Ex: Aumentar 100g de carboidrato no pré-treino; focar na contração de pico no supino..."
+                        className="w-full px-3 py-2 rounded-xl bg-[#121214] border border-[#2B2B2F] text-xs text-[#F5F5F7] placeholder-[#9B9BA1]/50 focus:outline-none focus:border-[#D8B46A]"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={sendingCoachFeedback || !coachFeedbackMsg.trim()}
+                      className="w-full py-2.5 px-4 rounded-xl text-xs font-extrabold bg-[#D8B46A] text-black hover:bg-[#c9a358] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md shadow-[#D8B46A]/10"
+                    >
+                      {sendingCoachFeedback ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Salvando no Supabase...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Enviar Feedback para {selectedStudent.name}</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+
+                  {/* Lista de Feedbacks Anteriores Salvos na Tabela feedbacks_coach */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-[#9B9BA1] uppercase tracking-wider block">
+                      Feedbacks Registrados no Supabase ({studentFeedbacks.length})
+                    </span>
+
+                    {studentFeedbacks.length === 0 ? (
+                      <div className="p-3.5 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] text-center text-xs text-[#9B9BA1]">
+                        Nenhum feedback registrado ainda para este aluno.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                        {studentFeedbacks.map((fb, idx) => (
+                          <div
+                            key={fb.id || idx}
+                            className="p-3 rounded-xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-1.5 hover:border-[#D8B46A]/40 transition-all"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-[#D8B46A]">
+                                {fb.coach_nome || "Coach Vyra"}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-[#D8B46A]/15 text-[#D8B46A] border border-[#D8B46A]/30">
+                                  {fb.tipo || "geral"}
+                                </span>
+                                <span className="text-[10px] text-[#9B9BA1]">
+                                  {fb.created_at ? new Date(fb.created_at).toLocaleDateString("pt-BR") : ""}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-[#F5F5F7] whitespace-pre-wrap leading-relaxed">
+                              {fb.mensagem}
+                            </p>
+                            {fb.apontamentos && (
+                              <div className="p-2 rounded-lg bg-[#121214] border border-[#2B2B2F] text-[10px] text-[#D8B46A]">
+                                <strong>Apontamentos: </strong>{fb.apontamentos}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Zoom da Foto de Avaliação */}
+          {assessmentPhotoModal && (
+            <div
+              onClick={() => setAssessmentPhotoModal(null)}
+              className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="relative max-w-2xl w-full bg-[#151515] border border-[#2B2B2F] rounded-3xl p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-[#2B2B2F]">
+                  <span className="text-xs font-bold text-[#F5F5F7]">Registro Fotográfico do Ciclo de 20 Dias</span>
+                  <button
+                    onClick={() => setAssessmentPhotoModal(null)}
+                    className="text-xs font-bold text-[#9B9BA1] hover:text-white px-2 py-1"
+                  >
+                    ✕ Fechar
+                  </button>
+                </div>
+                <div className="w-full max-h-[75vh] flex items-center justify-center overflow-hidden rounded-2xl bg-black">
+                  <img
+                    src={assessmentPhotoModal}
+                    alt="Foto Expandida"
+                    className="max-h-[75vh] max-w-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Diet Macronutrients and Meals Table */}
           {diet && (
             <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-6">
@@ -3468,6 +4124,20 @@ export const CoachDashboardView: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Tab: Diet Library */}
+      {activeTab === "diet_library" && (
+        <CoachDietLibrary
+          library={dietLibrary}
+          onApplyToStudent={handleApplyDietFromLibrary}
+          onOpenBulkSend={handleOpenBulkSendDiet}
+          onDeleteDiet={handleDeleteDietFromLibrary}
+          onSaveDietToLibrary={handleSaveDietTemplateToLibrary}
+          onSaveCurrentStudentDiet={handleSaveCurrentDietToLibrary}
+          currentStudentName={selectedStudent?.name}
+          currentDietKcal={diet?.kcal || diet?.target_kcal}
+        />
       )}
 
       {/* Tab: Radar */}
@@ -4345,6 +5015,23 @@ export const CoachDashboardView: React.FC = () => {
             const namesDisplay = typeof studentNames === "string" ? studentNames : (Array.isArray(studentNames) ? (studentNames as string[]).join(", ") : "");
             showNotification(`Treino atribuído com sucesso para ${count} aluno(s): ${namesDisplay}!`);
             // Refresh student list from server
+            api.getStudents().then(setStudents).catch(() => {});
+          }}
+        />
+      )}
+
+      {/* Bulk Send Diet Modal */}
+      {showSendDietModal && dietToBulkSend && (
+        <BulkSendDietModal
+          isOpen={showSendDietModal}
+          dietTemplate={dietToBulkSend}
+          students={students}
+          onClose={() => {
+            setShowSendDietModal(false);
+            setDietToBulkSend(null);
+          }}
+          onSuccess={(count, message) => {
+            showNotification(message || `Dieta atribuída com sucesso para ${count} aluno(s)!`);
             api.getStudents().then(setStudents).catch(() => {});
           }}
         />

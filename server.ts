@@ -948,6 +948,7 @@ const db = {
       name: "Rafael Mendes",
       nickname: "Rafa",
       email: "rafael@vyra.club",
+      phone: "(11) 98123-4567",
       avatar_url: "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80",
       plan: "Projeto Reset 12",
       goal: "Hipertrofia e Densidade Muscular",
@@ -994,6 +995,7 @@ const db = {
       name: "Camila Santos",
       nickname: "Cami",
       email: "camila@vyra.club",
+      phone: "(21) 99876-5432",
       avatar_url: "https://images.unsplash.com/photo-1594381898411-846e7d193883?auto=format&fit=crop&w=200&q=80",
       plan: "Shape Protocol",
       goal: "Definição Muscular & Estética",
@@ -1039,6 +1041,7 @@ const db = {
       name: "Diego Pereira",
       nickname: "Diego",
       email: "diego@vyra.club",
+      phone: "(31) 97654-3210",
       avatar_url: "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=200&q=80",
       plan: "Forge Protocol",
       goal: "Ganho de Massa Bruta & Força",
@@ -1084,6 +1087,7 @@ const db = {
       name: "Fernanda Lima",
       nickname: "Nanda",
       email: "fernanda@vyra.club",
+      phone: "(41) 99123-8877",
       avatar_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80",
       plan: "Projeto Reset 12",
       goal: "Recomposição Corporal & Emagrecimento",
@@ -1129,6 +1133,7 @@ const db = {
       name: "João Pedro Costa",
       nickname: "JP",
       email: "joao.pedro@vyra.club",
+      phone: "",
       avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
       plan: "Forge Protocol",
       goal: "Ganho de Massa Muscular e Força",
@@ -1173,6 +1178,7 @@ const db = {
       name: "Aline Rocha",
       nickname: "Aline",
       email: "aline@vyra.club",
+      phone: "(71) 98833-2211",
       avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
       plan: "Shape Protocol",
       goal: "Tonificação e Emagrecimento",
@@ -1388,6 +1394,370 @@ const db = {
     },
   ],
 
+  diet_library: [
+    {
+      id: "diet-lib-cutting-1",
+      title: "🔥 Protocolo Cutting Severo (Déficit 1.750 kcal)",
+      category: "cutting",
+      description: "Déficit calórico agressivo com alta densidade proteica (2.2g/kg) para queima rápida de gordura com preservação máxima de massa magra.",
+      target_kcal: 1750,
+      protein_pct: 40,
+      carbs_pct: 35,
+      fats_pct: 25,
+      target_protein_g: 175,
+      target_carbs_g: 153,
+      target_fats_g: 49,
+      coach_notes: "Ingerir 3.5L a 4L de água diariamente. Consuma o café preto sem açúcar antes do cardio.",
+      is_template: true,
+      created_at: new Date().toISOString(),
+      foods: [
+        {
+          id: "dl-c-f1",
+          name: "Omelete de Claras com Espinafre e Aveia",
+          grams: 220,
+          kcal: 340,
+          p: 38,
+          c: 24,
+          f: 8,
+          meal: "breakfast",
+          ingredients: [
+            { name: "Claras pasteurizadas / frescas", quantity: "200ml (6 claras)", grams: 200, kcal: 100, p: 22, c: 1, f: 0 },
+            { name: "Ovo caipira inteiro", quantity: "1 unidade", grams: 50, kcal: 72, p: 6, c: 0, f: 5 },
+            { name: "Aveia em flocos finos", quantity: "30g", grams: 30, kcal: 110, p: 4, c: 18, f: 2 },
+            { name: "Folhas de espinafre e orégano", quantity: "30g", grams: 30, kcal: 15, p: 2, c: 1, f: 0 },
+          ],
+        },
+        {
+          id: "dl-c-f2",
+          name: "Peito de Frango com Arroz e Salada Crua",
+          grams: 320,
+          kcal: 460,
+          p: 52,
+          c: 42,
+          f: 9,
+          meal: "lunch",
+          ingredients: [
+            { name: "Filé de peito de frango grelhado", quantity: "180g", grams: 180, kcal: 290, p: 48, c: 0, f: 6 },
+            { name: "Arroz branco ou integral cozido", quantity: "120g", grams: 120, kcal: 155, p: 3, c: 34, f: 1 },
+            { name: "Azeite de oliva extravirgem", quantity: "3ml", grams: 3, kcal: 27, p: 0, c: 0, f: 3 },
+            { name: "Mix verde (alface, rúcula e pepino)", quantity: "80g", grams: 80, kcal: 18, p: 1, c: 3, f: 0 },
+          ],
+        },
+        {
+          id: "dl-c-f3",
+          name: "Shake Pós-Treino com Morangos Frescos",
+          grams: 250,
+          kcal: 220,
+          p: 32,
+          c: 18,
+          f: 2,
+          meal: "snack",
+          ingredients: [
+            { name: "Whey Protein 100% Isolado", quantity: "35g (1.2 dosador)", grams: 35, kcal: 135, p: 30, c: 1, f: 1 },
+            { name: "Morangos frescos fatiados", quantity: "120g", grams: 120, kcal: 45, p: 1, c: 10, f: 0 },
+            { name: "Água bem gelada ou gelo", quantity: "200ml", grams: 200, kcal: 0, p: 0, c: 0, f: 0 },
+          ],
+        },
+        {
+          id: "dl-c-f4",
+          name: "Patinho Moído com Abóbora Cabotiá Assada",
+          grams: 300,
+          kcal: 440,
+          p: 42,
+          c: 38,
+          f: 12,
+          meal: "dinner",
+          ingredients: [
+            { name: "Patinho bovino moído magro", quantity: "160g", grams: 160, kcal: 270, p: 38, c: 0, f: 10 },
+            { name: "Abóbora cabotiá cozida/assada", quantity: "180g", grams: 180, kcal: 85, p: 3, c: 19, f: 1 },
+            { name: "Brócolis refogado com alho", quantity: "100g", grams: 100, kcal: 35, p: 3, c: 5, f: 0 },
+          ],
+        },
+        {
+          id: "dl-c-f5",
+          name: "Iogurte Proteico Natural com Canela e Chia",
+          grams: 160,
+          kcal: 140,
+          p: 16,
+          c: 8,
+          f: 4,
+          meal: "supper",
+          ingredients: [
+            { name: "Iogurte grego zero gordura ou skyr", quantity: "140g", grams: 140, kcal: 90, p: 14, c: 6, f: 0 },
+            { name: "Sementes de chia e canela", quantity: "10g", grams: 10, kcal: 50, p: 2, c: 2, f: 4 },
+          ],
+        },
+      ],
+    },
+    {
+      id: "diet-lib-bulking-1",
+      title: "⚡ Hipertrofia Limpa & Bulking Controlado (2.850 kcal)",
+      category: "bulking",
+      description: "Superávit calórico estratégico (+350 kcal) focado em aporte contínuo de glicogênio muscular, retenção zero de gordura desnecessária e recuperação ultra-rápida.",
+      target_kcal: 2850,
+      protein_pct: 25,
+      carbs_pct: 55,
+      fats_pct: 20,
+      target_protein_g: 178,
+      target_carbs_g: 392,
+      target_fats_g: 63,
+      coach_notes: "Aproveite a densidade de carboidratos para progressão agressiva de cargas no treino. Nunca pule as refeições líquidas se sentir empanturrado.",
+      is_template: true,
+      created_at: new Date().toISOString(),
+      foods: [
+        {
+          id: "dl-b-f1",
+          name: "Vitamina Hipercalórica de Banana, Aveia e Pasta de Amendoim",
+          grams: 450,
+          kcal: 680,
+          p: 42,
+          c: 88,
+          f: 18,
+          meal: "breakfast",
+          ingredients: [
+            { name: "Leite desnatado ou vegetal", quantity: "300ml", grams: 300, kcal: 110, p: 9, c: 15, f: 1 },
+            { name: "Banana nanica madura", quantity: "2 unidades (160g)", grams: 160, kcal: 160, p: 2, c: 40, f: 0 },
+            { name: "Aveia em flocos grossos", quantity: "60g", grams: 60, kcal: 220, p: 8, c: 38, f: 4 },
+            { name: "Whey Protein Concentrado", quantity: "30g", grams: 30, kcal: 120, p: 24, c: 2, f: 2 },
+            { name: "Pasta de amendoim integral pura", quantity: "20g", grams: 20, kcal: 125, p: 5, c: 3, f: 10 },
+          ],
+        },
+        {
+          id: "dl-b-f2",
+          name: "Sobrecoxa Desossada com Mandioca e Feijão Carioca",
+          grams: 480,
+          kcal: 780,
+          p: 54,
+          c: 98,
+          f: 18,
+          meal: "lunch",
+          ingredients: [
+            { name: "Filé de coxa/sobrecoxa sem pele grelhada", quantity: "180g", grams: 180, kcal: 300, p: 44, c: 0, f: 12 },
+            { name: "Mandioca ou batata inglesa cozida", quantity: "220g", grams: 220, kcal: 280, p: 2, c: 68, f: 1 },
+            { name: "Feijão carioca com caldo", quantity: "130g", grams: 130, kcal: 110, p: 6, c: 20, f: 1 },
+            { name: "Cenoura ralada com azeite", quantity: "70g", grams: 70, kcal: 55, p: 1, c: 6, f: 3 },
+          ],
+        },
+        {
+          id: "dl-b-f3",
+          name: "Tapioca com Frango Desfiado e Queijo Minas",
+          grams: 280,
+          kcal: 440,
+          p: 36,
+          c: 58,
+          f: 8,
+          meal: "snack",
+          ingredients: [
+            { name: "Goma de tapioca hidratada", quantity: "80g", grams: 80, kcal: 195, p: 0, c: 48, f: 0 },
+            { name: "Peito de frango desfiado temperado", quantity: "120g", grams: 120, kcal: 180, p: 32, c: 0, f: 3 },
+            { name: "Queijo minas frescal light", quantity: "30g", grams: 30, kcal: 65, p: 5, c: 1, f: 4 },
+          ],
+        },
+        {
+          id: "dl-b-f4",
+          name: "Arroz Branco, Filé Mignon Suíno e Legumes Salteados",
+          grams: 450,
+          kcal: 720,
+          p: 50,
+          c: 92,
+          f: 14,
+          meal: "dinner",
+          ingredients: [
+            { name: "Arroz branco cozido", quantity: "240g", grams: 240, kcal: 310, p: 6, c: 68, f: 1 },
+            { name: "Filé mignon suíno grelhado", quantity: "170g", grams: 170, kcal: 240, p: 40, c: 0, f: 8 },
+            { name: "Feijão preto ou carioca", quantity: "100g", grams: 100, kcal: 85, p: 5, c: 15, f: 1 },
+            { name: "Abobrinha e tomate cereja", quantity: "80g", grams: 80, kcal: 30, p: 1, c: 5, f: 0 },
+          ],
+        },
+        {
+          id: "dl-b-f5",
+          name: "Mingau Noturno de Aveia com Whey e Canela",
+          grams: 200,
+          kcal: 230,
+          p: 22,
+          c: 28,
+          f: 4,
+          meal: "supper",
+          ingredients: [
+            { name: "Aveia fina cozida em água", quantity: "35g", grams: 35, kcal: 130, p: 5, c: 22, f: 2 },
+            { name: "Whey Protein de Baunilha", quantity: "25g", grams: 25, kcal: 95, p: 20, c: 2, f: 1 },
+          ],
+        },
+      ],
+    },
+    {
+      id: "diet-lib-recomp-1",
+      title: "⚖️ Recomposição Corporal & Densidade (2.150 kcal)",
+      category: "recomposition",
+      description: "Equilíbrio calórico preciso para perda simultânea de adiposidade corporal e ganho de massa muscular magra em alunos de nível intermediário.",
+      target_kcal: 2150,
+      protein_pct: 35,
+      carbs_pct: 45,
+      fats_pct: 20,
+      target_protein_g: 188,
+      target_carbs_g: 242,
+      target_fats_g: 48,
+      coach_notes: "Cardio moderado de 25 min obrigatório nos dias sem treino. Creatina diária de 5g impreterível.",
+      is_template: true,
+      created_at: new Date().toISOString(),
+      foods: [
+        {
+          id: "dl-r-f1",
+          name: "Crepioca Proteica Recheada com Queijo e Tomate",
+          grams: 260,
+          kcal: 420,
+          p: 34,
+          c: 38,
+          f: 12,
+          meal: "breakfast",
+          ingredients: [
+            { name: "Ovos caipiras médios", quantity: "2 unidades", grams: 100, kcal: 145, p: 13, c: 1, f: 10 },
+            { name: "Goma de tapioca", quantity: "40g", grams: 40, kcal: 98, p: 0, c: 24, f: 0 },
+            { name: "Cottage ou ricota fresca", quantity: "60g", grams: 60, kcal: 65, p: 10, c: 2, f: 2 },
+            { name: "Peito de peru ou frango", quantity: "40g", grams: 40, kcal: 50, p: 9, c: 0, f: 1 },
+          ],
+        },
+        {
+          id: "dl-r-f2",
+          name: "Frango com Batata Doce Assada e Brócolis",
+          grams: 380,
+          kcal: 580,
+          p: 52,
+          c: 66,
+          f: 11,
+          meal: "lunch",
+          ingredients: [
+            { name: "Filé de frango grelhado na chapa", quantity: "180g", grams: 180, kcal: 290, p: 48, c: 0, f: 6 },
+            { name: "Batata doce cozida/assada", quantity: "180g", grams: 180, kcal: 175, p: 3, c: 42, f: 0 },
+            { name: "Brócolis ninja ao vapor", quantity: "80g", grams: 80, kcal: 28, p: 2, c: 5, f: 0 },
+            { name: "Azeite de oliva", quantity: "5ml", grams: 5, kcal: 45, p: 0, c: 0, f: 5 },
+          ],
+        },
+        {
+          id: "dl-r-f3",
+          name: "Iogurte Natural com Aveia e Frutas Vermelhas",
+          grams: 260,
+          kcal: 310,
+          p: 26,
+          c: 42,
+          f: 5,
+          meal: "snack",
+          ingredients: [
+            { name: "Iogurte natural desnatado", quantity: "170g", grams: 170, kcal: 95, p: 10, c: 12, f: 0 },
+            { name: "Whey Protein Isolado", quantity: "20g", grams: 20, kcal: 80, p: 16, c: 1, f: 0 },
+            { name: "Aveia em flocos", quantity: "30g", grams: 30, kcal: 110, p: 4, c: 18, f: 2 },
+            { name: "Mirtilos ou morangos", quantity: "50g", grams: 50, kcal: 25, p: 0, c: 6, f: 0 },
+          ],
+        },
+        {
+          id: "dl-r-f4",
+          name: "Tilápia Grelhada com Purê de Mandioquinha",
+          grams: 360,
+          kcal: 540,
+          p: 48,
+          c: 62,
+          f: 11,
+          meal: "dinner",
+          ingredients: [
+            { name: "Filé de tilápia grelhado com limão", quantity: "190g", grams: 190, kcal: 240, p: 46, c: 0, f: 5 },
+            { name: "Purê de mandioquinha (batata baroa)", quantity: "180g", grams: 180, kcal: 195, p: 2, c: 45, f: 2 },
+            { name: "Salada colorida com azeite", quantity: "100g", grams: 100, kcal: 50, p: 1, c: 4, f: 4 },
+          ],
+        },
+        {
+          id: "dl-r-f5",
+          name: "Castanhas do Pará com Chá de Camomila",
+          grams: 25,
+          kcal: 140,
+          p: 4,
+          c: 3,
+          f: 13,
+          meal: "supper",
+          ingredients: [
+            { name: "Castanhas do Pará selecionadas", quantity: "3 unidades (15g)", grams: 15, kcal: 100, p: 3, c: 2, f: 10 },
+            { name: "Nozes ou amêndoas torradas", quantity: "10g", grams: 10, kcal: 65, p: 2, c: 1, f: 6 },
+          ],
+        },
+      ],
+    },
+    {
+      id: "diet-lib-lowcarb-1",
+      title: "🥑 Low Carb Cetogênica de Alta Saciedade (1.800 kcal)",
+      category: "low_carb",
+      description: "Restrição de carboidratos a menos de 45g/dia com foco em gorduras nobres e proteínas de alto valor biológico para aceleração do metabolismo de queima.",
+      target_kcal: 1800,
+      protein_pct: 35,
+      carbs_pct: 10,
+      fats_pct: 55,
+      target_protein_g: 158,
+      target_carbs_g: 45,
+      target_fats_g: 110,
+      coach_notes: "Nas primeiras 72 horas beba bastante água com uma pitada de sal marinho para manter o equilíbrio eletrolítico.",
+      is_template: true,
+      created_at: new Date().toISOString(),
+      foods: [
+        {
+          id: "dl-lc-f1",
+          name: "Ovos Mexidos na Manteiga Ghee com Bacon Magro",
+          grams: 210,
+          kcal: 450,
+          p: 32,
+          c: 3,
+          f: 35,
+          meal: "breakfast",
+          ingredients: [
+            { name: "Ovos caipiras inteiros", quantity: "3 unidades", grams: 150, kcal: 220, p: 19, c: 1, f: 15 },
+            { name: "Bacon artesanal magro grelhado", quantity: "30g", grams: 30, kcal: 130, p: 10, c: 0, f: 10 },
+            { name: "Manteiga ghee ou azeite", quantity: "10g", grams: 10, kcal: 90, p: 0, c: 0, f: 10 },
+          ],
+        },
+        {
+          id: "dl-lc-f2",
+          name: "Salmão com Aspargos e Salada de Abacate",
+          grams: 340,
+          kcal: 560,
+          p: 46,
+          c: 12,
+          f: 36,
+          meal: "lunch",
+          ingredients: [
+            { name: "Filé de salmão grelhado", quantity: "180g", grams: 180, kcal: 360, p: 40, c: 0, f: 22 },
+            { name: "Abacate picado com gotas de limão", quantity: "70g", grams: 70, kcal: 115, p: 1, c: 6, f: 10 },
+            { name: "Aspargos ou couve-flor grelhada", quantity: "90g", grams: 90, kcal: 45, p: 3, c: 5, f: 1 },
+          ],
+        },
+        {
+          id: "dl-lc-f3",
+          name: "Patinho Grelhado com Salada Verde e Azeite",
+          grams: 320,
+          kcal: 460,
+          p: 44,
+          c: 8,
+          f: 28,
+          meal: "dinner",
+          ingredients: [
+            { name: "Bife de patinho macio grelhado", quantity: "170g", grams: 170, kcal: 280, p: 40, c: 0, f: 12 },
+            { name: "Mix de folhas nobres com azeite", quantity: "100g", grams: 100, kcal: 110, p: 2, c: 4, f: 11 },
+          ],
+        },
+        {
+          id: "dl-lc-f4",
+          name: "Mix de Nozes, Castanhas e Chocolate 85%",
+          grams: 40,
+          kcal: 230,
+          p: 6,
+          c: 8,
+          f: 20,
+          meal: "supper",
+          ingredients: [
+            { name: "Nozes e macadâmias", quantity: "25g", grams: 25, kcal: 165, p: 4, c: 4, f: 16 },
+            { name: "Chocolate amargo 85% cacau", quantity: "15g", grams: 15, kcal: 85, p: 2, c: 4, f: 7 },
+          ],
+        },
+      ],
+    },
+  ],
+
   exercise_logs: [
     {
       id: "log-init-1",
@@ -1525,8 +1895,119 @@ Suas tarefas:
 });
 
 // Students
-api.get("/students", (req, res) => {
+api.get("/students", async (req, res) => {
   const search = ((req.query.search as string) || "").toLowerCase().trim();
+
+  // 1. Tentar buscar alunos reais do Supabase (perfis e profiles)
+  try {
+    const sb = getSupabaseServer();
+    let supabaseStudents: any[] = [];
+
+    // Consulta prioritária na tabela 'perfis'
+    const { data: perfisData, error: perfisErr } = await sb
+      .from("perfis")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (!perfisErr && perfisData && perfisData.length > 0) {
+      supabaseStudents = perfisData.map((p) => {
+        const local = db.students.find((s) => s.id === p.id || s.email?.toLowerCase() === p.email?.toLowerCase()) as any;
+        return {
+          id: p.id,
+          name: p.nome || (p.email ? p.email.split("@")[0] : "Aluno"),
+          nickname: (p.nome ? p.nome.split(" ")[0] : "") || (p.email ? p.email.split("@")[0] : "Aluno"),
+          email: p.email || "aluno@vyra.club",
+          phone: p.telefone || local?.phone || "",
+          avatar_url: p.avatar_url || local?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+          plan: p.protocolo_atual || local?.plan || "Vyra Shape",
+          goal: local?.goal || "Definição & Densidade Muscular",
+          weight_kg: Number(p.peso_kg) || local?.weight_kg || 78,
+          height_cm: Number(p.altura_cm) || local?.height_cm || 175,
+          waist_cm: Number(p.cintura_cm) || local?.waist_cm || 80,
+          restrictions: local?.restrictions || "Nenhuma",
+          adherence_pct: local?.adherence_pct || 100,
+          cargo: p.cargo || p.role || "aluno",
+          protocolo_atual: p.protocolo_atual || "Vyra Shape",
+          workout_released: Boolean(p.workout_released ?? local?.workout_released),
+          diet_released: Boolean(p.diet_released ?? local?.diet_released),
+          onboarding_completed: Boolean(p.onboarding_completed ?? local?.onboarding_completed),
+          diet: local?.diet,
+          workout: local?.workout,
+          water_ml: local?.water_ml || 2500,
+          creatine_dose_g: local?.creatine_dose_g || 5.0,
+          creatine_doses_per_day: local?.creatine_doses_per_day || 1,
+          creatine_times: local?.creatine_times || ["08:00"],
+          vip_chat_unlocked: local?.vip_chat_unlocked || false,
+          created_at: p.created_at,
+        };
+      });
+    } else {
+      // Fallback para 'profiles'
+      const { data: profilesData, error: profilesErr } = await sb
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (!profilesErr && profilesData && profilesData.length > 0) {
+        supabaseStudents = profilesData.map((p) => {
+          const local = db.students.find((s) => s.id === p.id || s.email?.toLowerCase() === p.email?.toLowerCase()) as any;
+          return {
+            id: p.id,
+            name: p.full_name || p.name || (p.email ? p.email.split("@")[0] : "Aluno"),
+            nickname: (p.full_name || p.name || "").split(" ")[0] || (p.email ? p.email.split("@")[0] : "Aluno"),
+            email: p.email || "aluno@vyra.club",
+            phone: local?.phone || "",
+            avatar_url: p.avatar_url || local?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+            plan: p.plan || local?.plan || "Vyra Shape",
+            goal: p.primary_goal || local?.goal || "Definição & Densidade Muscular",
+            weight_kg: Number(p.weight_kg) || local?.weight_kg || 78,
+            height_cm: Number(p.height_cm) || local?.height_cm || 175,
+            waist_cm: local?.waist_cm || 80,
+            restrictions: p.dietary_restrictions || local?.restrictions || "Nenhuma",
+            adherence_pct: local?.adherence_pct || 100,
+            cargo: p.role || "aluno",
+            protocolo_atual: "Vyra Shape",
+            workout_released: Boolean(p.workout_released ?? local?.workout_released),
+            diet_released: Boolean(p.diet_released ?? local?.diet_released),
+            onboarding_completed: Boolean(p.onboarding_completed ?? local?.onboarding_completed),
+            diet: local?.diet,
+            workout: local?.workout,
+            water_ml: local?.water_ml || 2500,
+            creatine_dose_g: local?.creatine_dose_g || 5.0,
+            creatine_doses_per_day: local?.creatine_doses_per_day || 1,
+            creatine_times: local?.creatine_times || ["08:00"],
+            vip_chat_unlocked: local?.vip_chat_unlocked || false,
+            created_at: p.created_at,
+          };
+        });
+      }
+    }
+
+    if (supabaseStudents.length > 0) {
+      // Mesclar: adicionar alunos de db.students que não estejam no Supabase
+      const merged = [...supabaseStudents];
+      for (const localStd of db.students) {
+        if (!merged.some((m) => m.id === localStd.id || m.email?.toLowerCase() === localStd.email?.toLowerCase())) {
+          merged.push(localStd);
+        }
+      }
+
+      if (!search) return res.json(merged);
+      const filtered = merged.filter(
+        (s) =>
+          s.name.toLowerCase().includes(search) ||
+          s.nickname.toLowerCase().includes(search) ||
+          s.email.toLowerCase().includes(search) ||
+          s.goal.toLowerCase().includes(search) ||
+          s.plan.toLowerCase().includes(search)
+      );
+      return res.json(filtered);
+    }
+  } catch (err) {
+    console.warn("[SERVER /students] Aviso ao ler Supabase:", err);
+  }
+
+  // Fallback para memória caso Supabase não esteja disponível
   if (!search) return res.json(db.students);
   const filtered = db.students.filter(
     (s) =>
@@ -1576,15 +2057,16 @@ api.put("/students/:id/vip-chat", (req, res) => {
   res.json(std);
 });
 
-api.put("/students/:id/protocol", (req, res) => {
+api.put("/students/:id/protocol", async (req, res) => {
   const std = db.students.find((s) => s.id === req.params.id);
   if (!std) return res.status(404).json({ error: "Aluno não encontrado" });
-  const { water_ml, creatine_dose_g, creatine_doses_per_day, creatine_times, vip_chat_unlocked } = req.body;
+  const { water_ml, creatine_dose_g, creatine_doses_per_day, creatine_times, vip_chat_unlocked, plan } = req.body;
   if (water_ml !== undefined) (std as any).water_ml = Number(water_ml) || 2500;
   if (creatine_dose_g !== undefined) (std as any).creatine_dose_g = Number(creatine_dose_g) || 5.0;
   if (creatine_doses_per_day !== undefined) (std as any).creatine_doses_per_day = Math.min(3, Math.max(1, Number(creatine_doses_per_day) || 1));
   if (creatine_times !== undefined && Array.isArray(creatine_times)) (std as any).creatine_times = creatine_times;
   if (vip_chat_unlocked !== undefined) (std as any).vip_chat_unlocked = Boolean(vip_chat_unlocked);
+  if (plan) (std as any).plan = plan;
 
   if (std.id === "std-1" || std.email === db.profile.email) {
     if (water_ml !== undefined) db.profile.water_ml = Number(water_ml) || 2500;
@@ -1600,6 +2082,22 @@ api.put("/students/:id/protocol", (req, res) => {
     }
     if (vip_chat_unlocked !== undefined) (db.profile as any).vip_chat_unlocked = Boolean(vip_chat_unlocked);
   }
+
+  try {
+    const sb = getSupabaseServer();
+    if (sb && req.params.id && req.params.id !== "me") {
+      await sb
+        .from("perfis")
+        .update({
+          protocolo_atual: plan || (std as any).plan || "Vyra Shape",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", req.params.id);
+    }
+  } catch (err) {
+    console.warn("Aviso ao salvar protocolo em perfis:", err);
+  }
+
   res.json(std);
 });
 
@@ -1847,10 +2345,14 @@ api.post("/students/:id/release-workout", async (req, res) => {
     (db.profile as any).workout_released = isReleased;
   }
 
-  // Atualiza no Supabase
+  // Atualiza no Supabase (perfis e profiles)
   try {
     const sb = getSupabaseServer();
     if (sb && id !== "me") {
+      await sb
+        .from("perfis")
+        .update({ workout_released: isReleased, updated_at: new Date().toISOString() })
+        .eq("id", id);
       await sb
         .from("profiles")
         .update({ workout_released: isReleased, updated_at: new Date().toISOString() })
@@ -1877,10 +2379,14 @@ api.post("/students/:id/release-diet", async (req, res) => {
     (db.profile as any).diet_released = isReleased;
   }
 
-  // Atualiza no Supabase
+  // Atualiza no Supabase (perfis e profiles)
   try {
     const sb = getSupabaseServer();
     if (sb && id !== "me") {
+      await sb
+        .from("perfis")
+        .update({ diet_released: isReleased, updated_at: new Date().toISOString() })
+        .eq("id", id);
       await sb
         .from("profiles")
         .update({ diet_released: isReleased, updated_at: new Date().toISOString() })
@@ -1975,6 +2481,66 @@ api.delete("/coach/workout-library/:id", (req, res) => {
   if (!db.workout_library) db.workout_library = [];
   db.workout_library = db.workout_library.filter((w: any) => w.id !== req.params.id);
   res.json({ ok: true });
+});
+
+// Diet Library & Bulk Assign
+api.get("/coach/diet-library", (req, res) => {
+  res.json(db.diet_library || []);
+});
+
+api.post("/coach/diet-library", (req, res) => {
+  if (!db.diet_library) db.diet_library = [];
+  const existingIdx = req.body.id ? db.diet_library.findIndex((d: any) => d.id === req.body.id) : -1;
+  const item = {
+    ...req.body,
+    id: req.body.id || `diet-lib-${Date.now()}`,
+    is_template: true,
+    created_at: req.body.created_at || new Date().toISOString(),
+  };
+
+  if (existingIdx >= 0) {
+    db.diet_library[existingIdx] = item;
+  } else {
+    db.diet_library.unshift(item);
+  }
+  res.json(item);
+});
+
+api.delete("/coach/diet-library/:id", (req, res) => {
+  if (!db.diet_library) db.diet_library = [];
+  db.diet_library = db.diet_library.filter((d: any) => d.id !== req.params.id);
+  res.json({ ok: true });
+});
+
+api.post("/coach/assign-diet-bulk", (req, res) => {
+  const { student_ids, diet, template_title } = req.body;
+  if (!Array.isArray(student_ids) || student_ids.length === 0) {
+    return res.status(400).json({ error: "Nenhum aluno selecionado" });
+  }
+  let count = 0;
+  for (const id of student_ids) {
+    const std = db.students.find((s: any) => s.id === id);
+    if (std) {
+      (std as any).diet = {
+        ...diet,
+        id: `diet-${std.id}-${Date.now()}`,
+        diet_released: true,
+      };
+      (std as any).diet_released = true;
+      if (std.id === "std-1" || (std as any).email === db.profile.email) {
+        (db as any).diet = { ...(std as any).diet };
+        (db.profile as any).diet_released = true;
+      }
+      count++;
+    }
+  }
+  db.broadcasts.unshift({
+    id: `bcast-${Date.now()}`,
+    text: `Novo Protocolo de Dieta Prescrito pelo Coach: "${template_title || "Prescrição Nutricional Atualizada"}" liberado na sua aba de Dieta!`,
+    author: "Mari — Head Coach",
+    date: new Date().toLocaleDateString("pt-BR"),
+  });
+  res.json({ ok: true, count, message: `Dieta enviada com sucesso para ${count} aluno(s)!` });
 });
 
 // Plans
