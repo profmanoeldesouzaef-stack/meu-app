@@ -7,6 +7,8 @@ import { AccessGate } from "../components/AccessGate";
 import { EmptyStatePaywall } from "../components/EmptyStatePaywall";
 import { ChallengeParticipationModal } from "../components/ChallengeParticipationModal";
 import { CoachChallengeEvaluationPanel } from "../components/CoachChallengeEvaluationPanel";
+import { ChallengePrizeBanner } from "../components/ChallengePrizeBanner";
+import { ChallengePrizeManager } from "../components/ChallengePrizeManager";
 import { ActiveChallenge, ChallengeEntry } from "../types";
 import { getChallengeEntries } from "../lib/storage";
 import {
@@ -89,6 +91,7 @@ export const ChallengesView: React.FC = () => {
 
   // Simulação de data para testes de Coach / Administrador
   const [simulatedDay, setSimulatedDay] = useState<number | null>(null);
+  const [prizeRefreshKey, setPrizeRefreshKey] = useState(0);
 
   // --- O CÉREBRO DO CALENDÁRIO ---
   const hoje = new Date();
@@ -433,6 +436,9 @@ export const ChallengesView: React.FC = () => {
       {/* Tab: Active Challenges */}
       {tab === "active" && (
         <div className="space-y-8">
+          {/* Banner de Destaque da Premiação Oficial (Supabase: desafios_config) */}
+          <ChallengePrizeBanner key={`prize-banner-${prizeRefreshKey}`} />
+
           {/* Desafios Oficiais Ativos - Cards Imersivos e Modernos */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -570,17 +576,26 @@ export const ChallengesView: React.FC = () => {
 
       {/* Tab: Coach Evaluation Panel */}
       {tab === "coach" && (
-        <CoachChallengeEvaluationPanel
-          challenges={activeChallenges}
-          entries={challengeEntries}
-          selectedChallengeId={selectedCoachChallengeId || activeChallenges[0]?.id || ""}
-          onSelectChallenge={(id) => setSelectedCoachChallengeId(id)}
-          onRefresh={() => {
-            loadActive();
-            loadEntries();
-            loadHall();
-          }}
-        />
+        <div className="space-y-8">
+          {/* Módulo de Gestão de Premiação do Desafio (Upload para bucket 'desafios' e registro em 'desafios_config') */}
+          <ChallengePrizeManager
+            onSuccess={() => {
+              setPrizeRefreshKey((k) => k + 1);
+            }}
+          />
+
+          <CoachChallengeEvaluationPanel
+            challenges={activeChallenges}
+            entries={challengeEntries}
+            selectedChallengeId={selectedCoachChallengeId || activeChallenges[0]?.id || ""}
+            onSelectChallenge={(id) => setSelectedCoachChallengeId(id)}
+            onRefresh={() => {
+              loadActive();
+              loadEntries();
+              loadHall();
+            }}
+          />
+        </div>
       )}
 
       {/* Tab: Hall of Fame */}

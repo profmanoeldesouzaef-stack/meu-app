@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { VyraLogo } from "./VyraLogo";
 import { AlertCircle, CheckCircle2, Mail, Lock, User, Eye, EyeOff, Loader2, ArrowLeft } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -284,16 +283,13 @@ export const LoginModal: React.FC = () => {
   return (
     <div className="fixed inset-0 z-50 bg-[#0A0A0A] flex items-center justify-center p-4 overflow-y-auto">
       <div className="w-full max-w-md my-auto rounded-3xl bg-[#151515] border border-[#2B2B2F] p-6 sm:p-8 space-y-6 text-center shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="w-14 h-14 mx-auto flex items-center justify-center">
-          <VyraLogo className="w-full h-full" />
-        </div>
-
         <div>
-          <h1 className="text-2xl font-black text-[#F5F5F7] tracking-tight">VYRA</h1>
-          <p className="text-[11px] font-bold text-[#FF6A2A] uppercase tracking-widest mt-0.5">
-            TRAINING &amp; PERFORMANCE
-          </p>
-          <p className="text-xs text-[#9B9BA1] mt-2 leading-relaxed">
+          <img 
+            src="/logo.png" 
+            alt="Vyra Training & Performance" 
+            className="w-24 h-24 sm:w-28 sm:h-28 mx-auto object-contain drop-shadow-md" 
+          />
+          <p className="text-xs text-[#9B9BA1] mt-3 leading-relaxed">
             {mode === "forgot_password"
               ? "Informe seu e-mail cadastrado para receber o link seguro de redefinição de senha."
               : mode === "login"

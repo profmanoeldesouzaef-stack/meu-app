@@ -77,6 +77,7 @@ import { CoachWorkoutLibrary } from "../components/CoachWorkoutLibrary";
 import { CoachDietFoodPresets } from "../components/CoachDietFoodPresets";
 import { CoachDietLibrary } from "../components/CoachDietLibrary";
 import { BulkSendDietModal } from "../components/BulkSendDietModal";
+import { ChallengePrizeManager } from "../components/ChallengePrizeManager";
 import { VeteranBadge } from "../lib/patents";
 import { FinanceCRMTableWeb } from "../components/FinanceCRMTableWeb";
 import { CoachWhatsAppModule } from "../components/CoachWhatsAppModule";
@@ -84,8 +85,19 @@ import { CoachWhatsAppModule } from "../components/CoachWhatsAppModule";
 export const CoachDashboardView: React.FC = () => {
   const { t, lang, user, userProfile, currentUserName, currentUserEmail, setInviteData, setActiveView, setPersona, setVipChatUnlocked } = useApp();
   const [activeTab, setActiveTab] = useState<
-    "overview" | "whatsapp" | "pending_students" | "students_finance" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "diet_library" | "radar" | "broadcast" | "challenges"
+    "overview" | "pending_assessments" | "whatsapp" | "pending_students" | "students_finance" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "diet_library" | "radar" | "broadcast" | "challenges"
   >("overview");
+
+  // Avaliações Pendentes da tabela oficial 'avaliacoes'
+  const [pendingAssessments, setPendingAssessments] = useState<any[]>([]);
+  const [loadingPendingAssessments, setLoadingPendingAssessments] = useState<boolean>(false);
+  const [assessmentFilter, setAssessmentFilter] = useState<"pending" | "evaluated" | "all">("pending");
+  const [assessmentSearchQuery, setAssessmentSearchQuery] = useState<string>("");
+  const [evaluatingAssessmentId, setEvaluatingAssessmentId] = useState<string | null>(null);
+  const [quickFeedbackText, setQuickFeedbackText] = useState<string>("");
+  const [quickFeedbackNotes, setQuickFeedbackNotes] = useState<string>("");
+  const [quickFeedbackType, setQuickFeedbackType] = useState<"avaliacao" | "ajuste_treino" | "ajuste_dieta" | "geral">("avaliacao");
+  const [savingQuickFeedback, setSavingQuickFeedback] = useState<boolean>(false);
 
   // Pending Students state (Onboarding anamnesis & release queue)
   const [pendingStudents, setPendingStudents] = useState<Student[]>([]);
@@ -347,8 +359,92 @@ export const CoachDashboardView: React.FC = () => {
         if (defaultStd.diet) setDiet(defaultStd.diet);
         if (defaultStd.workout) setWorkout(defaultStd.workout);
       }
+      // Carrega dados oficiais direto do Supabase (profiles e avaliacoes)
+      loadCoachSupabaseData();
     });
   }, []);
+
+  // Buscar os alunos diretamente da tabela profiles com supabase.from('profiles').select('*')
+  // e buscar as avaliações pendentes a partir da tabela avaliacoes
+  const loadCoachSupabaseData = async () => {
+    try {
+      // 1. Buscar os alunos diretamente da tabela profiles
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("profiles")
+        .select("*");
+
+      if (profilesError) {
+        console.error("[ERRO SUPABASE]: Erro ao buscar profiles:", profilesError.message, profilesError.details);
+      } else if (profilesData && profilesData.length > 0) {
+        const mappedStudents: Student[] = profilesData.map((p: any) => ({
+          id: p.id,
+          name: p.full_name || p.name || (p.email ? p.email.split("@")[0] : "Aluno"),
+          nickname: p.nickname || (p.full_name ? p.full_name.split(" ")[0] : "Aluno"),
+          email: p.email || "",
+          phone: p.phone || p.telefone || "",
+          whatsapp: p.whatsapp || p.phone || p.telefone || "",
+          avatar_url: p.avatar_url || "",
+          plan: p.plan || p.protocolo_atual || "Vyra Shape",
+          goal: p.primary_goal || p.goal || "Hipertrofia & Definição",
+          weight_kg: Number(p.weight_kg || p.peso_kg || 70),
+          height_cm: Number(p.height_cm || p.altura_cm || 175),
+          waist_cm: p.waist_cm ? Number(p.waist_cm) : undefined,
+          adherence_pct: p.adherence_pct !== undefined ? Number(p.adherence_pct) : 92,
+          restrictions: p.dietary_restrictions || p.restrictions || "Nenhuma",
+          workout_released: p.workout_released ?? false,
+          diet_released: p.diet_released ?? false,
+          onboarding_completed: p.onboarding_completed ?? true,
+          vip_chat_unlocked: p.vip_chat_unlocked ?? false,
+          water_ml: p.water_ml ? Number(p.water_ml) : 3000,
+          creatine_dose_g: p.creatine_dose_g ? Number(p.creatine_dose_g) : 5,
+          creatine_doses_per_day: p.creatine_doses_per_day ? Number(p.creatine_doses_per_day) : 1,
+          creatine_times: p.creatine_times || ["08:00"],
+          created_at: p.created_at,
+        }));
+
+        setStudents((prev) => {
+          const merged = [...mappedStudents];
+          for (const existing of prev) {
+            const idx = merged.findIndex(
+              (m) => m.id === existing.id || (m.email && existing.email && m.email.toLowerCase() === existing.email.toLowerCase())
+            );
+            if (idx >= 0) {
+              merged[idx] = {
+                ...existing,
+                ...merged[idx],
+                diet: existing.diet || merged[idx].diet,
+                workout: existing.workout || merged[idx].workout,
+              };
+            } else {
+              merged.push(existing);
+            }
+          }
+          return merged;
+        });
+      }
+    } catch (err: any) {
+      console.error("[ERRO SUPABASE]: Erro ao buscar profiles:", err.message || err);
+    }
+
+    // 2. Buscar as avaliações pendentes a partir da tabela oficial 'avaliacoes'
+    setLoadingPendingAssessments(true);
+    try {
+      const { data: avaliacoesData, error: avError } = await supabase
+        .from("avaliacoes")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (avError) {
+        console.error("[ERRO SUPABASE]: Erro ao buscar avaliacoes pendentes:", avError.message, avError.details);
+      } else if (avaliacoesData) {
+        setPendingAssessments(avaliacoesData);
+      }
+    } catch (err: any) {
+      console.error("[ERRO SUPABASE]: Erro ao buscar avaliacoes pendentes:", err.message || err);
+    } finally {
+      setLoadingPendingAssessments(false);
+    }
+  };
 
   const loadPendingStudents = async () => {
     setLoadingPending(true);
@@ -365,8 +461,86 @@ export const CoachDashboardView: React.FC = () => {
   useEffect(() => {
     if (activeTab === "pending_students") {
       loadPendingStudents();
+    } else if (activeTab === "pending_assessments") {
+      loadCoachSupabaseData();
     }
   }, [activeTab]);
+
+  const handleSaveQuickFeedback = async (ass: any) => {
+    if (!quickFeedbackText.trim()) {
+      alert("Por favor, digite a mensagem de feedback antes de salvar.");
+      return;
+    }
+    setSavingQuickFeedback(true);
+    try {
+      const targetUserId = ass.user_id;
+      const studentMatch = students.find((s) => s.id === targetUserId);
+      const targetEmail = ass.user_email || studentMatch?.email || "";
+
+      // 1. Salvar na tabela feedbacks_coach
+      const payload = {
+        aluno_id: targetUserId,
+        aluno_email: targetEmail,
+        coach_id: user?.id || null,
+        coach_nome: currentUserName || coachInviteName || "Coach Manoel",
+        mensagem: quickFeedbackText.trim(),
+        apontamentos: quickFeedbackNotes.trim() || null,
+        tipo: quickFeedbackType,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error: fbErr } = await supabase.from("feedbacks_coach").insert(payload);
+      if (fbErr) {
+        console.error("[ERRO SUPABASE]: Erro ao salvar feedback em feedbacks_coach:", fbErr.message, fbErr.details);
+      }
+
+      // 2. Atualizar status na tabela avaliacoes
+      const { error: avErr } = await supabase
+        .from("avaliacoes")
+        .update({
+          status: "avaliado",
+          coach_feedback: quickFeedbackText.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", ass.id);
+
+      if (avErr) {
+        console.error("[ERRO SUPABASE]: Erro ao atualizar status na tabela avaliacoes:", avErr.message, avErr.details);
+      }
+
+      // 3. Atualizar também na tabela avaliacoes_ciclo para compatibilidade
+      try {
+        await supabase
+          .from("avaliacoes_ciclo")
+          .update({
+            coach_feedback: quickFeedbackText.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", targetUserId);
+      } catch (cErr) {
+        console.warn("[COACH] Aviso ao atualizar avaliacoes_ciclo:", cErr);
+      }
+
+      // 4. Atualizar estado local
+      setPendingAssessments((prev) =>
+        prev.map((item) =>
+          item.id === ass.id
+            ? { ...item, status: "avaliado", coach_feedback: quickFeedbackText.trim() }
+            : item
+        )
+      );
+
+      setEvaluatingAssessmentId(null);
+      setQuickFeedbackText("");
+      setQuickFeedbackNotes("");
+      showNotification("Feedback salvo com sucesso no Supabase e avaliação concluída!");
+    } catch (err: any) {
+      console.error("[ERRO SUPABASE]: Erro ao salvar feedback rápido:", err.message || err);
+      alert(`Erro ao salvar feedback: ${err.message || err}`);
+    } finally {
+      setSavingQuickFeedback(false);
+    }
+  };
 
   const handleReleaseWorkout = async (studentId: string) => {
     setReleasingId(`workout-${studentId}`);
@@ -589,17 +763,28 @@ export const CoachDashboardView: React.FC = () => {
       setLoadingAssessments(true);
       setLoadingFeedbacks(true);
       try {
-        // Busca avaliações na tabela 'avaliacoes_ciclo'
+        // Busca avaliações na tabela oficial 'avaliacoes'
         const { data: avData, error: avErr } = await supabase
-          .from("avaliacoes_ciclo")
+          .from("avaliacoes")
           .select("*")
-          .or(`user_id.eq.${selectedStudent.id},user_email.eq.${selectedStudent.email}`)
+          .eq("user_id", selectedStudent.id)
           .order("created_at", { ascending: false });
 
-        if (avErr) {
-          console.error("[ERRO SUPABASE]:", avErr.message, avErr.details);
-        } else if (avData && isMounted) {
-          setStudentAssessments(avData);
+        if (!avErr && avData && avData.length > 0) {
+          if (isMounted) setStudentAssessments(avData);
+        } else {
+          // Fallback para tabela 'avaliacoes_ciclo'
+          const { data: cicloData, error: cicloErr } = await supabase
+            .from("avaliacoes_ciclo")
+            .select("*")
+            .or(`user_id.eq.${selectedStudent.id},user_email.eq.${selectedStudent.email}`)
+            .order("created_at", { ascending: false });
+
+          if (cicloErr) {
+            console.error("[ERRO SUPABASE]:", cicloErr.message, cicloErr.details);
+          } else if (cicloData && isMounted) {
+            setStudentAssessments(cicloData);
+          }
         }
 
         // Busca feedbacks na tabela 'feedbacks_coach'
@@ -664,6 +849,34 @@ export const CoachDashboardView: React.FC = () => {
       }
 
       setStudentFeedbacks((prev) => [data || payload, ...prev]);
+
+      // Atualiza também na tabela 'avaliacoes' o status para 'avaliado' e registra o feedback
+      try {
+        await supabase
+          .from("avaliacoes")
+          .update({
+            status: "avaliado",
+            coach_feedback: coachFeedbackMsg.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", selectedStudent.id);
+      } catch (avErr) {
+        console.warn("[COACH] Aviso ao atualizar avaliacoes:", avErr);
+      }
+
+      // Atualiza na tabela 'avaliacoes_ciclo' para compatibilidade
+      try {
+        await supabase
+          .from("avaliacoes_ciclo")
+          .update({
+            coach_feedback: coachFeedbackMsg.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", selectedStudent.id);
+      } catch (cErr) {
+        console.warn("[COACH] Aviso ao atualizar avaliacoes_ciclo:", cErr);
+      }
+
       setCoachFeedbackMsg("");
       setCoachFeedbackNotes("");
       showNotification(`Feedback salvo no Supabase com sucesso para ${selectedStudent.name}!`);
@@ -1312,6 +1525,15 @@ export const CoachDashboardView: React.FC = () => {
   const tabs = [
     { id: "overview", label: t("coach.overview"), icon: TrendingUp },
     {
+      id: "pending_assessments",
+      label: `Avaliações Pendentes ${
+        pendingAssessments.filter((a) => !a.coach_feedback || a.status === "pendente").length > 0
+          ? `(${pendingAssessments.filter((a) => !a.coach_feedback || a.status === "pendente").length})`
+          : ""
+      }`,
+      icon: Ruler,
+    },
+    {
       id: "whatsapp",
       label: "Comunicação WhatsApp",
       icon: MessageCircle,
@@ -1428,6 +1650,462 @@ export const CoachDashboardView: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Tab: Avaliações Pendentes (Tabela Oficial 'avaliacoes' & Bucket 'avaliacoes') */}
+      {activeTab === "pending_assessments" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Header Banner */}
+          <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#1A1A1E] via-[#151515] to-[#121214] border border-[#D8B46A]/30 space-y-4 relative overflow-hidden shadow-2xl">
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#D8B46A]/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black tracking-widest text-[#D8B46A] uppercase bg-[#D8B46A]/15 px-3 py-1 rounded-full border border-[#D8B46A]/30 flex items-center gap-1.5">
+                    <Ruler className="w-3.5 h-3.5" />
+                    BASE OFICIAL · TABELA AVALIACOES
+                  </span>
+                  <span className="text-xs font-bold text-[#D8B46A] bg-[#D8B46A]/10 border border-[#D8B46A]/30 px-2.5 py-0.5 rounded-full">
+                    {pendingAssessments.filter((a) => !a.coach_feedback || a.status === "pendente").length} pendente(s)
+                  </span>
+                  <span className="text-xs font-bold text-[#9B9BA1] bg-[#2B2B2F] px-2.5 py-0.5 rounded-full">
+                    {pendingAssessments.length} no banco
+                  </span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-[#F5F5F7] tracking-tight">
+                  Avaliações Biométricas & Fotos dos Ciclos de 20 Dias
+                </h2>
+                <p className="text-sm text-[#9B9BA1] max-w-2xl">
+                  Registros periódicos enviados pelos alunos pelo formulário de avaliação oficial (tabela <code className="text-[#D8B46A]">avaliacoes</code> e bucket <code className="text-[#D8B46A]">avaliacoes</code>). Analise as 3 fotos, peso, braço, cintura, tórax e coxa e envie feedbacks e calibrações.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  id="coach-refresh-avaliacoes-btn"
+                  onClick={loadCoachSupabaseData}
+                  disabled={loadingPendingAssessments}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] hover:border-[#D8B46A] transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-[#D8B46A] ${loadingPendingAssessments ? "animate-spin" : ""}`} />
+                  <span>Sincronizar Supabase</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros e Busca */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-[#151515] border border-[#2B2B2F]">
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+              <button
+                id="coach-filter-ass-pending"
+                onClick={() => setAssessmentFilter("pending")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  assessmentFilter === "pending"
+                    ? "bg-[#D8B46A] text-[#0A0A0A] shadow-md shadow-[#D8B46A]/20"
+                    : "text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F]"
+                }`}
+              >
+                Pendentes ({pendingAssessments.filter((a) => !a.coach_feedback || a.status === "pendente").length})
+              </button>
+              <button
+                id="coach-filter-ass-evaluated"
+                onClick={() => setAssessmentFilter("evaluated")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  assessmentFilter === "evaluated"
+                    ? "bg-[#D8B46A] text-[#0A0A0A] shadow-md shadow-[#D8B46A]/20"
+                    : "text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F]"
+                }`}
+              >
+                Avaliadas ({pendingAssessments.filter((a) => a.coach_feedback || a.status === "avaliado").length})
+              </button>
+              <button
+                id="coach-filter-ass-all"
+                onClick={() => setAssessmentFilter("all")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  assessmentFilter === "all"
+                    ? "bg-[#D8B46A] text-[#0A0A0A] shadow-md shadow-[#D8B46A]/20"
+                    : "text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F]"
+                }`}
+              >
+                Todas ({pendingAssessments.length})
+              </button>
+            </div>
+
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 text-[#9B9BA1] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={assessmentSearchQuery}
+                onChange={(e) => setAssessmentSearchQuery(e.target.value)}
+                placeholder="Buscar por aluno, email ou ID..."
+                className="w-full bg-[#1D1D1F] border border-[#2B2B2F] rounded-xl pl-9 pr-3 py-2 text-xs text-[#F5F5F7] placeholder-[#9B9BA1] focus:outline-none focus:border-[#D8B46A]"
+              />
+            </div>
+          </div>
+
+          {/* Lista de Avaliações */}
+          {(() => {
+            const filtered = pendingAssessments.filter((ass) => {
+              const isPending = !ass.coach_feedback || ass.status === "pendente";
+              if (assessmentFilter === "pending" && !isPending) return false;
+              if (assessmentFilter === "evaluated" && isPending) return false;
+
+              if (assessmentSearchQuery.trim()) {
+                const q = assessmentSearchQuery.toLowerCase();
+                const std = students.find((s) => s.id === ass.user_id);
+                const nameMatch = std?.name?.toLowerCase().includes(q);
+                const emailMatch = (ass.user_email || std?.email || "").toLowerCase().includes(q);
+                const idMatch = (ass.user_id || "").toLowerCase().includes(q);
+                if (!nameMatch && !emailMatch && !idMatch) return false;
+              }
+              return true;
+            });
+
+            if (loadingPendingAssessments) {
+              return (
+                <div className="p-12 text-center rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-3">
+                  <RefreshCw className="w-8 h-8 text-[#D8B46A] animate-spin mx-auto" />
+                  <p className="text-sm font-bold text-[#F5F5F7]">Consultando tabela oficial &apos;avaliacoes&apos; no Supabase...</p>
+                </div>
+              );
+            }
+
+            if (filtered.length === 0) {
+              return (
+                <div className="p-12 text-center rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-3">
+                  <CheckCircle2 className="w-10 h-10 text-[#34C759] mx-auto opacity-70" />
+                  <h3 className="text-base font-bold text-[#F5F5F7]">Nenhuma avaliação encontrada</h3>
+                  <p className="text-xs text-[#9B9BA1] max-w-md mx-auto">
+                    {assessmentFilter === "pending"
+                      ? "Todas as avaliações dos ciclos de 20 dias já receberam feedback do Coach! Bom trabalho."
+                      : "Nenhuma avaliação corresponde aos filtros selecionados."}
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-6">
+                {filtered.map((ass) => {
+                  const student = students.find((s) => s.id === ass.user_id);
+                  const studentName = student?.name || ass.user_email?.split("@")[0] || `Aluno #${(ass.user_id || "").substring(0, 8)}`;
+                  const isPending = !ass.coach_feedback || ass.status === "pendente";
+                  const isEvaluating = evaluatingAssessmentId === ass.id;
+
+                  return (
+                    <div
+                      key={ass.id}
+                      className={`p-6 rounded-3xl bg-[#151515] border transition-all space-y-5 ${
+                        isPending ? "border-[#D8B46A]/40 shadow-lg shadow-[#D8B46A]/5" : "border-[#2B2B2F]"
+                      }`}
+                    >
+                      {/* Top Bar do Card */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#2B2B2F]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] flex items-center justify-center font-black text-sm text-[#D8B46A]">
+                            {student?.avatar_url ? (
+                              <img
+                                src={student.avatar_url}
+                                alt={studentName}
+                                className="w-full h-full rounded-2xl object-cover"
+                              />
+                            ) : (
+                              studentName.charAt(0).toUpperCase()
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-base font-bold text-[#F5F5F7]">{studentName}</h3>
+                              <span className="text-[10px] font-bold text-[#D8B46A] bg-[#D8B46A]/10 border border-[#D8B46A]/30 px-2 py-0.5 rounded-full">
+                                {student?.plan || "Vyra Shape"}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#9B9BA1]">
+                              {student?.email || ass.user_email || `ID: ${ass.user_id}`} · Enviado em{" "}
+                              {ass.created_at
+                                ? new Date(ass.created_at).toLocaleDateString("pt-BR", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "Data recente"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs font-bold px-3 py-1 rounded-full border flex items-center gap-1.5 ${
+                              isPending
+                                ? "bg-[#D8B46A]/15 text-[#D8B46A] border-[#D8B46A]/40"
+                                : "bg-[#34C759]/15 text-[#34C759] border-[#34C759]/40"
+                            }`}
+                          >
+                            {isPending ? (
+                              <>
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Pendente de Feedback</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Avaliado pelo Coach</span>
+                              </>
+                            )}
+                          </span>
+
+                          <button
+                            onClick={() => {
+                              if (isEvaluating) {
+                                setEvaluatingAssessmentId(null);
+                              } else {
+                                setEvaluatingAssessmentId(ass.id);
+                                setQuickFeedbackText(ass.coach_feedback || "");
+                              }
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#F5F5F7] hover:border-[#D8B46A] transition-all cursor-pointer"
+                          >
+                            {isEvaluating ? "Fechar Formulário" : isPending ? "Avaliar Agora" : "Editar Feedback"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Medidas Biométricas (5 métricas oficiais) */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                        <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+                          <span className="text-[10px] font-bold text-[#9B9BA1] uppercase block">Peso</span>
+                          <span className="text-base font-black text-[#F5F5F7] mt-0.5 block">
+                            {ass.peso ? `${ass.peso} kg` : "—"}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+                          <span className="text-[10px] font-bold text-[#9B9BA1] uppercase block">Braço</span>
+                          <span className="text-base font-black text-[#F5F5F7] mt-0.5 block">
+                            {ass.braco ? `${ass.braco} cm` : "—"}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+                          <span className="text-[10px] font-bold text-[#9B9BA1] uppercase block">Cintura</span>
+                          <span className="text-base font-black text-[#F5F5F7] mt-0.5 block">
+                            {ass.cintura ? `${ass.cintura} cm` : "—"}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+                          <span className="text-[10px] font-bold text-[#9B9BA1] uppercase block">Tórax</span>
+                          <span className="text-base font-black text-[#F5F5F7] mt-0.5 block">
+                            {ass.torax ? `${ass.torax} cm` : "—"}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-center">
+                          <span className="text-[10px] font-bold text-[#9B9BA1] uppercase block">Coxa</span>
+                          <span className="text-base font-black text-[#F5F5F7] mt-0.5 block">
+                            {ass.coxa ? `${ass.coxa} cm` : "—"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Observações do Aluno */}
+                      {ass.observacoes && (
+                        <div className="p-3 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-xs text-[#9B9BA1] space-y-1">
+                          <span className="text-[10px] font-bold text-[#D8B46A] uppercase tracking-wider block">
+                            Observações do Aluno:
+                          </span>
+                          <p className="text-[#F5F5F7] italic">&ldquo;{ass.observacoes}&rdquo;</p>
+                        </div>
+                      )}
+
+                      {/* As 3 Fotografias do Shape (Bucket 'avaliacoes') */}
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider flex items-center gap-2">
+                          <Camera className="w-4 h-4 text-[#D8B46A]" />
+                          <span>Fotografias do Shape (3 Ângulos Oficiais)</span>
+                        </span>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          {/* Foto Frente */}
+                          <div className="space-y-1 text-center">
+                            <div
+                              onClick={() => ass.foto_frente_url && setAssessmentPhotoModal(ass.foto_frente_url)}
+                              className="w-full h-44 rounded-2xl bg-[#121214] border border-[#2B2B2F] overflow-hidden flex items-center justify-center cursor-pointer hover:border-[#D8B46A] transition-all relative group"
+                            >
+                              {ass.foto_frente_url ? (
+                                <>
+                                  <img
+                                    src={ass.foto_frente_url}
+                                    alt="Frente"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                                    Ampliar Foto
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-xs text-[#9B9BA1]">Sem foto frontal</span>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold text-[#F5F5F7] block">Frente</span>
+                          </div>
+
+                          {/* Foto Lado */}
+                          <div className="space-y-1 text-center">
+                            <div
+                              onClick={() => ass.foto_lado_url && setAssessmentPhotoModal(ass.foto_lado_url)}
+                              className="w-full h-44 rounded-2xl bg-[#121214] border border-[#2B2B2F] overflow-hidden flex items-center justify-center cursor-pointer hover:border-[#D8B46A] transition-all relative group"
+                            >
+                              {ass.foto_lado_url ? (
+                                <>
+                                  <img
+                                    src={ass.foto_lado_url}
+                                    alt="Lado"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                                    Ampliar Foto
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-xs text-[#9B9BA1]">Sem foto lateral</span>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold text-[#F5F5F7] block">Lado</span>
+                          </div>
+
+                          {/* Foto Costas */}
+                          <div className="space-y-1 text-center">
+                            <div
+                              onClick={() => ass.foto_costas_url && setAssessmentPhotoModal(ass.foto_costas_url)}
+                              className="w-full h-44 rounded-2xl bg-[#121214] border border-[#2B2B2F] overflow-hidden flex items-center justify-center cursor-pointer hover:border-[#D8B46A] transition-all relative group"
+                            >
+                              {ass.foto_costas_url ? (
+                                <>
+                                  <img
+                                    src={ass.foto_costas_url}
+                                    alt="Costas"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                                    Ampliar Foto
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-xs text-[#9B9BA1]">Sem foto costas</span>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold text-[#F5F5F7] block">Costas</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Feedback Atual (se já avaliado) */}
+                      {ass.coach_feedback && (
+                        <div className="p-4 rounded-2xl bg-[#34C759]/10 border border-[#34C759]/30 space-y-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-[#34C759] flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Feedback do Coach Registrado no Supabase
+                          </span>
+                          <p className="text-xs text-[#F5F5F7] whitespace-pre-wrap">{ass.coach_feedback}</p>
+                        </div>
+                      )}
+
+                      {/* Formulário de Feedback Integrado */}
+                      {isEvaluating && (
+                        <div className="p-5 rounded-2xl bg-[#1D1D1F] border border-[#D8B46A]/40 space-y-4 animate-in slide-in-from-top-3 duration-200">
+                          <div className="flex items-center justify-between pb-2 border-b border-[#2B2B2F]">
+                            <h4 className="text-sm font-bold text-[#F5F5F7] flex items-center gap-2">
+                              <MessageSquare className="w-4 h-4 text-[#D8B46A]" />
+                              <span>Prescrever Feedback & Calibrar Ciclo de {studentName}</span>
+                            </h4>
+                            <span className="text-[10px] font-bold text-[#9B9BA1]">Tabela feedbacks_coach & avaliacoes</span>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-bold text-[#F5F5F7] block mb-1">
+                                Mensagem Principal do Coach:
+                              </label>
+                              <textarea
+                                rows={3}
+                                value={quickFeedbackText}
+                                onChange={(e) => setQuickFeedbackText(e.target.value)}
+                                placeholder="Elogie a evolução, aponte assimetrias, parabenize pela disciplina e oriente sobre os próximos 20 dias..."
+                                className="w-full bg-[#121214] border border-[#2B2B2F] rounded-xl p-3 text-xs text-[#F5F5F7] placeholder-[#9B9BA1] focus:outline-none focus:border-[#D8B46A]"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs font-bold text-[#F5F5F7] block mb-1">
+                                  Tipo de Intervenção:
+                                </label>
+                                <select
+                                  value={quickFeedbackType}
+                                  onChange={(e: any) => setQuickFeedbackType(e.target.value)}
+                                  className="w-full bg-[#121214] border border-[#2B2B2F] rounded-xl px-3 py-2 text-xs text-[#F5F5F7] focus:outline-none focus:border-[#D8B46A]"
+                                >
+                                  <option value="avaliacao">Avaliação Biometria & Fotos</option>
+                                  <option value="ajuste_treino">Ajuste de Volume/Treino</option>
+                                  <option value="ajuste_dieta">Ajuste Calórico/Macros</option>
+                                  <option value="geral">Feedback Geral</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-xs font-bold text-[#F5F5F7] block mb-1">
+                                  Apontamentos Técnicos (Opcional):
+                                </label>
+                                <input
+                                  type="text"
+                                  value={quickFeedbackNotes}
+                                  onChange={(e) => setQuickFeedbackNotes(e.target.value)}
+                                  placeholder="Ex: Aumentar volume em deltoide lateral +2 séries"
+                                  className="w-full bg-[#121214] border border-[#2B2B2F] rounded-xl px-3 py-2 text-xs text-[#F5F5F7] placeholder-[#9B9BA1] focus:outline-none focus:border-[#D8B46A]"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => setEvaluatingAssessmentId(null)}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#121214] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] transition-all cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                disabled={savingQuickFeedback}
+                                onClick={() => handleSaveQuickFeedback(ass)}
+                                className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black bg-[#D8B46A] text-[#0A0A0A] hover:bg-[#c4a159] transition-all cursor-pointer disabled:opacity-50 shadow-md shadow-[#D8B46A]/20"
+                              >
+                                {savingQuickFeedback ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Salvando no Supabase...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Salvar Feedback & Concluir</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Tab: Alunos Pendentes (Anamnese Obrigatória & Fila de Liberação) */}
       {activeTab === "pending_students" && (
@@ -4556,6 +5234,9 @@ export const CoachDashboardView: React.FC = () => {
               )}
             </button>
           </div>
+
+          {/* Módulo de Gestão de Premiação do Desafio (Supabase Storage: bucket 'desafios' & tabela 'desafios_config') */}
+          <ChallengePrizeManager />
 
           {/* Challenge Configuration Form */}
           <form onSubmit={handleSaveChallengeEvent} className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-5 shadow-xl">

@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useApp } from "../context/AppContext";
-import { EagleIcon } from "./EagleIcon";
 import {
   Shield,
   UserCheck,
@@ -64,24 +63,18 @@ export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl border-b transition-colors duration-200 bg-[#0A0A0A]/90 border-[#2B2B2F]/80">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        {/* Botão de Início com a Águia Vyra */}
+        {/* Botão de Início com o Logótipo Oficial Vyra */}
         <div
           id="header-brand-logo"
           onClick={() => setActiveView("home")}
-          className="flex items-center gap-2.5 cursor-pointer group"
-          title="Início"
+          className="flex items-center gap-2 cursor-pointer group"
+          title="Início - Vyra Training & Performance"
         >
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#1C1808] via-[#151515] to-[#121214] border border-[#FF6A2A]/40 p-1 flex items-center justify-center shadow-lg shadow-[#FF6A2A]/20 group-hover:scale-105 group-hover:border-[#FF6A2A] transition-all">
-            <EagleIcon detailed className="w-full h-full" />
-          </div>
-          <div className="hidden xs:flex flex-col">
-            <span className="text-xs font-black tracking-wider text-[#F5F5F7] group-hover:text-[#FF6A2A] transition-colors leading-none">
-              VYRA
-            </span>
-            <span className="text-[9px] font-bold text-[#9B9BA1] tracking-widest leading-none mt-0.5">
-              INÍCIO
-            </span>
-          </div>
+          <img 
+            src="/logo.png" 
+            alt="Vyra Training & Performance" 
+            className="h-10 sm:h-11 w-auto object-contain drop-shadow-md group-hover:scale-105 transition-transform" 
+          />
           {subscription.active && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/30 uppercase tracking-wider flex items-center gap-1">
               <Award className="w-2.5 h-2.5" />

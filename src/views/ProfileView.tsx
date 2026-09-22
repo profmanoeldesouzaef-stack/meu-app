@@ -120,6 +120,9 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const [photoFrontBlob, setPhotoFrontBlob] = useState<Blob | null>(null);
   const [photoSideBlob, setPhotoSideBlob] = useState<Blob | null>(null);
   const [photoBackBlob, setPhotoBackBlob] = useState<Blob | null>(null);
+  const [photoFrontFile, setPhotoFrontFile] = useState<File | null>(null);
+  const [photoSideFile, setPhotoSideFile] = useState<File | null>(null);
+  const [photoBackFile, setPhotoBackFile] = useState<File | null>(null);
 
   // Estados reais do Supabase (feedbacks_coach e avaliacoes_ciclo)
   const [coachFeedbacks, setCoachFeedbacks] = useState<any[]>([]);
@@ -267,17 +270,28 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
             console.warn("[Supabase] Aviso ao consultar tabela profiles:", dbError.message);
           }
 
-          // 3.1 Consulta real das avaliações do ciclo (avaliacoes_ciclo)
-          const { data: avaliacoesData, error: avError } = await supabase
-            .from("avaliacoes_ciclo")
+          // 3.1 Consulta real das avaliações do ciclo (tabela oficial 'avaliacoes')
+          const { data: avaliacoesOficiais, error: avError } = await supabase
+            .from("avaliacoes")
             .select("*")
             .eq("user_id", targetUserId)
             .order("created_at", { ascending: false });
 
-          if (avError) {
-            console.error("[ERRO SUPABASE]:", avError.message, avError.details);
-          } else if (avaliacoesData && isMounted) {
-            setCycleAssessments(avaliacoesData);
+          if (!avError && avaliacoesOficiais && avaliacoesOficiais.length > 0) {
+            if (isMounted) setCycleAssessments(avaliacoesOficiais);
+          } else {
+            // Fallback para avaliacoes_ciclo
+            const { data: cicloData, error: cicloError } = await supabase
+              .from("avaliacoes_ciclo")
+              .select("*")
+              .eq("user_id", targetUserId)
+              .order("created_at", { ascending: false });
+
+            if (cicloError) {
+              console.error("[ERRO SUPABASE]:", cicloError.message, cicloError.details);
+            } else if (cicloData && isMounted) {
+              setCycleAssessments(cicloData);
+            }
           }
 
           // 3.2 Consulta real dos feedbacks e apontamentos do coach (feedbacks_coach)
@@ -552,6 +566,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   const handleSlotUpload = async (slot: "front" | "side" | "back", e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (slot === "front") setPhotoFrontFile(file);
+      else if (slot === "side") setPhotoSideFile(file);
+      else if (slot === "back") setPhotoBackFile(file);
+
       try {
         // Pré-compressão imediata no upload para otimização de render e economia de memória
         const { blob, dataUrl } = await compressImage(file, 1280, 1280, 0.82);
@@ -622,174 +640,186 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
     console.log("[AVALIAÇÃO] Usuário autenticado validado:", currentUserId);
 
     try {
-      // 2. Upload das 3 fotos no Supabase Storage com compressão garantida
-      console.log('[AVALIAÇÃO] Iniciando upload das fotos...');
+      // 2. Upload de cada uma das 3 fotos para o bucket 'avaliacoes' no Supabase Storage
+      console.log("[AVALIAÇÃO] Iniciando upload das fotos no bucket 'avaliacoes'...");
 
-      const uploadedUrls: { front?: string; side?: string; back?: string } = {};
-      const slots: Array<{ slot: "front" | "side" | "back"; dataUrl: string; blob: Blob | null }> = [
-        { slot: "front", dataUrl: photoFront, blob: photoFrontBlob },
-        { slot: "side", dataUrl: photoSide, blob: photoSideBlob },
-        { slot: "back", dataUrl: photoBack, blob: photoBackBlob },
+      const fotosUploadConfig: Array<{ tipoFoto: "frente" | "lado" | "costas"; file: File | Blob | null; dataUrl: string }> = [
+        { tipoFoto: "frente", file: photoFrontFile || photoFrontBlob, dataUrl: photoFront },
+        { tipoFoto: "lado", file: photoSideFile || photoSideBlob, dataUrl: photoSide },
+        { tipoFoto: "costas", file: photoBackFile || photoBackBlob, dataUrl: photoBack },
       ];
 
-      for (const item of slots) {
-        if (!item.dataUrl) continue;
+      let urlFrente: string | null = null;
+      let urlLado: string | null = null;
+      let urlCostas: string | null = null;
 
-        let blobToUpload = item.blob;
-        if (!blobToUpload) {
+      for (const item of fotosUploadConfig) {
+        let file: File | Blob | null = item.file;
+        if (!file && item.dataUrl) {
           try {
             const comp = await compressImage(item.dataUrl, 1280, 1280, 0.82);
-            blobToUpload = comp.blob;
+            file = comp.blob;
           } catch (cErr) {
-            console.warn(`[AVALIAÇÃO] Falha ao comprimir imagem do slot ${item.slot}:`, cErr);
+            console.warn(`[AVALIAÇÃO] Falha ao comprimir imagem da foto ${item.tipoFoto}:`, cErr);
             const res = await fetch(item.dataUrl);
-            blobToUpload = await res.blob();
+            file = await res.blob();
           }
         }
 
-        const fileName = `${currentUserId}/${item.slot}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
-        let uploadError: any = null;
-        let finalPublicUrl = "";
+        if (!file) continue;
 
-        // Tentativa primária no bucket 'assessment_photos'
-        const primaryBucket = "assessment_photos";
-        const { data: upData, error: errPrimary } = await supabase.storage
-          .from(primaryBucket)
-          .upload(fileName, blobToUpload, {
+        const tipoFoto = item.tipoFoto;
+        const fileName = `${currentUserId}/${Date.now()}_${tipoFoto}.jpg`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("avaliacoes")
+          .upload(fileName, file, {
             contentType: "image/jpeg",
             upsert: true,
           });
 
-        if (errPrimary) {
-          // Se o bucket não existir no projeto, tenta fallback para 'challenge_photos'
-          if (errPrimary.message?.includes("Bucket not found") || (errPrimary as any).statusCode === "404" || (errPrimary as any).status === 404) {
-            const fallbackBucket = "challenge_photos";
-            const { data: fbData, error: errFallback } = await supabase.storage
-              .from(fallbackBucket)
-              .upload(fileName, blobToUpload, {
-                contentType: "image/jpeg",
-                upsert: true,
-              });
-
-            if (errFallback) {
-              uploadError = errFallback;
-            } else {
-              const { data: pubUrlData } = supabase.storage
-                .from(fallbackBucket)
-                .getPublicUrl(fbData?.path || fileName);
-              finalPublicUrl = pubUrlData?.publicUrl || "";
-            }
-          } else {
-            uploadError = errPrimary;
-          }
-        } else {
-          const { data: pubUrlData } = supabase.storage
-            .from(primaryBucket)
-            .getPublicUrl(upData?.path || fileName);
-          finalPublicUrl = pubUrlData?.publicUrl || "";
-        }
-
         if (uploadError) {
-          console.log('[AVALIAÇÃO] Erro foto:', uploadError);
-          const realStorageMsg = uploadError.message || uploadError.error_description || JSON.stringify(uploadError);
+          console.error(`[ERRO SUPABASE]: Erro no upload da foto ${tipoFoto}:`, uploadError.message, uploadError);
+          const errorMsg = `Erro no upload da fotografia (${tipoFoto}): ${uploadError.message}`;
+          alert(errorMsg);
           setAssessmentFeedback({
             type: "error",
-            text: `Erro no Supabase Storage ao enviar foto (${item.slot}): ${realStorageMsg}`,
+            text: errorMsg,
           });
           setAssessmentSaving(false);
           return;
         }
 
-        uploadedUrls[item.slot] = finalPublicUrl || item.dataUrl;
+        const { data: { publicUrl } } = supabase.storage
+          .from("avaliacoes")
+          .getPublicUrl(fileName);
+
+        if (tipoFoto === "frente") urlFrente = publicUrl || "";
+        else if (tipoFoto === "lado") urlLado = publicUrl || "";
+        else if (tipoFoto === "costas") urlCostas = publicUrl || "";
       }
 
-      // 3. Estruturação dos dados da avaliação
-      const newEntry: any = {
-        id: `ass-${Date.now()}`,
-        date: new Date().toISOString().split("T")[0],
-        photos: [uploadedUrls.front || photoFront, uploadedUrls.side || photoSide, uploadedUrls.back || photoBack].filter(Boolean),
-        photo_front: uploadedUrls.front || photoFront || undefined,
-        photo_side: uploadedUrls.side || photoSide || undefined,
-        photo_back: uploadedUrls.back || photoBack || undefined,
-        notes: assessmentNotes,
-        measurements: {
-          arm_cm: armVal,
-          waist_cm: waistVal,
-          chest_cm: chestVal,
-          thigh_cm: thighVal,
-          weight_kg: weightVal,
-        },
-        coach_feedback: "Atualização do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
-      };
+      // 3. Fazer o INSERT na tabela oficial 'avaliacoes'
+      const peso = weightVal ? Number(weightVal) : 0;
+      const braco = armVal ? Number(armVal) : 0;
+      const cintura = waistVal ? Number(waistVal) : 0;
+      const torax = chestVal ? Number(chestVal) : 0;
+      const coxa = thighVal ? Number(thighVal) : 0;
+      const observacoes = assessmentNotes || null;
 
-      // 4. Inserção prioritária no Supabase na tabela oficial 'avaliacoes_ciclo'
-      const { data: cicloInsertData, error: cicloInsertError } = await supabase
-        .from("avaliacoes_ciclo")
-        .insert({
-          user_id: currentUserId,
-          user_email: currentUserEmail,
-          braco: armVal,
-          torax: chestVal,
-          cintura: waistVal,
-          peso: weightVal,
-          observacoes: assessmentNotes || null,
-          foto_frente_url: uploadedUrls.front || photoFront || null,
-          foto_lado_url: uploadedUrls.side || photoSide || null,
-          foto_costas_url: uploadedUrls.back || photoBack || null,
-          fotos: [uploadedUrls.front || photoFront, uploadedUrls.side || photoSide, uploadedUrls.back || photoBack].filter(Boolean),
-          coach_feedback: "Avaliação do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
-          created_at: new Date().toISOString(),
-        });
-
-      if (cicloInsertError) {
-        console.error("[ERRO SUPABASE]:", cicloInsertError.message, cicloInsertError.details);
-        alert(`Erro ao salvar no banco: ${cicloInsertError.message}`);
-      }
-
-      // 4.1 Inserção de compatibilidade na tabela 'assessments'
-      const { error: insertError } = await supabase.from("assessments").insert({
+      const { error: insertError } = await supabase.from("avaliacoes").insert({
         user_id: currentUserId,
-        user_email: currentUserEmail,
-        date: newEntry.date,
-        photos: newEntry.photos,
-        photo_front: newEntry.photo_front || null,
-        photo_side: newEntry.photo_side || null,
-        photo_back: newEntry.photo_back || null,
-        measurements: newEntry.measurements,
-        notes: assessmentNotes || null,
-        created_at: new Date().toISOString(),
+        peso: Number(peso),
+        braco: Number(braco),
+        cintura: Number(cintura),
+        torax: Number(torax),
+        coxa: Number(coxa),
+        observacoes,
+        foto_frente_url: urlFrente,
+        foto_lado_url: urlLado,
+        foto_costas_url: urlCostas,
       });
 
       if (insertError) {
-        console.error("[ERRO SUPABASE]:", insertError.message, insertError.details);
+        console.error("[ERRO SUPABASE]: Erro ao registar avaliação na tabela avaliacoes:", insertError.message, insertError.details);
+        const errorDesc = `Erro ao registar a avaliação: ${insertError.message}`;
+        alert(errorDesc);
+        setAssessmentFeedback({
+          type: "error",
+          text: errorDesc,
+        });
+        setAssessmentSaving(false);
+        return;
       }
 
-      // 4.2 Atualização no perfil 'perfis'
+      // 4. Inserção complementar na tabela 'avaliacoes_ciclo' e 'assessments' para retrocompatibilidade
       try {
-        const { error: perfilUpdateErr } = await supabase
+        await supabase
+          .from("avaliacoes_ciclo")
+          .insert({
+            user_id: currentUserId,
+            user_email: currentUserEmail,
+            braco: Number(braco),
+            torax: Number(torax),
+            cintura: Number(cintura),
+            peso: Number(peso),
+            coxa: Number(coxa),
+            observacoes,
+            foto_frente_url: urlFrente,
+            foto_lado_url: urlLado,
+            foto_costas_url: urlCostas,
+            fotos: [urlFrente, urlLado, urlCostas].filter(Boolean) as string[],
+            coach_feedback: "Avaliação do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
+            created_at: new Date().toISOString(),
+          });
+      } catch (eCiclo) {
+        console.warn("[AVALIAÇÃO] Aviso ao salvar em avaliacoes_ciclo:", eCiclo);
+      }
+
+      try {
+        await supabase.from("assessments").insert({
+          user_id: currentUserId,
+          user_email: currentUserEmail,
+          date: new Date().toISOString().split("T")[0],
+          photo_front: urlFrente,
+          photo_side: urlLado,
+          photo_back: urlCostas,
+          photos: [urlFrente, urlLado, urlCostas].filter(Boolean),
+          measurements: {
+            arm_cm: braco,
+            waist_cm: cintura,
+            chest_cm: torax,
+            thigh_cm: coxa,
+            weight_kg: peso,
+          },
+          notes: observacoes,
+          created_at: new Date().toISOString(),
+        });
+      } catch (eAss) {
+        console.warn("[AVALIAÇÃO] Aviso ao salvar em assessments:", eAss);
+      }
+
+      // 4.1 Atualização no perfil 'perfis'
+      try {
+        await supabase
           .from("perfis")
           .update({
-            peso_kg: weightVal,
+            peso_kg: peso,
             updated_at: new Date().toISOString(),
           })
           .eq("id", currentUserId);
-
-        if (perfilUpdateErr) {
-          console.error("[ERRO SUPABASE]:", perfilUpdateErr.message, perfilUpdateErr.details);
-        }
       } catch (errPerfil) {
         console.warn("[AVALIAÇÃO] Aviso ao atualizar perfis:", errPerfil);
       }
 
-      // 5. Atualização complementar no banco (profiles) e sincronização local
-      try {
-        await supabase.from("profiles").upsert({
-          id: currentUserId,
-          updated_at: new Date().toISOString(),
-        });
-      } catch (errDb) {
-        console.warn("[AVALIAÇÃO] Aviso ao sincronizar perfil no Supabase:", errDb);
+      // 5. Atualização complementar e recarga das avaliações atualizadas
+      const { data: freshAvaliacoes } = await supabase
+        .from("avaliacoes")
+        .select("*")
+        .eq("user_id", currentUserId)
+        .order("created_at", { ascending: false });
+
+      if (freshAvaliacoes && freshAvaliacoes.length > 0) {
+        setCycleAssessments(freshAvaliacoes);
       }
+
+      const newEntry: any = {
+        id: `ass-${Date.now()}`,
+        date: new Date().toISOString().split("T")[0],
+        photos: [urlFrente, urlLado, urlCostas].filter(Boolean),
+        photo_front: urlFrente || undefined,
+        photo_side: urlLado || undefined,
+        photo_back: urlCostas || undefined,
+        notes: observacoes,
+        measurements: {
+          arm_cm: braco,
+          waist_cm: cintura,
+          chest_cm: torax,
+          thigh_cm: coxa,
+          weight_kg: peso,
+        },
+        coach_feedback: "Atualização do ciclo de 20 dias recebida com sucesso pelo Coach! Calibração em andamento.",
+      };
 
       const existingAssessments = profile?.assessments || [];
       const updatedAssessments = [newEntry, ...existingAssessments];
@@ -798,14 +828,31 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         assessments: updatedAssessments,
         last_assessment_date: newEntry.date,
       };
-      if (weightVal !== null) profilePatch.weight_kg = weightVal;
-      if (armVal !== null) profilePatch.right_arm_cm = armVal;
-      if (waistVal !== null) profilePatch.waist_cm = waistVal;
-      if (chestVal !== null) profilePatch.chest_cm = chestVal;
-      if (thighVal !== null) profilePatch.right_leg_cm = thighVal;
+      if (peso > 0) profilePatch.weight_kg = peso;
+      if (braco > 0) profilePatch.right_arm_cm = braco;
+      if (cintura > 0) profilePatch.waist_cm = cintura;
+      if (torax > 0) profilePatch.chest_cm = torax;
+      if (coxa > 0) profilePatch.right_leg_cm = coxa;
 
       const updated = await api.updateProfile(profilePatch);
       setProfile(updated);
+
+      // Limpar formulário de avaliação
+      setPhotoFront("");
+      setPhotoSide("");
+      setPhotoBack("");
+      setPhotoFrontFile(null);
+      setPhotoSideFile(null);
+      setPhotoBackFile(null);
+      setPhotoFrontBlob(null);
+      setPhotoSideBlob(null);
+      setPhotoBackBlob(null);
+      setArmCm("");
+      setWaistCm("");
+      setChestCm("");
+      setThighCm("");
+      setAssessmentWeight("");
+      setAssessmentNotes("");
 
       // 6. Confirmação de Sucesso
       setAssessmentFeedback({
@@ -1704,77 +1751,133 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
           </div>
 
         {/* Assessment History */}
-        {profile?.assessments && profile.assessments.length > 0 && (
-          <div className="space-y-2 pt-2">
-            <h4 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider">
-              Histórico de Envios
-            </h4>
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {profile.assessments.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-2 text-xs"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <Calendar className="w-4 h-4 text-[#D8B46A]" />
-                      <span className="font-bold text-[#F5F5F7]">{item.date}</span>
+        {(() => {
+          const displayAssessments = [
+            ...cycleAssessments.map((ca: any) => ({
+              id: ca.id,
+              date: ca.created_at ? new Date(ca.created_at).toLocaleDateString("pt-BR") : "Ciclo Recente",
+              weight_kg: ca.peso,
+              right_arm_cm: ca.braco,
+              waist_cm: ca.cintura,
+              chest_cm: ca.torax,
+              thigh_cm: ca.coxa,
+              photo_front: ca.foto_frente_url,
+              photo_side: ca.foto_lado_url,
+              photo_back: ca.foto_costas_url,
+              photos: [ca.foto_frente_url, ca.foto_lado_url, ca.foto_costas_url].filter(Boolean),
+              observacoes: ca.observacoes,
+              coach_feedback: ca.coach_feedback,
+              status: ca.status || (ca.coach_feedback ? "avaliado" : "pendente"),
+            })),
+            ...(profile?.assessments || []).filter((pa: any) => !cycleAssessments.some((ca: any) => ca.id === pa.id)),
+          ];
+
+          if (displayAssessments.length === 0) return null;
+
+          return (
+            <div className="space-y-2 pt-2">
+              <h4 className="text-xs font-bold text-[#9B9BA1] uppercase tracking-wider">
+                Histórico de Envios & Atualizações ({displayAssessments.length})
+              </h4>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {displayAssessments.map((item: any) => (
+                  <div
+                    key={item.id}
+                    className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] space-y-2 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <Calendar className="w-4 h-4 text-[#D8B46A]" />
+                        <span className="font-bold text-[#F5F5F7]">{item.date}</span>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                        item.status === "pendente" && !item.coach_feedback
+                          ? "bg-[#D8B46A]/10 text-[#D8B46A] border-[#D8B46A]/30"
+                          : "bg-[#34C759]/10 text-[#34C759] border-[#34C759]/30"
+                      }`}>
+                        {item.status === "pendente" && !item.coach_feedback
+                          ? "Pendente de Avaliação"
+                          : "Avaliado pelo Coach"}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-bold text-[#34C759] bg-[#34C759]/10 px-2.5 py-1 rounded-full border border-[#34C759]/30">
-                      Avaliado pelo Coach
-                    </span>
+
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#9B9BA1]">
+                      {item.weight_kg !== undefined && item.weight_kg !== null && (
+                        <span>Peso: <strong className="text-[#F5F5F7]">{item.weight_kg}kg</strong></span>
+                      )}
+                      {item.right_arm_cm !== undefined && item.right_arm_cm !== null && (
+                        <span>Braço: <strong className="text-[#F5F5F7]">{item.right_arm_cm}cm</strong></span>
+                      )}
+                      {item.waist_cm !== undefined && item.waist_cm !== null && (
+                        <span>Cintura: <strong className="text-[#F5F5F7]">{item.waist_cm}cm</strong></span>
+                      )}
+                      {item.chest_cm !== undefined && item.chest_cm !== null && (
+                        <span>Tórax: <strong className="text-[#F5F5F7]">{item.chest_cm}cm</strong></span>
+                      )}
+                      {item.thigh_cm !== undefined && item.thigh_cm !== null && (
+                        <span>Coxa: <strong className="text-[#F5F5F7]">{item.thigh_cm}cm</strong></span>
+                      )}
+                    </div>
+
+                    {item.observacoes && (
+                      <p className="text-[11px] text-[#F5F5F7]/80 italic bg-black/25 p-2 rounded-lg border border-[#2B2B2F]">
+                        &ldquo;{item.observacoes}&rdquo;
+                      </p>
+                    )}
+
+                    {item.coach_feedback && (
+                      <div className="p-2 rounded-lg bg-[#34C759]/10 border border-[#34C759]/30 text-[11px] text-[#34C759]">
+                        <strong>Feedback do Coach:</strong> {item.coach_feedback}
+                      </div>
+                    )}
+
+                    {/* 3 Photos Thumbnails */}
+                    {(item.photos?.length > 0 || item.photo_front || item.photo_side || item.photo_back) && (
+                      <div className="grid grid-cols-3 gap-2 pt-1">
+                        {(item.photo_front || item.photos?.[0]) && (
+                          <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
+                            <img
+                              src={item.photo_front || item.photos?.[0]}
+                              alt="Frente"
+                              className="w-full h-full object-cover"
+                            />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
+                              Frente
+                            </span>
+                          </div>
+                        )}
+                        {(item.photo_side || item.photos?.[1]) && (
+                          <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
+                            <img
+                              src={item.photo_side || item.photos?.[1]}
+                              alt="Lado"
+                              className="w-full h-full object-cover"
+                            />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
+                              Lado
+                            </span>
+                          </div>
+                        )}
+                        {(item.photo_back || item.photos?.[2]) && (
+                          <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
+                            <img
+                              src={item.photo_back || item.photos?.[2]}
+                              alt="Costas"
+                              className="w-full h-full object-cover"
+                            />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
+                              Costas
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-
-                  <p className="text-[11px] text-[#9B9BA1]">
-                    Peso: {item.measurements?.weight_kg || item.weight_kg ? `${item.measurements?.weight_kg || item.weight_kg}kg` : "—"} · Braço: {item.measurements?.arm_cm || item.right_arm_cm ? `${item.measurements?.arm_cm || item.right_arm_cm}cm` : "—"} · Cintura: {item.measurements?.waist_cm || item.waist_cm ? `${item.measurements?.waist_cm || item.waist_cm}cm` : "—"}
-                  </p>
-
-                  {/* 3 Photos Thumbnails */}
-                  {(item.photos || item.photo_front) && (
-                    <div className="grid grid-cols-3 gap-2 pt-1">
-                      {item.photo_front && (
-                        <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
-                          <img
-                            src={item.photo_front}
-                            alt="Frente"
-                            className="w-full h-full object-cover"
-                          />
-                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
-                            Frente
-                          </span>
-                        </div>
-                      )}
-                      {item.photo_side && (
-                        <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
-                          <img
-                            src={item.photo_side}
-                            alt="Lado"
-                            className="w-full h-full object-cover"
-                          />
-                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
-                            Lado
-                          </span>
-                        </div>
-                      )}
-                      {item.photo_back && (
-                        <div className="relative rounded-lg overflow-hidden h-20 border border-[#333]">
-                          <img
-                            src={item.photo_back}
-                            alt="Costas"
-                            className="w-full h-full object-cover"
-                          />
-                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-[8px] font-bold text-white">
-                            Costas
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
       )}
 

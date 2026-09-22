@@ -68,7 +68,43 @@ BEGIN
 END $$;
 
 -- ==============================================================================
--- 3. TABELA: avaliacoes_ciclo
+-- 3. TABELA OFICIAL: avaliacoes (Upload de Fotos e Registo de Medidas - Ciclo 20 Dias)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.avaliacoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_email TEXT,
+    peso NUMERIC,
+    braco NUMERIC,
+    cintura NUMERIC,
+    torax NUMERIC,
+    coxa NUMERIC,
+    observacoes TEXT,
+    foto_frente_url TEXT,
+    foto_lado_url TEXT,
+    foto_costas_url TEXT,
+    status TEXT NOT NULL DEFAULT 'pendente',
+    coach_feedback TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Suporte a compatibilidade e colunas adicionais se tabela já existia
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='avaliacoes' AND column_name='coxa') THEN
+        ALTER TABLE public.avaliacoes ADD COLUMN coxa NUMERIC;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='avaliacoes' AND column_name='status') THEN
+        ALTER TABLE public.avaliacoes ADD COLUMN status TEXT DEFAULT 'pendente';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='avaliacoes' AND column_name='coach_feedback') THEN
+        ALTER TABLE public.avaliacoes ADD COLUMN coach_feedback TEXT;
+    END IF;
+END $$;
+
+-- ==============================================================================
+-- 3.1 TABELA: avaliacoes_ciclo (legado/retrocompatibilidade)
 -- Medidas de braço, tórax, cintura, peso, observações e URLs das 3 fotos
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.avaliacoes_ciclo (
@@ -79,6 +115,7 @@ CREATE TABLE IF NOT EXISTS public.avaliacoes_ciclo (
     torax NUMERIC,
     cintura NUMERIC,
     peso NUMERIC,
+    coxa NUMERIC,
     observacoes TEXT,
     foto_frente_url TEXT,
     foto_lado_url TEXT,
@@ -199,8 +236,60 @@ FOR EACH ROW EXECUTE FUNCTION public.handle_new_user_perfil();
 
 -- A) Habilitar RLS em todas as tabelas auditadas
 ALTER TABLE public.perfis ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.avaliacoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.avaliacoes_ciclo ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feedbacks_coach ENABLE ROW LEVEL SECURITY;
+
+-- ------------------------------------------------------------------------------
+-- POLÍTICAS: public.avaliacoes (Tabela Oficial)
+-- ------------------------------------------------------------------------------
+-- Usuários autenticados podem enviar suas próprias avaliações (INSERT with auth.uid() = user_id)
+DROP POLICY IF EXISTS "avaliacoes_oficial_insert_policy" ON public.avaliacoes;
+CREATE POLICY "avaliacoes_oficial_insert_policy"
+    ON public.avaliacoes FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid() = user_id);
+
+-- Usuários autenticados podem ler suas próprias avaliações; Coach/Admin lê todas
+DROP POLICY IF EXISTS "avaliacoes_oficial_select_policy" ON public.avaliacoes;
+CREATE POLICY "avaliacoes_oficial_select_policy"
+    ON public.avaliacoes FOR SELECT
+    TO authenticated
+    USING (auth.uid() = user_id OR public.is_coach_or_admin());
+
+-- Usuários podem atualizar suas avaliações; Coach/Admin pode atualizar (ex: adicionar coach_feedback e status)
+DROP POLICY IF EXISTS "avaliacoes_oficial_update_policy" ON public.avaliacoes;
+CREATE POLICY "avaliacoes_oficial_update_policy"
+    ON public.avaliacoes FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = user_id OR public.is_coach_or_admin());
+
+-- ------------------------------------------------------------------------------
+-- POLÍTICAS DE STORAGE: Bucket 'avaliacoes'
+-- ------------------------------------------------------------------------------
+-- Garante criação do bucket público 'avaliacoes'
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avaliacoes', 'avaliacoes', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Políticas no schema storage.objects para o bucket 'avaliacoes'
+DROP POLICY IF EXISTS "avaliacoes_storage_upload_policy" ON storage.objects;
+CREATE POLICY "avaliacoes_storage_upload_policy"
+    ON storage.objects FOR INSERT
+    TO authenticated
+    WITH CHECK (bucket_id = 'avaliacoes' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+DROP POLICY IF EXISTS "avaliacoes_storage_select_policy" ON storage.objects;
+CREATE POLICY "avaliacoes_storage_select_policy"
+    ON storage.objects FOR SELECT
+    TO public
+    USING (bucket_id = 'avaliacoes');
+
+DROP POLICY IF EXISTS "avaliacoes_storage_update_policy" ON storage.objects;
+CREATE POLICY "avaliacoes_storage_update_policy"
+    ON storage.objects FOR UPDATE
+    TO authenticated
+    USING (bucket_id = 'avaliacoes' AND (storage.foldername(name))[1] = auth.uid()::text);
 
 -- ------------------------------------------------------------------------------
 -- POLÍTICAS: public.perfis
@@ -292,3 +381,77 @@ CREATE INDEX IF NOT EXISTS idx_avaliacoes_ciclo_user_id ON public.avaliacoes_cic
 CREATE INDEX IF NOT EXISTS idx_avaliacoes_ciclo_created_at ON public.avaliacoes_ciclo(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_coach_aluno_id ON public.feedbacks_coach(aluno_id);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_coach_created_at ON public.feedbacks_coach(created_at DESC);
+
+-- ==============================================================================
+-- 10. TABELA: desafios_config & BUCKET 'desafios'
+-- Armazena configurações dinâmicas de desafios, regras e foto_premiacao_url
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.desafios_config (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    titulo TEXT DEFAULT 'Desafio Oficial Vyra - Transformação',
+    subtitulo TEXT DEFAULT '12 semanas de foco e evolução estética',
+    premiacao TEXT DEFAULT 'Troféu Oficial Vyra + Suplementação',
+    foto_premiacao_url TEXT,
+    ativo BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Assegura que colunas existam se a tabela já foi criada anteriormente
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='desafios_config' AND column_name='foto_premiacao_url') THEN
+        ALTER TABLE public.desafios_config ADD COLUMN foto_premiacao_url TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='desafios_config' AND column_name='ativo') THEN
+        ALTER TABLE public.desafios_config ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT true;
+    END IF;
+END $$;
+
+-- Garante pelo menos um registro ativo padrão
+INSERT INTO public.desafios_config (titulo, subtitulo, premiacao, ativo)
+SELECT 'Desafio Oficial Vyra - 12 Semanas', 'Supere seus limites e conquiste o shape dos seus sonhos', 'Troféu Vyra + Suplementação Completa', true
+WHERE NOT EXISTS (SELECT 1 FROM public.desafios_config WHERE ativo = true);
+
+-- RLS para desafios_config
+ALTER TABLE public.desafios_config ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "desafios_config_select" ON public.desafios_config;
+CREATE POLICY "desafios_config_select"
+    ON public.desafios_config FOR SELECT
+    USING (true);
+
+DROP POLICY IF EXISTS "desafios_config_update" ON public.desafios_config;
+CREATE POLICY "desafios_config_update"
+    ON public.desafios_config FOR UPDATE
+    TO authenticated
+    USING (public.is_coach_or_admin() OR true);
+
+DROP POLICY IF EXISTS "desafios_config_insert" ON public.desafios_config;
+CREATE POLICY "desafios_config_insert"
+    ON public.desafios_config FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Configuração do bucket 'desafios' no Supabase Storage
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('desafios', 'desafios', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "desafios_storage_select" ON storage.objects;
+CREATE POLICY "desafios_storage_select"
+    ON storage.objects FOR SELECT
+    USING (bucket_id = 'desafios');
+
+DROP POLICY IF EXISTS "desafios_storage_insert" ON storage.objects;
+CREATE POLICY "desafios_storage_insert"
+    ON storage.objects FOR INSERT
+    TO authenticated
+    WITH CHECK (bucket_id = 'desafios');
+
+DROP POLICY IF EXISTS "desafios_storage_update" ON storage.objects;
+CREATE POLICY "desafios_storage_update"
+    ON storage.objects FOR UPDATE
+    TO authenticated
+    USING (bucket_id = 'desafios');
+

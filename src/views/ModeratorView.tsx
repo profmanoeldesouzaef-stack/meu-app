@@ -17,8 +17,10 @@ import {
   Lock,
   Users,
   MessageCircle,
+  Trophy,
 } from "lucide-react";
 import { CoachWhatsAppModule } from "../components/CoachWhatsAppModule";
+import { ChallengePrizeManager } from "../components/ChallengePrizeManager";
 
 export const ModeratorView: React.FC = () => {
   const {
@@ -32,7 +34,7 @@ export const ModeratorView: React.FC = () => {
     setPersona,
   } = useApp();
 
-  const [activeModTab, setActiveModTab] = useState<"governance" | "whatsapp">("governance");
+  const [activeModTab, setActiveModTab] = useState<"governance" | "whatsapp" | "challenges">("governance");
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [newEmail, setNewEmail] = useState("");
@@ -238,6 +240,20 @@ export const ModeratorView: React.FC = () => {
           <MessageCircle className="w-4 h-4 fill-current" />
           <span>Comunicação WhatsApp dos Alunos ({students.length})</span>
         </button>
+
+        <button
+          id="mod-tab-challenges-btn"
+          type="button"
+          onClick={() => setActiveModTab("challenges")}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeModTab === "challenges"
+              ? "bg-[#D8B46A] text-black shadow-md shadow-[#D8B46A]/20"
+              : "text-[#9B9BA1] hover:text-[#F5F5F7]"
+          }`}
+        >
+          <Trophy className="w-4 h-4" />
+          <span>Premiação dos Desafios</span>
+        </button>
       </div>
 
       {activeModTab === "whatsapp" ? (
@@ -249,6 +265,8 @@ export const ModeratorView: React.FC = () => {
             );
           }}
         />
+      ) : activeModTab === "challenges" ? (
+        <ChallengePrizeManager />
       ) : (
         <>
           {/* Primary Task: Credenciar Novo Coach por E-mail */}
