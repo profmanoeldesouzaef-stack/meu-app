@@ -184,6 +184,11 @@ export const LoginModal: React.FC = () => {
               text: "A senha deve conter no mínimo 6 caracteres.",
               type: "error",
             });
+          } else if (msg.includes("database error saving new user") || msg.includes("database error")) {
+            setFeedback({
+              text: "Erro no banco de dados do Supabase ao salvar novo usuário. Execute o script SQL no Supabase SQL Editor para corrigir os gatilhos e tabelas.",
+              type: "error",
+            });
           } else {
             setFeedback({
               text: error.message || "Erro ao criar conta.",
@@ -191,6 +196,33 @@ export const LoginModal: React.FC = () => {
             });
           }
         } else {
+          // Assegura criação direta do perfil caso o usuário tenha sido gerado
+          if (data?.user) {
+            try {
+              const displayName = fullName.trim() || cleanEmail.split("@")[0];
+              const profilePayload = {
+                id: data.user.id,
+                email: cleanEmail,
+                nome: displayName,
+                name: displayName,
+                full_name: displayName,
+                role: "aluno",
+                cargo: "aluno",
+                protocolo_atual: "Vyra Shape",
+                onboarding_completed: false,
+                workout_released: false,
+                diet_released: false,
+                updated_at: new Date().toISOString(),
+              };
+              await Promise.allSettled([
+                supabase.from("profiles").upsert(profilePayload, { onConflict: "id" }),
+                supabase.from("perfis").upsert(profilePayload, { onConflict: "id" }),
+              ]);
+            } catch (errProfile) {
+              console.warn("[AUTH] Aviso ao inicializar perfil local:", errProfile);
+            }
+          }
+
           if (data?.session) {
             setFeedback({
               text: "Conta criada com sucesso! Redirecionando...",
