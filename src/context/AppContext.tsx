@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
-import { Persona, Lang, Theme, Subscription, Plan, BillingCycle } from "../types";
+import { Persona, UserRole, Lang, Theme, Subscription, Plan, BillingCycle } from "../types";
 import { supabase } from "../lib/supabase";
 import { api } from "../api/client";
 import { MilestoneCelebrationData } from "../components/MilestoneCelebrationModal";
@@ -49,6 +49,11 @@ interface AppContextType {
   authLoading: boolean;
   ensureUserProfile: (user: any) => Promise<void>;
   persona: Persona;
+  userRole: UserRole;
+  isCoach: boolean;
+  isModerator: boolean;
+  isAdmin: boolean;
+  isStudentOnly: boolean;
   lang: Lang;
   theme: Theme;
   loggedIn: boolean;
@@ -512,6 +517,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [persona, setPersonaState] = useState<Persona>("student");
+  const [userRole, setUserRoleState] = useState<UserRole>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("vyra_user_role");
+        if (saved === "coach" || saved === "moderator" || saved === "admin" || saved === "aluno") {
+          return saved as UserRole;
+        }
+      }
+    } catch {}
+    return "aluno";
+  });
+
+  const isCoach = useMemo(() => userRole === "coach" || userRole === "admin", [userRole]);
+  const isModerator = useMemo(() => userRole === "moderator" || userRole === "admin", [userRole]);
+  const isAdmin = useMemo(() => userRole === "admin", [userRole]);
+  const isStudentOnly = useMemo(() => !isCoach && !isModerator && !isAdmin, [isCoach, isModerator, isAdmin]);
+
   const [lang, setLangState] = useState<Lang>("pt");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [loggedIn, setLoggedInState] = useState<boolean>(() => {
@@ -543,25 +565,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const setActiveView = useCallback((view: ActiveView) => {
     console.log("[NAVIGATION] Navigating to activeView:", view);
+
+    // Proteção estrita de rotas para áreas restritas:
+    if (view === "coach" && !isCoach && !isModerator && !isAdmin) {
+      console.warn("[SECURITY] Bloqueado acesso não autorizado à área de Coach.");
+      setActiveViewState("home");
+      setPersonaState("student");
+      return;
+    }
+    if (view === "moderator" && !isModerator && !isAdmin) {
+      console.warn("[SECURITY] Bloqueado acesso não autorizado à área de Moderação.");
+      setActiveViewState("home");
+      setPersonaState("student");
+      return;
+    }
+
     setActiveViewState(view);
 
-    // Synchronize persona when navigating to role-specific views
-    if (view === "coach") {
+    // Sincroniza a persona caso o usuário tenha a devida permissão
+    if (view === "coach" && (isCoach || isModerator || isAdmin)) {
       setPersonaState("coach");
       localStorage.setItem("vyra_persona", "coach");
-    } else if (view === "moderator") {
+    } else if (view === "moderator" && (isModerator || isAdmin)) {
       setPersonaState("moderator");
       localStorage.setItem("vyra_persona", "moderator");
     } else if (view === "training" || view === "diet" || view === "progress" || view === "home") {
       setPersonaState((curr) => {
-        if (curr !== "student") {
+        if (curr !== "student" && isStudentOnly) {
           localStorage.setItem("vyra_persona", "student");
           return "student";
         }
         return curr;
       });
     }
-  }, []);
+  }, [isCoach, isModerator, isAdmin, isStudentOnly]);
   const [selectedPlan, setSelectedPlan] = useState<{ plan: Plan; cycle: BillingCycle } | null>(null);
 
   const [onboardingCompleted, setOnboardingCompletedState] = useState<boolean>(() => {
@@ -1027,7 +1064,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const isCoachEmail = useCallback(
     (email: string) => {
       const clean = email.trim().toLowerCase();
-      if (!clean) return true;
+      if (!clean) return false;
       return (
         registeredCoaches.some((c) => c.toLowerCase() === clean) ||
         registeredModerators.some((m) => m.toLowerCase() === clean)
@@ -1068,15 +1105,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       const userEmail = (usuario.email || "").trim().toLowerCase();
 
       // 1. Verificação preliminar baseada em e-mail / metadados
+      let detectedRole: UserRole = "aluno";
       let detectedPersona: Persona = "student";
 
       if (
         userEmail === "suporte@vyratraining.com" ||
+        userEmail === "admin@vyra.club" ||
+        usuario.user_metadata?.role === "admin" ||
+        usuario.app_metadata?.role === "admin"
+      ) {
+        detectedRole = "admin";
+        detectedPersona = "moderator";
+      } else if (
         usuario.user_metadata?.role === "moderator" ||
         usuario.app_metadata?.role === "moderator" ||
-        usuario.app_metadata?.role === "admin" ||
         registeredModerators.some((m) => m.toLowerCase() === userEmail)
       ) {
+        detectedRole = "moderator";
         detectedPersona = "moderator";
       } else if (
         usuario.user_metadata?.is_coach === true ||
@@ -1085,6 +1130,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         usuario.app_metadata?.role === "coach" ||
         registeredCoaches.some((c) => c.toLowerCase() === userEmail)
       ) {
+        detectedRole = "coach";
         detectedPersona = "coach";
       }
 
@@ -1129,12 +1175,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
 
           if (!error && profileRecord) {
             const roleClean = String(profileRecord.role || "").toLowerCase().trim();
-            if (roleClean === "coach" || roleClean === "treinador" || profileRecord.is_coach === true) {
-              detectedPersona = "coach";
-            } else if (roleClean === "moderator" || roleClean === "moderador" || roleClean === "admin") {
+            if (roleClean === "admin") {
+              detectedRole = "admin";
               detectedPersona = "moderator";
+            } else if (roleClean === "moderator" || roleClean === "moderador") {
+              detectedRole = "moderator";
+              detectedPersona = "moderator";
+            } else if (roleClean === "coach" || roleClean === "treinador" || profileRecord.is_coach === true) {
+              detectedRole = "coach";
+              detectedPersona = "coach";
             } else {
-              detectedPersona = "student";
+              if (
+                !registeredCoaches.some((c) => c.toLowerCase() === userEmail) &&
+                !registeredModerators.some((m) => m.toLowerCase() === userEmail)
+              ) {
+                detectedRole = "aluno";
+                detectedPersona = "student";
+              }
             }
 
             // Gamificação baseada ESTRITAMENTE nos dados do Supabase
@@ -1218,6 +1275,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn("Aviso ao ler perfil do Supabase:", e);
       }
 
+      setUserRoleState(detectedRole);
+      localStorage.setItem("vyra_user_role", detectedRole);
       setPersonaState(detectedPersona);
       localStorage.setItem("vyra_persona", detectedPersona);
 
@@ -1408,16 +1467,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
           }
 
           if (profile) {
-            const rawRole = String(profile.role || "").toLowerCase().trim();
+            const rawRole = String(profile.role || profile.cargo || "").toLowerCase().trim();
             let detectedRole: Persona = "student";
+            let detectedUserRole: UserRole = "aluno";
 
-            if (rawRole === "coach" || rawRole === "treinador" || profile.is_coach === true) {
-              detectedRole = "coach";
-            } else if (rawRole === "moderator" || rawRole === "moderador" || rawRole === "admin") {
+            if (rawRole === "admin") {
               detectedRole = "moderator";
+              detectedUserRole = "admin";
+            } else if (rawRole === "moderator" || rawRole === "moderador") {
+              detectedRole = "moderator";
+              detectedUserRole = "moderator";
+            } else if (rawRole === "coach" || rawRole === "treinador" || profile.is_coach === true) {
+              detectedRole = "coach";
+              detectedUserRole = "coach";
             } else {
-              // Cobre 'aluno', 'student' e padrão
               detectedRole = "student";
+              detectedUserRole = "aluno";
             }
 
             setUserProfile({
@@ -1425,6 +1490,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
               ...profile,
               role: profile.role || "aluno",
             });
+            setUserRoleState(detectedUserRole);
+            localStorage.setItem("vyra_user_role", detectedUserRole);
             setPersonaState(detectedRole);
             localStorage.setItem("vyra_persona", detectedRole);
 
@@ -1628,6 +1695,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem("vyra_logged_in", "true");
 
       if (isModeratorEmail(clean)) {
+        setUserRoleState("moderator");
+        localStorage.setItem("vyra_user_role", "moderator");
         setPersonaState("moderator");
         localStorage.setItem("vyra_persona", "moderator");
         setActiveView("moderator");
@@ -1639,6 +1708,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       if (isCoachEmail(clean)) {
+        setUserRoleState("coach");
+        localStorage.setItem("vyra_user_role", "coach");
         setPersonaState("coach");
         localStorage.setItem("vyra_persona", "coach");
         setActiveView("coach");
@@ -1652,6 +1723,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       if (isPartnerEmail(clean)) {
         setIsVeteranState(true);
         localStorage.setItem("vyra_is_veteran", "true");
+        setUserRoleState("aluno");
+        localStorage.setItem("vyra_user_role", "aluno");
         setPersonaState("student");
         localStorage.setItem("vyra_persona", "student");
         setActiveView("home");
@@ -1663,6 +1736,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // Standard student
+      setUserRoleState("aluno");
+      localStorage.setItem("vyra_user_role", "aluno");
       setPersonaState("student");
       localStorage.setItem("vyra_persona", "student");
       setActiveView("home");
@@ -1858,6 +1933,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const setPersona = useCallback(
     (p: Persona) => {
       const normalizedPersona: Persona = p === "aluno" ? "student" : p;
+
+      // Segurança: se o usuário for aluno, ele não pode assumir papel de coach ou moderador
+      if (userRole === "aluno" && normalizedPersona !== "student") {
+        console.warn("[SECURITY] Alunos não possuem autorização para áreas de coach ou moderador.");
+        setPersonaState("student");
+        setActiveViewState("home");
+        localStorage.setItem("vyra_persona", "student");
+        return;
+      }
+
+      // Se for coach mas não moderador/admin, não pode assumir papel de moderador
+      if (userRole === "coach" && normalizedPersona === "moderator") {
+        console.warn("[SECURITY] Coach não possui permissão de moderador.");
+        return;
+      }
+
       console.log("[NAVIGATION] Switching persona to:", normalizedPersona);
       setPersonaState(normalizedPersona);
       localStorage.setItem("vyra_persona", normalizedPersona);
@@ -1876,7 +1967,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
     },
-    []
+    [userRole]
   );
 
   const setLang = useCallback((l: Lang) => {
@@ -1894,6 +1985,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.setItem("vyra_logged_in", String(v));
     if (!v) {
       setCurrentUserEmailState("");
+      setUserRoleState("aluno");
       setPersonaState("student");
       setActiveView("home");
     }
@@ -1906,7 +1998,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       console.warn("Supabase signOut error:", err);
     }
     setUser(null);
+    setUserRoleState("aluno");
     localStorage.removeItem("vyra_logged_in");
+    localStorage.removeItem("vyra_user_role");
     localStorage.removeItem("vyra_current_user_email");
     localStorage.removeItem("vyra_user_name");
     localStorage.removeItem("vyra_user_nickname");
@@ -2076,6 +2170,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         authLoading,
         ensureUserProfile,
         persona,
+        userRole,
+        isCoach,
+        isModerator,
+        isAdmin,
+        isStudentOnly,
         lang,
         theme,
         loggedIn,

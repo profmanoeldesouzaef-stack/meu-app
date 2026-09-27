@@ -1,4 +1,5 @@
 export type Persona = "student" | "coach" | "moderator" | "aluno";
+export type UserRole = "aluno" | "coach" | "moderator" | "admin";
 export type Lang = "pt" | "en";
 export type Theme = "dark" | "light";
 

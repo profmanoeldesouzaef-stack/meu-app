@@ -23,6 +23,11 @@ export const Header: React.FC = () => {
     setActiveView,
     activeView,
     isChampion,
+    isCoach,
+    isModerator,
+    isAdmin,
+    isStudentOnly,
+    userRole,
     systemNotifications,
     dismissNotification,
     markNotificationAsRead,
@@ -96,65 +101,82 @@ export const Header: React.FC = () => {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Alternador de Áreas: Aluno, Coach e Moderador */}
-          <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#151515] border border-[#2B2B2F]">
-            {/* Área do Aluno */}
-            <button
-              id="header-btn-aluno"
-              type="button"
-              onClick={() => {
-                setPersona("student");
-                setActiveView("home");
-              }}
-              className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                persona === "student" && activeView !== "coach" && activeView !== "moderator"
-                  ? "bg-[#FF6A2A] text-white shadow-sm shadow-[#FF6A2A]/20"
-                  : "text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F]"
-              }`}
-              title="Acessar Área do Aluno (Treinos, Dieta e Início)"
-            >
-              <User className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Aluno</span>
-            </button>
+          {/* Alternador de Áreas Segregado por Papel */}
+          {isStudentOnly ? (
+            /* Aluno Comum: Não visualiza nem acessa áreas de Coach ou Moderador */
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-[#151515] border border-[#2B2B2F] text-xs font-bold text-[#F5F5F7] shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-[#FF6A2A] shadow-sm shadow-[#FF6A2A]"></span>
+              <span className="text-[#FF6A2A] flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Área do Aluno</span>
+                <span className="sm:hidden">Aluno</span>
+              </span>
+            </div>
+          ) : (
+            /* Usuários com papéis de Coach ou Moderador/Admin */
+            <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#151515] border border-[#2B2B2F]">
+              {/* Área do Aluno (para o Coach ou Moderador ver como o aluno vê) */}
+              <button
+                id="header-btn-aluno"
+                type="button"
+                onClick={() => {
+                  setPersona("student");
+                  setActiveView("home");
+                }}
+                className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  persona === "student" && activeView !== "coach" && activeView !== "moderator"
+                    ? "bg-[#FF6A2A] text-white shadow-sm shadow-[#FF6A2A]/20"
+                    : "text-[#9B9BA1] hover:text-[#F5F5F7] hover:bg-[#1D1D1F]"
+                }`}
+                title="Acessar Área do Aluno"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Aluno</span>
+              </button>
 
-            {/* Painel do Coach */}
-            <button
-              id="header-btn-coach"
-              type="button"
-              onClick={() => {
-                setPersona("coach");
-                setActiveView("coach");
-              }}
-              className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                persona === "coach" || activeView === "coach"
-                  ? "bg-[#D8B46A] text-[#121214] shadow-sm shadow-[#D8B46A]/20 font-black"
-                  : "text-[#9B9BA1] hover:text-[#D8B46A] hover:bg-[#1D1D1F]"
-              }`}
-              title="Acessar Painel do Coach (Prescrições e Alunos)"
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Coach</span>
-            </button>
+              {/* Painel do Coach (Apenas para Coach e Admin) */}
+              {isCoach && (
+                <button
+                  id="header-btn-coach"
+                  type="button"
+                  onClick={() => {
+                    setPersona("coach");
+                    setActiveView("coach");
+                  }}
+                  className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    persona === "coach" || activeView === "coach"
+                      ? "bg-[#D8B46A] text-[#121214] shadow-sm shadow-[#D8B46A]/20 font-black"
+                      : "text-[#9B9BA1] hover:text-[#D8B46A] hover:bg-[#1D1D1F]"
+                  }`}
+                  title="Acessar Painel do Coach (Prescrições e Alunos)"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Coach</span>
+                </button>
+              )}
 
-            {/* Painel de Moderação */}
-            <button
-              id="header-btn-moderador"
-              type="button"
-              onClick={() => {
-                setPersona("moderator");
-                setActiveView("moderator");
-              }}
-              className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                persona === "moderator" || activeView === "moderator"
-                  ? "bg-[#6D9BFF] text-white shadow-sm shadow-[#6D9BFF]/20"
-                  : "text-[#9B9BA1] hover:text-[#6D9BFF] hover:bg-[#1D1D1F]"
-              }`}
-              title="Acessar Painel de Moderação (Governança e Credenciamento)"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Moderador</span>
-            </button>
-          </div>
+              {/* Painel de Moderação (Apenas para Moderador e Admin) */}
+              {isModerator && (
+                <button
+                  id="header-btn-moderador"
+                  type="button"
+                  onClick={() => {
+                    setPersona("moderator");
+                    setActiveView("moderator");
+                  }}
+                  className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    persona === "moderator" || activeView === "moderator"
+                      ? "bg-[#6D9BFF] text-white shadow-sm shadow-[#6D9BFF]/20"
+                      : "text-[#9B9BA1] hover:text-[#6D9BFF] hover:bg-[#1D1D1F]"
+                  }`}
+                  title="Acessar Painel de Moderação (Governança e Credenciamento)"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Moderador</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Botão de Avisos */}
           <div className="relative" ref={dropdownRef}>

@@ -77,6 +77,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
     applyVeteranCoupon,
     vipChatUnlocked,
     hasVipChatColors,
+    isCoach,
+    isModerator,
+    isAdmin,
+    isStudentOnly,
   } = useApp();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -889,22 +893,10 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
   );
   const isAssessmentDue = daysSince >= 20;
 
-  const isCoach =
-    supabaseRole === "coach" ||
-    persona === "coach" ||
-    Boolean(
-      currentUserEmail &&
-        [
-          "coach@vyra.club",
-          "mari@vyra.club",
-          "treinador@vyra.club",
-          "admin@vyra.club",
-          "headcoach@vyra.club",
-        ].includes(currentUserEmail.toLowerCase())
-    );
+  const isStaffView = (isCoach || isModerator) && (persona === "coach" || persona === "moderator");
 
   // Perfil simplificado para Coach e Moderador (conforme solicitação: o coach e moderador já possuem painéis dedicados com amplo acesso)
-  if (isCoach || persona === "moderator") {
+  if (isStaffView) {
     const isMod = persona === "moderator";
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-28 md:pb-12 space-y-6 animate-in fade-in duration-300">
@@ -1004,61 +996,65 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
               </span>
             </button>
 
-            {/* Botão Painel do Coach */}
-            <button
-              id="profile-coach-switch-coach-btn"
-              type="button"
-              onClick={() => {
-                setPersona("coach");
-                setActiveView("coach");
-              }}
-              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
-                !isMod
-                  ? "bg-[#D8B46A]/15 border-[#D8B46A] shadow-md shadow-[#D8B46A]/10"
-                  : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#D8B46A]/50"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-[#D8B46A] uppercase tracking-wider">
-                  Painel do Coach
+            {/* Botão Painel do Coach (Apenas se for Coach ou Admin) */}
+            {isCoach && (
+              <button
+                id="profile-coach-switch-coach-btn"
+                type="button"
+                onClick={() => {
+                  setPersona("coach");
+                  setActiveView("coach");
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
+                  !isMod
+                    ? "bg-[#D8B46A]/15 border-[#D8B46A] shadow-md shadow-[#D8B46A]/10"
+                    : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#D8B46A]/50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#D8B46A] uppercase tracking-wider">
+                    Painel do Coach
+                  </span>
+                  <UserCheck className="w-4 h-4 text-[#D8B46A]" />
+                </div>
+                <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                  Prescrição de treinos, ajuste de macros, CRM e inteligência IA.
+                </p>
+                <span className="text-[11px] font-bold text-[#D8B46A] group-hover:translate-x-0.5 transition-transform mt-1 block">
+                  {!isMod ? "● Painel Aberto" : "Abrir Painel do Coach →"}
                 </span>
-                <UserCheck className="w-4 h-4 text-[#D8B46A]" />
-              </div>
-              <p className="text-[11px] text-[#9B9BA1] leading-tight">
-                Prescrição de treinos, ajuste de macros, CRM e inteligência IA.
-              </p>
-              <span className="text-[11px] font-bold text-[#D8B46A] group-hover:translate-x-0.5 transition-transform mt-1 block">
-                {!isMod ? "● Painel Aberto" : "Abrir Painel do Coach →"}
-              </span>
-            </button>
+              </button>
+            )}
 
-            {/* Botão Moderação */}
-            <button
-              id="profile-coach-switch-mod-btn"
-              type="button"
-              onClick={() => {
-                setPersona("moderator");
-                setActiveView("moderator");
-              }}
-              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
-                isMod
-                  ? "bg-[#6D9BFF]/15 border-[#6D9BFF] shadow-md shadow-[#6D9BFF]/10"
-                  : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#6D9BFF]/50"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-[#6D9BFF] uppercase tracking-wider">
-                  Moderação
+            {/* Botão Moderação (Apenas se for Moderador ou Admin) */}
+            {isModerator && (
+              <button
+                id="profile-coach-switch-mod-btn"
+                type="button"
+                onClick={() => {
+                  setPersona("moderator");
+                  setActiveView("moderator");
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
+                  isMod
+                    ? "bg-[#6D9BFF]/15 border-[#6D9BFF] shadow-md shadow-[#6D9BFF]/10"
+                    : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#6D9BFF]/50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#6D9BFF] uppercase tracking-wider">
+                    Moderação
+                  </span>
+                  <Shield className="w-4 h-4 text-[#6D9BFF]" />
+                </div>
+                <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                  Governança master, credenciamento de novos coaches e segurança.
+                </p>
+                <span className="text-[11px] font-bold text-[#6D9BFF] group-hover:translate-x-0.5 transition-transform mt-1 block">
+                  {isMod ? "● Painel Aberto" : "Abrir Moderação →"}
                 </span>
-                <Shield className="w-4 h-4 text-[#6D9BFF]" />
-              </div>
-              <p className="text-[11px] text-[#9B9BA1] leading-tight">
-                Governança master, credenciamento de novos coaches e segurança.
-              </p>
-              <span className="text-[11px] font-bold text-[#6D9BFF] group-hover:translate-x-0.5 transition-transform mt-1 block">
-                {isMod ? "● Painel Aberto" : "Abrir Moderação →"}
-              </span>
-            </button>
+              </button>
+            )}
           </div>
         </div>
 
@@ -2488,97 +2484,115 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
         </div>
       </div>
 
-      {/* Alternador de Áreas: Aluno, Coach e Moderador */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-5 h-5 text-[#D8B46A]" />
-            <h3 className="text-sm font-bold text-[#F5F5F7]">
-              Central de Acesso & Perfis
-            </h3>
+      {/* Alternador de Áreas: Exclusivo para perfis autorizados (Coach, Moderador, Admin) */}
+      {!isStudentOnly && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-4 shadow-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-[#D8B46A]" />
+              <h3 className="text-sm font-bold text-[#F5F5F7]">
+                Central de Acesso & Perfis
+              </h3>
+            </div>
+            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#D8B46A]/20 text-[#D8B46A] border border-[#D8B46A]/30">
+              Staff Autorizado
+            </span>
           </div>
-          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#FF6A2A]/20 text-[#FF6A2A] border border-[#FF6A2A]/30">
-            Área do Aluno Ativa
-          </span>
+          <p className="text-xs text-[#9B9BA1]">
+            Alterne entre sua visão de aluno e os painéis de gestão da equipe Vyra:
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            {/* Aluno Card */}
+            <button
+              id="profile-student-switch-aluno-btn"
+              type="button"
+              onClick={() => {
+                setPersona("student");
+                setActiveView("home");
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-sm ${
+                persona === "student"
+                  ? "bg-[#FF6A2A]/15 border-[#FF6A2A] shadow-md shadow-[#FF6A2A]/10"
+                  : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#FF6A2A]/50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#FF6A2A] uppercase tracking-wider">
+                  Área do Aluno
+                </span>
+                <User className="w-4 h-4 text-[#FF6A2A]" />
+              </div>
+              <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                Treinos, dieta flexível, perimetria de 20 dias e fotos.
+              </p>
+              <span className="text-[11px] font-bold text-[#FF6A2A] mt-1 block">
+                {persona === "student" ? "● Visualizando" : "Ver como Aluno →"}
+              </span>
+            </button>
+
+            {/* Coach Card (Apenas Coach e Admin) */}
+            {isCoach && (
+              <button
+                id="profile-student-switch-coach-btn"
+                type="button"
+                onClick={() => {
+                  setPersona("coach");
+                  setActiveView("coach");
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
+                  persona === "coach"
+                    ? "bg-[#D8B46A]/15 border-[#D8B46A] shadow-md shadow-[#D8B46A]/10"
+                    : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#D8B46A]/50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#D8B46A] uppercase tracking-wider">
+                    Painel do Coach
+                  </span>
+                  <UserCheck className="w-4 h-4 text-[#D8B46A]" />
+                </div>
+                <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                  Prescrição de treinos, ajuste de macros, CRM e inteligência IA.
+                </p>
+                <span className="text-[11px] font-bold text-[#D8B46A] group-hover:translate-x-0.5 transition-transform mt-1 block">
+                  {persona === "coach" ? "● Painel Ativo" : "Abrir Painel do Coach →"}
+                </span>
+              </button>
+            )}
+
+            {/* Moderador Card (Apenas Moderador e Admin) */}
+            {isModerator && (
+              <button
+                id="profile-student-switch-mod-btn"
+                type="button"
+                onClick={() => {
+                  setPersona("moderator");
+                  setActiveView("moderator");
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 group ${
+                  persona === "moderator"
+                    ? "bg-[#6D9BFF]/15 border-[#6D9BFF] shadow-md shadow-[#6D9BFF]/10"
+                    : "bg-[#1D1D1F] border-[#2B2B2F] hover:border-[#6D9BFF]/50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#6D9BFF] uppercase tracking-wider">
+                    Moderação
+                  </span>
+                  <Shield className="w-4 h-4 text-[#6D9BFF]" />
+                </div>
+                <p className="text-[11px] text-[#9B9BA1] leading-tight">
+                  Credenciamento de treinadores, moderação de posts e segurança.
+                </p>
+                <span className="text-[11px] font-bold text-[#6D9BFF] group-hover:translate-x-0.5 transition-transform mt-1 block">
+                  {persona === "moderator" ? "● Moderação Ativa" : "Abrir Moderação →"}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
-        <p className="text-xs text-[#9B9BA1]">
-          Alterne instantaneamente para acessar o Painel do Coach ou a Governança de Moderação:
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-          {/* Aluno Card */}
-          <button
-            id="profile-student-switch-aluno-btn"
-            type="button"
-            onClick={() => {
-              setPersona("student");
-              setActiveView("home");
-            }}
-            className="p-3.5 rounded-2xl bg-[#FF6A2A]/15 border border-[#FF6A2A] text-left transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-lg shadow-[#FF6A2A]/10"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-[#FF6A2A] uppercase tracking-wider">
-                Área do Aluno
-              </span>
-              <User className="w-4 h-4 text-[#FF6A2A]" />
-            </div>
-            <p className="text-[11px] text-[#9B9BA1] leading-tight">
-              Treinos, dieta flexível, perimetria de 20 dias e fotos.
-            </p>
-            <span className="text-[11px] font-bold text-[#FF6A2A] mt-1 block">
-              ● Você está aqui
-            </span>
-          </button>
-
-          {/* Coach Card */}
-          <button
-            id="profile-student-switch-coach-btn"
-            type="button"
-            onClick={() => {
-              setPersona("coach");
-              setActiveView("coach");
-            }}
-            className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-left hover:border-[#D8B46A]/50 transition-all cursor-pointer flex flex-col justify-between gap-2 group"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-[#D8B46A] uppercase tracking-wider">
-                Painel do Coach
-              </span>
-              <UserCheck className="w-4 h-4 text-[#D8B46A]" />
-            </div>
-            <p className="text-[11px] text-[#9B9BA1] leading-tight">
-              Prescrição de treinos, ajuste de macros, CRM e inteligência IA.
-            </p>
-            <span className="text-[11px] font-bold text-[#D8B46A] group-hover:translate-x-0.5 transition-transform mt-1 block">
-              Abrir Painel do Coach →
-            </span>
-          </button>
-
-          {/* Moderador Card */}
-          <button
-            id="profile-student-switch-mod-btn"
-            type="button"
-            onClick={() => {
-              setPersona("moderator");
-              setActiveView("moderator");
-            }}
-            className="p-3.5 rounded-2xl bg-[#1D1D1F] border border-[#2B2B2F] text-left hover:border-[#6D9BFF]/50 transition-all cursor-pointer flex flex-col justify-between gap-2 group"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-[#6D9BFF] uppercase tracking-wider">
-                Moderação
-              </span>
-              <Shield className="w-4 h-4 text-[#6D9BFF]" />
-            </div>
-            <p className="text-[11px] text-[#9B9BA1] leading-tight">
-              Credenciamento de treinadores, moderação de posts e segurança.
-            </p>
-            <span className="text-[11px] font-bold text-[#6D9BFF] group-hover:translate-x-0.5 transition-transform mt-1 block">
-              Abrir Moderação →
-            </span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Botão Sair da Conta */}
       <div className="pt-6 pb-4 flex flex-col items-center gap-3 border-t border-[#2B2B2F]/60">

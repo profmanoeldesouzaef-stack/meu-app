@@ -83,7 +83,7 @@ import { FinanceCRMTableWeb } from "../components/FinanceCRMTableWeb";
 import { CoachWhatsAppModule } from "../components/CoachWhatsAppModule";
 
 export const CoachDashboardView: React.FC = () => {
-  const { t, lang, user, userProfile, currentUserName, currentUserEmail, setInviteData, setActiveView, setPersona, setVipChatUnlocked } = useApp();
+  const { t, lang, user, userProfile, currentUserName, currentUserEmail, setInviteData, setActiveView, setPersona, setVipChatUnlocked, isModerator } = useApp();
   const [activeTab, setActiveTab] = useState<
     "overview" | "pending_assessments" | "whatsapp" | "pending_students" | "students_finance" | "ai_chat" | "invite" | "finance" | "workouts" | "library" | "diet" | "diet_library" | "radar" | "broadcast" | "challenges"
   >("overview");
@@ -1611,20 +1611,22 @@ export const CoachDashboardView: React.FC = () => {
             <span>Área do Aluno</span>
           </button>
 
-          {/* Botão de Troca Rápida para Moderação */}
-          <button
-            id="coach-header-switch-mod-btn"
-            type="button"
-            onClick={() => {
-              setPersona("moderator");
-              setActiveView("moderator");
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#6D9BFF] transition-all cursor-pointer shadow-sm"
-            title="Acessar o Painel de Moderação"
-          >
-            <Shield className="w-3.5 h-3.5 text-[#6D9BFF]" />
-            <span>Moderação</span>
-          </button>
+          {/* Botão de Troca Rápida para Moderação (Apenas se tiver permissão de moderação) */}
+          {isModerator && (
+            <button
+              id="coach-header-switch-mod-btn"
+              type="button"
+              onClick={() => {
+                setPersona("moderator");
+                setActiveView("moderator");
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#1D1D1F] border border-[#2B2B2F] text-[#9B9BA1] hover:text-[#F5F5F7] hover:border-[#6D9BFF] transition-all cursor-pointer shadow-sm"
+              title="Acessar o Painel de Moderação"
+            >
+              <Shield className="w-3.5 h-3.5 text-[#6D9BFF]" />
+              <span>Moderação</span>
+            </button>
+          )}
         </div>
       </div>
 

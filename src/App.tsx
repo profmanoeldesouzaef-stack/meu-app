@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { UserCheck, Shield } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AppProvider, useApp } from "./context/AppContext";
 import { Header } from "./components/Header";
@@ -29,8 +30,12 @@ export const MainDashboard: React.FC<{ user?: any }> = ({ user }) => {
   const {
     user: contextUser,
     activeView,
+    setActiveView,
     theme,
     persona,
+    isCoach,
+    isModerator,
+    isAdmin,
     milestoneCelebration,
     dismissMilestoneCelebration,
     chatNameColor,
@@ -71,8 +76,48 @@ export const MainDashboard: React.FC<{ user?: any }> = ({ user }) => {
         {activeView === "paywall" && <PaywallView />}
         {activeView === "checkout" && <CheckoutView />}
         {activeView === "anamnesis" && <AnamnesisView />}
-        {activeView === "coach" && <CoachDashboardView />}
-        {activeView === "moderator" && <ModeratorView />}
+        {activeView === "coach" && (
+          isCoach ? (
+            <CoachDashboardView />
+          ) : (
+            <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-[#D8B46A]/10 border border-[#D8B46A]/30 text-[#D8B46A] flex items-center justify-center mx-auto shadow-lg shadow-[#D8B46A]/10">
+                <UserCheck className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-bold text-[#F5F5F7]">Área Restrita aos Treinadores</h2>
+              <p className="text-sm text-[#9B9BA1] leading-relaxed">
+                Este painel de prescrições, auditoria e CRM de alunos é exclusivo para a equipe de coaches credenciados Vyra.
+              </p>
+              <button
+                onClick={() => setActiveView("home")}
+                className="px-6 py-2.5 rounded-xl bg-[#FF6A2A] text-white font-bold text-sm hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-[#FF6A2A]/20"
+              >
+                Voltar à Área do Aluno
+              </button>
+            </div>
+          )
+        )}
+        {activeView === "moderator" && (
+          isModerator ? (
+            <ModeratorView />
+          ) : (
+            <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-[#6D9BFF]/10 border border-[#6D9BFF]/30 text-[#6D9BFF] flex items-center justify-center mx-auto shadow-lg shadow-[#6D9BFF]/10">
+                <Shield className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-bold text-[#F5F5F7]">Área Restrita à Moderação</h2>
+              <p className="text-sm text-[#9B9BA1] leading-relaxed">
+                Este painel de governança, credenciamento e auditoria da plataforma é restrito aos administradores e moderadores oficiais Vyra.
+              </p>
+              <button
+                onClick={() => setActiveView("home")}
+                className="px-6 py-2.5 rounded-xl bg-[#FF6A2A] text-white font-bold text-sm hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-[#FF6A2A]/20"
+              >
+                Voltar à Área do Aluno
+              </button>
+            </div>
+          )
+        )}
         {activeView === "workout-completion" && <WorkoutCompletionView />}
       </main>
 

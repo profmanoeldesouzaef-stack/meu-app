@@ -21,6 +21,10 @@ export const Navigation: React.FC = () => {
     setPersona,
     t,
     persona,
+    isCoach,
+    isModerator,
+    isAdmin,
+    isStudentOnly,
     subscription,
     anamnesisDone,
     photosDone,
@@ -51,16 +55,28 @@ export const Navigation: React.FC = () => {
       return;
     }
     if (id === "home") {
-      setPersona("student");
+      if (persona !== "student" && isStudentOnly) {
+        setPersona("student");
+      }
       setActiveView("home");
       return;
     }
     if (id === "coach") {
+      if (!isCoach) {
+        console.warn("[SECURITY] Acesso negado ao painel do coach");
+        setActiveView("home");
+        return;
+      }
       setPersona("coach");
       setActiveView("coach");
       return;
     }
     if (id === "moderator") {
+      if (!isModerator) {
+        console.warn("[SECURITY] Acesso negado ao painel de moderação");
+        setActiveView("home");
+        return;
+      }
       setPersona("moderator");
       setActiveView("moderator");
       return;
@@ -70,7 +86,18 @@ export const Navigation: React.FC = () => {
 
   // Dedicated navigation per role
   const getNavItems = () => {
-    if (persona === "coach") {
+    // Alunos normais nunca recebem itens de coach ou moderador
+    if (isStudentOnly) {
+      return [
+        { id: "training" as ActiveView, label: t("tab.training"), icon: Dumbbell },
+        { id: "diet" as ActiveView, label: t("tab.diet"), icon: UtensilsCrossed },
+        { id: "home" as ActiveView, label: t("tab.home"), icon: Home },
+        { id: "challenges" as ActiveView, label: t("tab.challenges"), icon: Trophy },
+        { id: "profile" as ActiveView, label: t("tab.profile"), icon: User },
+      ];
+    }
+
+    if (persona === "coach" && isCoach) {
       return [
         { id: "coach" as ActiveView, label: "Painel do Coach", icon: ShieldCheck },
         { id: "home" as ActiveView, label: "Área do Aluno", icon: Home },
@@ -79,7 +106,7 @@ export const Navigation: React.FC = () => {
         { id: "profile" as ActiveView, label: "Perfil", icon: User },
       ];
     }
-    if (persona === "moderator") {
+    if (persona === "moderator" && isModerator) {
       return [
         { id: "moderator" as ActiveView, label: "Moderação", icon: ShieldCheck },
         { id: "coach" as ActiveView, label: "Painel do Coach", icon: ShieldCheck },
