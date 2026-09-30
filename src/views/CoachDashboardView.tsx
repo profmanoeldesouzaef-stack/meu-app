@@ -15,6 +15,7 @@ import {
   Student,
 } from "../types";
 import {
+  Activity,
   User,
   Shield,
   UserCheck,
@@ -81,6 +82,7 @@ import { ChallengePrizeManager } from "../components/ChallengePrizeManager";
 import { VeteranBadge } from "../lib/patents";
 import { FinanceCRMTableWeb } from "../components/FinanceCRMTableWeb";
 import { CoachWhatsAppModule } from "../components/CoachWhatsAppModule";
+import { CoachRadarActivityFeed } from "../components/CoachRadarActivityFeed";
 
 export const CoachDashboardView: React.FC = () => {
   const { t, lang, user, userProfile, currentUserName, currentUserEmail, setInviteData, setActiveView, setPersona, setVipChatUnlocked, isModerator } = useApp();
@@ -1560,7 +1562,7 @@ export const CoachDashboardView: React.FC = () => {
     { id: "diet", label: t("coach.diet"), icon: UtensilsCrossed },
     { id: "diet_library", label: "Biblioteca de Dietas", icon: BookOpen },
     { id: "finance", label: "Cupons & Parceiros", icon: CreditCard },
-    { id: "radar", label: t("coach.radar"), icon: AlertTriangle },
+    { id: "radar", label: "Radar / Feed de Atividades", icon: Activity },
     { id: "broadcast", label: t("coach.broadcast"), icon: Megaphone },
   ];
 
@@ -2496,6 +2498,45 @@ export const CoachDashboardView: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Banner Rápido: Radar de Atividades & Alunos Treinando Ao Vivo */}
+          <div
+            id="overview-live-radar-banner"
+            onClick={() => setActiveTab("radar")}
+            className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#1C261D] via-[#151A16] to-[#121214] border border-[#34C759]/40 hover:border-[#34C759] transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#34C759]/20 text-[#34C759] border border-[#34C759]/40 flex items-center justify-center shrink-0 shadow-lg shadow-[#34C759]/20 group-hover:scale-105 transition-transform">
+                <Activity className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#34C759] bg-[#34C759]/20 px-2.5 py-0.5 rounded-full border border-[#34C759]/30 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#34C759] animate-ping" />
+                    MONITORAMENTO AO VIVO & RADAR
+                  </span>
+                </div>
+                <h3 className="text-base font-extrabold text-[#F5F5F7] group-hover:text-[#34C759] transition-colors">
+                  Acompanhe Alunos Treinando Agora e Alertas de Inatividade
+                </h3>
+                <p className="text-xs text-[#9B9BA1]">
+                  Veja cards brilhantes de quem está na academia neste minuto, contate alunos ausentes há mais de 3 dias no WhatsApp e consulte o feed de check-ins do Supabase.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveTab("radar");
+              }}
+              className="px-4 py-2.5 rounded-xl text-xs font-black bg-[#34C759] text-[#0A0A0A] hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-1.5 whitespace-nowrap self-start sm:self-auto cursor-pointer shadow-md shadow-[#34C759]/25 shrink-0"
+            >
+              <span>Abrir Radar</span>
+              <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+            </button>
           </div>
 
           {/* Quick Shortcuts to Student Protocols */}
@@ -4823,6 +4864,17 @@ export const CoachDashboardView: React.FC = () => {
       {/* Tab: Radar */}
       {activeTab === "radar" && (
         <div className="space-y-6">
+          {/* Seção Principal: Radar / Feed de Atividades & Monitoramento ao Vivo Supabase */}
+          <CoachRadarActivityFeed
+            onSelectStudent={(studentId) => {
+              const matched = students.find((s) => s.id === studentId);
+              if (matched) {
+                handleSelectStudent(matched);
+                setActiveTab("diet");
+              }
+            }}
+          />
+
           {/* Bloco: Novos Alunos */}
           <div className="p-6 rounded-3xl bg-[#151515] border border-[#2B2B2F] space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#2B2B2F]">

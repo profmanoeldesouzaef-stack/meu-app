@@ -804,6 +804,60 @@ const db = {
     { id: "pt3", email: "contato@crosslab.com", name: "CrossLab Wear", active: true, is_veteran: true },
   ],
 
+  notificacoes_coach: [
+    {
+      id: "notif-init-1",
+      aluno_id: "std-1",
+      aluno_nome: "Rafael Mendes",
+      tipo: "treino_finalizado",
+      mensagem: "Finalizou o treino de hoje! (Peito, Ombro e Tríceps)",
+      lida: false,
+      created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "notif-init-2",
+      aluno_id: "std-2",
+      aluno_nome: "Camila Santos",
+      tipo: "treino_finalizado",
+      mensagem: "Finalizou o treino de hoje! (Glúteos & Posterior)",
+      lida: false,
+      created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "notif-init-3",
+      aluno_id: "std-4",
+      aluno_nome: "Lucas Alencar",
+      tipo: "novo_aluno",
+      mensagem: "Nova adesão confirmada no Protocolo Vyra Shape!",
+      lida: true,
+      created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    },
+  ] as Array<{
+    id: string;
+    aluno_id?: string;
+    aluno_nome: string;
+    tipo: string;
+    mensagem: string;
+    lida: boolean;
+    created_at: string;
+  }>,
+
+  checkins: [
+    {
+      id: "chk-init-1",
+      user_id: "std-1",
+      user_name: "Rafael Mendes",
+      tipo: "treino",
+      created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+    },
+  ] as Array<{
+    id: string;
+    user_id: string;
+    user_name: string;
+    tipo: string;
+    created_at: string;
+  }>,
+
   coaches: [
     { id: "co1", email: "mari@vyra.club", active: true },
   ],
@@ -4527,6 +4581,175 @@ api.get("/kpis", (req, res) => {
 
 api.get("/radar", (req, res) => {
   res.json(db.radar);
+});
+
+// Gamificação & Monitoramento ao Vivo (Supabase + in-memory proxy)
+api.post("/checkin/start", async (req, res) => {
+  try {
+    const { userId, userName } = req.body || {};
+    const effectiveId = userId || "me";
+
+    // 1. Atualizar no Supabase
+    try {
+      const sb = getSupabaseServer();
+      await sb.from("profiles").update({ is_training_now: true }).eq("id", effectiveId);
+      await sb.from("perfis").update({ is_training_now: true }).eq("id", effectiveId);
+    } catch {}
+
+    // 2. Atualizar em memória
+    const found = db.students.find((s) => s.id === effectiveId);
+    if (found) {
+      (found as any).is_training_now = true;
+    }
+    (db.profile as any).is_training_now = true;
+
+    return res.json({ success: true, is_training_now: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+api.post("/checkin/finish", async (req, res) => {
+  try {
+    const { userId, userName, last_checkin_at } = req.body || {};
+    const effectiveId = userId || "me";
+    const effectiveName = userName || (db.profile as any).nickname || "Aluno";
+    const nowIso = last_checkin_at || new Date().toISOString();
+
+    // 1. Atualizar no Supabase
+    try {
+      const sb = getSupabaseServer();
+      await sb.from("profiles").update({ is_training_now: false, last_checkin_at: nowIso }).eq("id", effectiveId);
+      await sb.from("perfis").update({ is_training_now: false, last_checkin_at: nowIso }).eq("id", effectiveId);
+
+      await sb.from("checkins").insert({
+        user_id: effectiveId,
+        user_name: effectiveName,
+        tipo: "treino",
+        created_at: nowIso,
+      });
+
+      await sb.from("notificacoes_coach").insert({
+        aluno_id: effectiveId,
+        aluno_nome: effectiveName,
+        tipo: "treino_finalizado",
+        mensagem: "Finalizou o treino de hoje!",
+        lida: false,
+        created_at: nowIso,
+      });
+    } catch {}
+
+    // 2. Atualizar em memória
+    const found = db.students.find((s) => s.id === effectiveId);
+    if (found) {
+      (found as any).is_training_now = false;
+      (found as any).last_checkin_at = nowIso;
+    }
+    (db.profile as any).is_training_now = false;
+    (db.profile as any).last_checkin_at = nowIso;
+
+    db.checkins.unshift({
+      id: "chk-" + Date.now(),
+      user_id: effectiveId,
+      user_name: effectiveName,
+      tipo: "treino",
+      created_at: nowIso,
+    });
+
+    db.notificacoes_coach.unshift({
+      id: "notif-" + Date.now(),
+      aluno_id: effectiveId,
+      aluno_nome: effectiveName,
+      tipo: "treino_finalizado",
+      mensagem: "Finalizou o treino de hoje!",
+      lida: false,
+      created_at: nowIso,
+    });
+
+    return res.json({ success: true, is_training_now: false, last_checkin_at: nowIso });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+api.get("/radar/live", async (req, res) => {
+  try {
+    const sb = getSupabaseServer();
+    const { data: profiles, error } = await sb
+      .from("profiles")
+      .select("id, name, full_name, email, phone, telefone, avatar_url, protocolo_atual, is_training_now, last_checkin_at, role")
+      .eq("is_training_now", true);
+
+    if (!error && profiles && profiles.length > 0) {
+      const live = profiles
+        .filter((p) => p.role !== "coach" && p.role !== "admin")
+        .map((p) => ({
+          id: p.id,
+          name: p.full_name || p.name || (p.email ? p.email.split("@")[0] : "Aluno"),
+          email: p.email,
+          avatar_url: p.avatar_url,
+          plan: p.protocolo_atual,
+          phone: p.phone || p.telefone,
+          is_training_now: true,
+          last_checkin_at: p.last_checkin_at,
+        }));
+      return res.json(live);
+    }
+  } catch {}
+
+  const memLive = db.students
+    .filter((s) => (s as any).is_training_now === true)
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      email: s.email,
+      avatar_url: s.avatar_url,
+      plan: s.plan,
+      phone: (s as any).phone || "",
+      is_training_now: true,
+      last_checkin_at: (s as any).last_checkin_at,
+    }));
+
+  return res.json(memLive);
+});
+
+api.get("/radar/notifications", async (req, res) => {
+  try {
+    const sb = getSupabaseServer();
+    const { data: notifs, error } = await sb
+      .from("notificacoes_coach")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (!error && notifs && notifs.length > 0) {
+      return res.json(notifs);
+    }
+  } catch {}
+
+  return res.json(db.notificacoes_coach);
+});
+
+api.post("/radar/notifications/:id/read", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const sb = getSupabaseServer();
+    await sb.from("notificacoes_coach").update({ lida: true }).eq("id", id);
+  } catch {}
+
+  const found = db.notificacoes_coach.find((n) => n.id === id);
+  if (found) found.lida = true;
+  return res.json({ success: true });
+});
+
+api.post("/radar/notifications/read-all", async (req, res) => {
+  try {
+    const sb = getSupabaseServer();
+    await sb.from("notificacoes_coach").update({ lida: true }).eq("lida", false);
+  } catch {}
+
+  db.notificacoes_coach.forEach((n) => (n.lida = true));
+  return res.json({ success: true });
 });
 
 // Profile & Anamnesis

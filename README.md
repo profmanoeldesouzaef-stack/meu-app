@@ -1,3 +1,5 @@
+# Here are your Instructions
+
 # VYRA Training & Performance
 
 Clube de treino, nutrição e performance de alta fidelidade com estética Obsidian & Gold, separação de papéis (Aluno, Coach, Moderador), sincronização em tempo real via Supabase, integração Stripe e assistência nutricional com Google GenAI.
@@ -59,7 +61,7 @@ O sistema implementa uma política de segregação de acessos por papel de usuá
 │   ├── types.ts            # Definições de tipos e interfaces do TypeScript
 │   └── main.tsx            # Ponto de entrada React 19
 ├── server.ts               # Servidor Express Full-Stack com rotas de API, Gemini e proxy Vite
-├── vercel.json             # Regras de redirecionamento SPA e exclusão da pasta /api/
+├── vercel.json             # Regras de redirecionamento SPA
 ├── package.json            # Dependências e scripts de execução
 ├── tsconfig.json           # Configuração estrita do compilador TypeScript
 └── supabase_challenge_photos.sql # DDL com tabelas, RLS e triggers anti-duplicação de votos
@@ -70,5 +72,5 @@ O sistema implementa uma política de segregação de acessos por papel de usuá
 ## 🌐 Deploy na Vercel
 
 O projeto está configurado para deploy imediato na Vercel:
-- `vercel.json` inclui redirecionamento SPA para `index.html`, preservando chamadas para as serverless functions em `/api/*`.
+- `vercel.json` inclui redirecionamento SPA para `index.html`.
 - O comando de build `npm run build` compila o Vite sem erros de tipagem.

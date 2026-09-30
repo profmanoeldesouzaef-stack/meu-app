@@ -3,6 +3,7 @@ import { useApp } from "../context/AppContext";
 import { api } from "../api/client";
 import { supabase } from "../lib/supabase";
 import { Workout, ProgressEntry, UserProfile, Broadcast } from "../types";
+import { DailyCheckinCard } from "../components/DailyCheckinCard";
 import {
   Award,
   Shield,
@@ -46,6 +47,7 @@ export const HomeView: React.FC = () => {
     toggleCreatineCheck,
     currentUserName,
     currentUserNickname,
+    user,
   } = useApp();
 
   const isTrainingLocked =
@@ -479,6 +481,12 @@ export const HomeView: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {/* Componente de Check-in Diário de Treino & Gamificação (Streak 🔥) */}
+      <DailyCheckinCard
+        userId={user?.id || (typeof window !== "undefined" ? localStorage.getItem("vyra_user_unique_id") || "b97113b7-65a4-4eda-aca3-1baff1f6c3b6" : "b97113b7-65a4-4eda-aca3-1baff1f6c3b6")}
+        userName={currentUserName || currentUserNickname || profile?.nickname || profile?.full_name || "Aluno"}
+      />
 
       {/* Aviso de Renovação do Protocolo Vyra Reset (12 Semanas) */}
       {showResetRenewalBanner && (

@@ -84,6 +84,9 @@ export interface UserProfile {
   diet_released?: boolean;
   workout_released?: boolean;
   onboarding_completed?: boolean;
+  is_training_now?: boolean;
+  last_checkin_at?: string | null;
+  streak?: number;
   age?: number;
   primary_goal?: string;
   dietary_restrictions?: string;
@@ -116,6 +119,8 @@ export interface Student {
   onboarding_completed?: boolean;
   workout_released?: boolean;
   diet_released?: boolean;
+  is_training_now?: boolean;
+  last_checkin_at?: string | null;
   age?: number;
   primary_goal?: string;
   dietary_restrictions?: string;
