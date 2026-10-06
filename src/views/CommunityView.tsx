@@ -94,50 +94,30 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
   // 2. Canal em Tempo Real (Supabase Realtime)
   useEffect(() => {
     loadChat();
-    clearUnreadCommunity();
+    clearUnreadCommunity?.();
 
     const channel = supabase
-      .channel("chat_messages_channel")
+      .channel("public:chat_messages")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "chat_messages" },
         (payload: any) => {
-          const newRow = payload.new;
-          if (!newRow) return;
-
+          console.log("[REALTIME MENSAGEM RECEBIDA]:", payload.new);
           setMessages((prev) => {
-            if (prev.some((m) => m.id === newRow.id)) {
-              return prev;
-            }
-            const localLikes = new Set<string>(
-              JSON.parse(localStorage.getItem("vyra_chat_likes") || "[]")
-            );
-            const normalizedMsg: ChatMessage = {
-              id: newRow.id,
-              user_id: newRow.user_id,
-              user_name: newRow.user_name || newRow.author || "Aluno",
-              user_role: newRow.user_role || newRow.persona || "aluno",
-              user_avatar: newRow.user_avatar,
-              author: newRow.user_name || newRow.author || "Aluno",
-              persona: (newRow.user_role || newRow.persona || "student") as any,
-              content: newRow.content || newRow.text || "",
-              text: newRow.content || newRow.text || "",
-              image: newRow.image || null,
-              created_at: newRow.created_at,
-              timestamp: newRow.created_at,
-              likes: newRow.likes || 0,
-              has_liked: localLikes.has(newRow.id),
-            };
-            return [...prev, normalizedMsg];
+            // Evita duplicar se a mensagem já estiver no estado
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("[STATUS CANAL REALTIME]:", status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [clearUnreadCommunity, userIdentifier]);
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -153,24 +133,22 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
     setSendError(null);
 
     try {
+      const profile = userProfile;
       const effectiveUserId =
         user?.id ||
         (await supabase.auth.getUser()).data.user?.id ||
         getVotingUserId();
 
       const effectiveUserName = (
-        userProfile?.nome ||
-        userProfile?.name ||
-        userProfile?.full_name ||
-        currentUserName ||
-        currentUserNickname ||
-        (user?.email ? user.email.split("@")[0] : "") ||
-        (persona === "coach" ? "Coach Manoel" : persona === "moderator" ? "Moderador Vyra" : "Aluno")
+        profile?.nome ||
+        profile?.full_name ||
+        user?.email?.split("@")[0] ||
+        "Aluno"
       ).trim();
 
       const effectiveUserRole = (
-        userProfile?.role ||
-        userProfile?.cargo ||
+        profile?.role ||
+        profile?.cargo ||
         userRole ||
         (persona === "coach" ? "coach" : persona === "moderator" ? "moderator" : "aluno")
       ).toLowerCase();
@@ -182,8 +160,8 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
         content: cleanText,
       };
 
-      if (userProfile?.avatar_url) {
-        insertPayload.user_avatar = userProfile.avatar_url;
+      if (profile?.avatar_url) {
+        insertPayload.user_avatar = profile.avatar_url;
       }
 
       // Inserção no Supabase conforme especificado
