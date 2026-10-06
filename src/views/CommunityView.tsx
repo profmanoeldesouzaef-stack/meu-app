@@ -14,11 +14,15 @@ import {
   X,
   Upload,
   Palette,
+  AlertCircle,
 } from "lucide-react";
 
 export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOpenColorPicker }) => {
   const {
     t,
+    user,
+    userProfile,
+    userRole,
     persona,
     clearUnreadCommunity,
     currentUserEmail,
@@ -36,25 +40,50 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Identificador exclusivo por usuário/dispositivo para evitar acúmulo de likes em um único perfil
+  // Identificador exclusivo por usuário/dispositivo para likes
   const userIdentifier =
     currentUserEmail && currentUserEmail !== "student@vyra.club"
       ? currentUserEmail
       : `vyra_${getVotingUserId()}`;
 
+  // 1. Consulta Inicial: Carregar as mensagens de public.chat_messages ordenadas por created_at ASC
   const loadChat = async () => {
     try {
-      const data = await api.getChat(userIdentifier);
-      const localLikes = new Set<string>(
-        JSON.parse(localStorage.getItem("vyra_chat_likes") || "[]")
-      );
-      const normalized = data.map((m) => ({
-        ...m,
-        has_liked: Boolean(m.has_liked || localLikes.has(m.id)),
-      }));
-      setMessages(normalized);
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .select("*")
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        console.error("[ERRO SUPABASE CHAT]:", error);
+        // Fallback resiliente para API caso ocorra indisponibilidade temporária
+        const fallback = await api.getChat(userIdentifier).catch(() => []);
+        setMessages(fallback);
+      } else if (data) {
+        const localLikes = new Set<string>(
+          JSON.parse(localStorage.getItem("vyra_chat_likes") || "[]")
+        );
+        const normalized: ChatMessage[] = data.map((m: any) => ({
+          id: m.id,
+          user_id: m.user_id,
+          user_name: m.user_name || m.author || "Aluno",
+          user_role: m.user_role || m.persona || "aluno",
+          user_avatar: m.user_avatar,
+          author: m.user_name || m.author || "Aluno",
+          persona: (m.user_role || m.persona || "student") as any,
+          content: m.content || m.text || "",
+          text: m.content || m.text || "",
+          image: m.image || null,
+          created_at: m.created_at,
+          timestamp: m.created_at || m.timestamp,
+          likes: m.likes || 0,
+          has_liked: localLikes.has(m.id),
+        }));
+        setMessages(normalized);
+      }
     } catch (e) {
       console.error("Error loading chat:", e);
     } finally {
@@ -62,107 +91,144 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
     }
   };
 
+  // 2. Canal em Tempo Real (Supabase Realtime)
   useEffect(() => {
     loadChat();
     clearUnreadCommunity();
+
+    const channel = supabase
+      .channel("chat_messages_channel")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages" },
+        (payload: any) => {
+          const newRow = payload.new;
+          if (!newRow) return;
+
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newRow.id)) {
+              return prev;
+            }
+            const localLikes = new Set<string>(
+              JSON.parse(localStorage.getItem("vyra_chat_likes") || "[]")
+            );
+            const normalizedMsg: ChatMessage = {
+              id: newRow.id,
+              user_id: newRow.user_id,
+              user_name: newRow.user_name || newRow.author || "Aluno",
+              user_role: newRow.user_role || newRow.persona || "aluno",
+              user_avatar: newRow.user_avatar,
+              author: newRow.user_name || newRow.author || "Aluno",
+              persona: (newRow.user_role || newRow.persona || "student") as any,
+              content: newRow.content || newRow.text || "",
+              text: newRow.content || newRow.text || "",
+              image: newRow.image || null,
+              created_at: newRow.created_at,
+              timestamp: newRow.created_at,
+              likes: newRow.likes || 0,
+              has_liked: localLikes.has(newRow.id),
+            };
+            return [...prev, normalizedMsg];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [clearUnreadCommunity, userIdentifier]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 3. Envio da Mensagem no Supabase com validação e tratamento de erros
   const handleSend = async (e?: React.FormEvent | React.MouseEvent) => {
     if (e && e.preventDefault) e.preventDefault();
     const cleanText = text.trim().slice(0, 200);
     if (!cleanText || sending) return;
 
     setSending(true);
-
-    const authorName =
-      persona === "coach"
-        ? "Coach Manoel"
-        : persona === "moderator"
-        ? "Moderador Vyra"
-        : currentUserNickname || currentUserName || "Aluno";
-
-    const currentPatentInfo = getPatentInfo(consecutiveMonths, monthlyFeePaid);
-    const tempId = `m${Date.now()}`;
-    const timestamp = new Date().toISOString();
-
-    const optimisticMsg: ChatMessage = {
-      id: tempId,
-      author: authorName,
-      persona,
-      text: cleanText,
-      image: image || null,
-      likes: 0,
-      timestamp,
-      is_veteran: persona === "student" ? isVeteran : false,
-      patente_level:
-        persona === "student" && !currentPatentInfo.isRevoked
-          ? currentPatentInfo.level
-          : undefined,
-      consecutive_months:
-        persona === "student" ? consecutiveMonths : undefined,
-      name_color:
-        persona === "student" && hasVipChatColors ? chatNameColor : undefined,
-      text_color:
-        persona === "student" && hasVipChatColors ? chatTextColor : undefined,
-      has_liked: false,
-    };
-
-    // Atualização imediata para o usuário
-    setMessages((prev) => [...prev, optimisticMsg]);
-    setText("");
-    setImage(null);
+    setSendError(null);
 
     try {
-      // 1. Envio via API do backend
-      const newMsg = await api.postChat({
-        author: authorName,
-        persona,
-        text: cleanText,
-        image: optimisticMsg.image,
-        is_veteran: optimisticMsg.is_veteran,
-        patente_level: optimisticMsg.patente_level,
-        consecutive_months: optimisticMsg.consecutive_months,
-        name_color: optimisticMsg.name_color,
-        text_color: optimisticMsg.text_color,
-      });
+      const effectiveUserId =
+        user?.id ||
+        (await supabase.auth.getUser()).data.user?.id ||
+        getVotingUserId();
 
-      // 2. Persistência direta no Supabase com autor, texto e timestamp
-      try {
-        const { data: authData } = await supabase.auth.getUser();
-        await supabase.from("chat_messages").insert([
-          {
-            id: newMsg?.id || tempId,
-            author: authorName,
-            user_id: authData?.user?.id || null,
-            user_email: authData?.user?.email || currentUserEmail || null,
-            persona,
-            text: cleanText,
-            image: optimisticMsg.image,
-            likes: 0,
-            timestamp,
-            is_veteran: optimisticMsg.is_veteran,
-            patente_level: optimisticMsg.patente_level,
-            consecutive_months: optimisticMsg.consecutive_months,
-            name_color: optimisticMsg.name_color,
-            text_color: optimisticMsg.text_color,
-            created_at: timestamp,
-          },
-        ]);
-      } catch (errSupabase) {
-        console.warn("Aviso ao persistir mensagem no Supabase:", errSupabase);
+      const effectiveUserName = (
+        userProfile?.nome ||
+        userProfile?.name ||
+        userProfile?.full_name ||
+        currentUserName ||
+        currentUserNickname ||
+        (user?.email ? user.email.split("@")[0] : "") ||
+        (persona === "coach" ? "Coach Manoel" : persona === "moderator" ? "Moderador Vyra" : "Aluno")
+      ).trim();
+
+      const effectiveUserRole = (
+        userProfile?.role ||
+        userProfile?.cargo ||
+        userRole ||
+        (persona === "coach" ? "coach" : persona === "moderator" ? "moderator" : "aluno")
+      ).toLowerCase();
+
+      const insertPayload: any = {
+        user_id: effectiveUserId,
+        user_name: effectiveUserName,
+        user_role: effectiveUserRole,
+        content: cleanText,
+      };
+
+      if (userProfile?.avatar_url) {
+        insertPayload.user_avatar = userProfile.avatar_url;
       }
 
-      if (newMsg?.id && newMsg.id !== tempId) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? { ...newMsg, has_liked: false } : m))
-        );
+      // Inserção no Supabase conforme especificado
+      const { error } = await supabase
+        .from("chat_messages")
+        .insert(insertPayload);
+
+      // Tratamento Explícito de Erro (Nada de falha silenciosa)
+      if (error) {
+        console.error("[ERRO SUPABASE]:", error);
+        const errorMsg = `Falha ao salvar no banco: ${error.message} - ${error.details || ""}`;
+        setSendError(errorMsg);
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(errorMsg);
+        }
+        return;
       }
-    } catch (e) {
-      console.error("Error sending message:", e);
+
+      // Limpeza imediata do campo de digitação após confirmação do Supabase
+      setText("");
+      setImage(null);
+      setSendError(null);
+
+      // Sincronização em segundo plano com api / patentes se aplicável
+      const currentPatentInfo = getPatentInfo(consecutiveMonths, monthlyFeePaid);
+      api
+        .postChat({
+          author: effectiveUserName,
+          persona: effectiveUserRole === "coach" ? "coach" : effectiveUserRole === "moderator" ? "moderator" : "student",
+          text: cleanText,
+          image: image || null,
+          is_veteran: persona === "student" ? isVeteran : false,
+          patente_level: persona === "student" && !currentPatentInfo.isRevoked ? currentPatentInfo.level : undefined,
+          consecutive_months: persona === "student" ? consecutiveMonths : undefined,
+          name_color: persona === "student" && hasVipChatColors ? chatNameColor : undefined,
+          text_color: persona === "student" && hasVipChatColors ? chatTextColor : undefined,
+        })
+        .catch(() => {});
+    } catch (e: any) {
+      console.error("[ERRO SUPABASE]:", e);
+      const errorMsg = `Falha ao salvar no banco: ${e.message || String(e)}`;
+      setSendError(errorMsg);
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(errorMsg);
+      }
     } finally {
       setSending(false);
     }
@@ -189,7 +255,7 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
         return {
           ...m,
           has_liked: !alreadyLiked,
-          likes: alreadyLiked ? Math.max(0, m.likes - 1) : m.likes + 1,
+          likes: alreadyLiked ? Math.max(0, (m.likes || 0) - 1) : (m.likes || 0) + 1,
         };
       })
     );
@@ -214,6 +280,17 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
         setImage(event.target?.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const formatTime = (ts?: string) => {
+    if (!ts) return "Agora";
+    try {
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return ts;
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return ts;
     }
   };
 
@@ -242,12 +319,15 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
       <div className="rounded-3xl bg-[#151515] border border-[#2B2B2F] p-4 sm:p-6 min-h-[420px] max-h-[560px] overflow-y-auto space-y-4 flex flex-col justify-between">
         <div className="space-y-4">
           {messages.map((msg) => {
-            const isCoach = msg.persona === "coach";
-            const isMod = msg.persona === "moderator";
-            const cleanedAuthor = (msg.author || "")
+            const role = String(msg.user_role || msg.persona || "").toLowerCase();
+            const isCoach = role === "coach" || role === "treinador";
+            const isMod = role === "moderator" || role === "moderador" || role === "admin";
+            const cleanedAuthor = (msg.user_name || msg.author || "")
               .replace(/—\s*Parceiro Oficial/gi, "")
               .replace(/Parceiro Oficial/gi, "")
               .trim() || "Atleta";
+            const messageBody = msg.content || msg.text || "";
+            const displayTime = formatTime(msg.created_at || msg.timestamp);
 
             return (
               <div
@@ -264,6 +344,19 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Avatar do autor se houver */}
+                      {msg.user_avatar ? (
+                        <img
+                          src={msg.user_avatar}
+                          alt={cleanedAuthor}
+                          className="w-5 h-5 rounded-full object-cover shrink-0 border border-[#2B2B2F]"
+                        />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full bg-[#2B2B2F] flex items-center justify-center text-[10px] font-black text-[#D8B46A] shrink-0">
+                          {cleanedAuthor.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+
                       {/* Nome do autor com cor personalizada se desbloqueada */}
                       <span
                         className="text-xs font-bold transition-colors"
@@ -299,7 +392,7 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
                         />
                       )}
 
-                      <span className="text-[10px] text-[#9B9BA1]">{msg.timestamp}</span>
+                      <span className="text-[10px] text-[#9B9BA1]">{displayTime}</span>
                     </div>
 
                     {/* Texto com cor personalizada se desbloqueada */}
@@ -307,7 +400,7 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
                       className="text-xs sm:text-sm leading-relaxed pt-0.5"
                       style={{ color: msg.text_color || "#F5F5F7" }}
                     >
-                      {msg.text}
+                      {messageBody}
                     </p>
 
                     {msg.image && (
@@ -334,7 +427,7 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
                         msg.has_liked ? "fill-[#FF6A2A] text-[#FF6A2A]" : ""
                       }`}
                     />
-                    <span>{msg.likes}</span>
+                    <span>{msg.likes || 0}</span>
                   </button>
                 </div>
               </div>
@@ -356,6 +449,26 @@ export const CommunityView: React.FC<{ onOpenColorPicker?: () => void }> = ({ on
             className="p-1.5 rounded-lg bg-[#1D1D1F] text-[#9B9BA1] hover:text-[#F5F5F7]"
           >
             <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Alerta de erro de envio no Supabase */}
+      {sendError && (
+        <div
+          id="chat-send-error-alert"
+          className="p-3.5 rounded-2xl bg-[#FF453A]/15 border border-[#FF453A]/40 text-[#FF453A] text-xs flex items-center justify-between gap-3 animate-in fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span className="font-semibold">{sendError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSendError(null)}
+            className="text-xs font-bold text-[#FF453A] hover:text-white px-2 py-0.5 rounded-lg bg-[#FF453A]/20"
+          >
+            Fechar
           </button>
         </div>
       )}

@@ -382,19 +382,27 @@ export interface HallEntry {
 
 export interface ChatMessage {
   id: string;
-  author: string;
-  persona: string;
-  text: string;
+  author?: string;
+  persona?: string;
+  text?: string;
   image?: string | null;
-  likes: number;
+  likes?: number;
   liked_by?: string[];
   has_liked?: boolean;
-  timestamp: string;
+  timestamp?: string;
   is_veteran?: boolean;
   patente_level?: number;
   consecutive_months?: number;
   name_color?: string;
   text_color?: string;
+
+  // Campos nativos da tabela public.chat_messages no Supabase
+  user_id?: string;
+  user_name?: string;
+  user_role?: string;
+  user_avatar?: string | null;
+  content?: string;
+  created_at?: string;
 }
 
 export interface KPI {
