@@ -369,23 +369,6 @@ export const ProfileView: React.FC<{ onOpenColorPicker?: () => void }> = ({ onOp
 
     loadProfileFromSupabase();
 
-    // Consulta complementar à API sem sobrescrever os dados reais do Supabase
-    api
-      .getProfile()
-      .then((data) => {
-        if (isMounted) {
-          setProfile((prev) => ({
-            ...data,
-            full_name: prev?.full_name || data.full_name,
-            nickname: prev?.nickname || data.nickname,
-            avatar_url: prev?.avatar_url || data.avatar_url,
-            height_cm: prev?.height_cm || data.height_cm,
-            weight_kg: prev?.weight_kg || data.weight_kg,
-          }));
-        }
-      })
-      .catch(() => {});
-
     return () => {
       isMounted = false;
     };

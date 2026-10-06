@@ -131,15 +131,25 @@ export async function startTraining(userId: string, userName?: string): Promise<
       .eq("id", effectiveUserId);
 
     if (profileErr) {
-      console.warn("[startTraining] profiles update warning:", profileErr.message);
+      console.error("[ERRO SUPABASE]:", profileErr);
+      const msg = `Falha ao salvar no banco: ${profileErr.message} - ${profileErr.details || ""}`;
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(msg);
+        }
+      } catch {}
+      return { success: false, error: profileErr.message };
     }
 
     // 2. Atualizar perfis por compatibilidade
     try {
-      await supabase
+      const { error: perfisErr } = await supabase
         .from("perfis")
         .update({ is_training_now: true })
         .eq("id", effectiveUserId);
+      if (perfisErr) {
+        console.warn("[startTraining perfis warn]:", perfisErr.message);
+      }
     } catch {}
 
     // 3. Atualizar servidor express local (proxy / fallback)
@@ -158,10 +168,14 @@ export async function startTraining(userId: string, userName?: string): Promise<
 
     return { success: true };
   } catch (err: any) {
-    console.error("[startTraining error]:", err);
-    localStorage.setItem(`vyra_training_now_${effectiveUserId}`, "true");
-    localStorage.setItem("vyra_training_now", "true");
-    return { success: true };
+    console.error("[ERRO SUPABASE]:", err);
+    const msg = `Falha ao salvar no banco: ${err.message || err}`;
+    try {
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(msg);
+      }
+    } catch {}
+    return { success: false, error: err.message || String(err) };
   }
 }
 
@@ -192,7 +206,14 @@ export async function finishTraining(
       .eq("id", effectiveUserId);
 
     if (profErr) {
-      console.warn("[finishTraining] profiles update warning:", profErr.message);
+      console.error("[ERRO SUPABASE]:", profErr);
+      const msg = `Falha ao salvar no banco: ${profErr.message} - ${profErr.details || ""}`;
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(msg);
+        }
+      } catch {}
+      return { success: false, streak: 0, error: profErr.message };
     }
 
     // 2. UPDATE em perfis por compatibilidade
@@ -219,10 +240,17 @@ export async function finishTraining(
       .insert(checkinPayload);
 
     if (checkinErr) {
-      console.warn("[finishTraining] checkins insert warning:", checkinErr.message);
+      console.error("[ERRO SUPABASE]:", checkinErr);
+      const msg = `Falha ao salvar no banco: ${checkinErr.message} - ${checkinErr.details || ""}`;
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(msg);
+        }
+      } catch {}
+      return { success: false, streak: 0, error: checkinErr.message };
     }
 
-    // Salva cópia local garantida
+    // Salva cópia local
     const localCheckinItem: CheckinItem = {
       id: "chk-" + Date.now(),
       user_id: effectiveUserId,
@@ -247,7 +275,14 @@ export async function finishTraining(
       .insert(notifPayload);
 
     if (notifErr) {
-      console.warn("[finishTraining] notificacoes_coach insert warning:", notifErr.message);
+      console.error("[ERRO SUPABASE]:", notifErr);
+      const msg = `Falha ao salvar no banco: ${notifErr.message} - ${notifErr.details || ""}`;
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(msg);
+        }
+      } catch {}
+      return { success: false, streak: 0, error: notifErr.message };
     }
 
     // 5. Atualizar servidor backend / proxy local
@@ -269,17 +304,20 @@ export async function finishTraining(
     localStorage.setItem(`vyra_last_checkin_at_${effectiveUserId}`, nowIso);
     localStorage.removeItem(`vyra_training_started_at_${effectiveUserId}`);
 
-    // 7. Calcular o novo streak
+    // 7. Recalcular e retornar o streak a partir dos dados gravados no banco
     const streakResult = await getUserStreak(effectiveUserId);
     finalStreak = streakResult.streak;
 
     return { success: true, streak: finalStreak };
   } catch (err: any) {
-    console.error("[finishTraining error]:", err);
-    localStorage.setItem(`vyra_training_now_${effectiveUserId}`, "false");
-    localStorage.setItem("vyra_training_now", "false");
-    localStorage.setItem(`vyra_last_checkin_at_${effectiveUserId}`, nowIso);
-    return { success: true, streak: 1 };
+    console.error("[ERRO SUPABASE]:", err);
+    const msg = `Falha ao salvar no banco: ${err.message || err}`;
+    try {
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(msg);
+      }
+    } catch {}
+    return { success: false, streak: 0, error: err.message || String(err) };
   }
 }
 
@@ -493,42 +531,10 @@ export async function getAbsentStudents(daysThreshold = 3): Promise<AbsentStuden
       }
     }
   } catch (err) {
-    console.warn("[getAbsentStudents] Supabase error:", err);
+    console.error("[ERRO SUPABASE]: Erro ao buscar alunos ausentes:", err);
   }
 
-  // Fallback para lista de demonstração amigável
-  return [
-    {
-      id: "demo-abs-1",
-      name: "João Pedro Silveira",
-      email: "joao.pedro@gmail.com",
-      phone: "5511987654321",
-      avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
-      plan: "Vyra Force",
-      last_checkin_at: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
-      daysAbsent: 5,
-    },
-    {
-      id: "demo-abs-2",
-      name: "Fernanda Lima",
-      email: "fernanda.lima@outlook.com",
-      phone: "5521998765432",
-      avatar_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80",
-      plan: "Vyra Shape",
-      last_checkin_at: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
-      daysAbsent: 4,
-    },
-    {
-      id: "demo-abs-3",
-      name: "Bruno Toledo",
-      email: "bruno.toledo@gmail.com",
-      phone: "5531988776655",
-      avatar_url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80",
-      plan: "Reset 12",
-      last_checkin_at: null,
-      daysAbsent: 6,
-    },
-  ];
+  return [];
 }
 
 /**
@@ -543,50 +549,19 @@ export async function getCoachNotifications(): Promise<CoachNotification[]> {
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (!error && notifs && notifs.length > 0) {
+    if (error) {
+      console.error("[ERRO SUPABASE]: Erro ao buscar notificacoes_coach:", error);
+      return [];
+    }
+
+    if (notifs) {
       return notifs;
     }
-
-    // Fallback servidor local
-    const res = await fetch("/api/radar/notifications");
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) return data;
-    }
   } catch (err) {
-    console.warn("[getCoachNotifications] error:", err);
+    console.error("[ERRO SUPABASE]:", err);
   }
 
-  // Notificações padrão de inicialização/demonstração
-  return [
-    {
-      id: "init-notif-1",
-      aluno_id: "demo-1",
-      aluno_nome: "Rafael Mendes",
-      tipo: "treino_finalizado",
-      mensagem: "Finalizou o treino de hoje! (Peito, Ombro e Tríceps)",
-      lida: false,
-      created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "init-notif-2",
-      aluno_id: "demo-2",
-      aluno_nome: "Camila Siqueira",
-      tipo: "treino_finalizado",
-      mensagem: "Finalizou o treino de hoje! (Glúteos & Posterior)",
-      lida: false,
-      created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "init-notif-3",
-      aluno_id: "demo-3",
-      aluno_nome: "Mariana Rocha",
-      tipo: "novo_aluno",
-      mensagem: "Nova aluna cadastrada no Protocolo Vyra Shape!",
-      lida: true,
-      created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-    },
-  ];
+  return [];
 }
 
 /**

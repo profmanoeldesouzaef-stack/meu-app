@@ -1,6 +1,10 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, getSupabaseClient } from "./supabaseClient";
 
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+  console.error("ALERTA CRÍTICO: Chaves do Supabase não encontradas no ambiente!");
+}
+
 function initSupabase(): SupabaseClient {
   try {
     const client = getSupabaseClient();

@@ -1526,6 +1526,7 @@ export const CoachDashboardView: React.FC = () => {
 
   const tabs = [
     { id: "overview", label: t("coach.overview"), icon: TrendingUp },
+    { id: "radar", label: "Radar / Feed de Atividades", icon: Activity },
     {
       id: "pending_assessments",
       label: `Avaliações Pendentes ${
@@ -1562,7 +1563,6 @@ export const CoachDashboardView: React.FC = () => {
     { id: "diet", label: t("coach.diet"), icon: UtensilsCrossed },
     { id: "diet_library", label: "Biblioteca de Dietas", icon: BookOpen },
     { id: "finance", label: "Cupons & Parceiros", icon: CreditCard },
-    { id: "radar", label: "Radar / Feed de Atividades", icon: Activity },
     { id: "broadcast", label: t("coach.broadcast"), icon: Megaphone },
   ];
 

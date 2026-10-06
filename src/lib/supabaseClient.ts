@@ -1,5 +1,9 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+  console.error("ALERTA CRÍTICO: Chaves do Supabase não encontradas no ambiente!");
+}
+
 // Configurações e Credenciais Oficiais do Supabase do Projeto Vyra
 export const DEFAULT_SUPABASE_URL = "https://qxcmqzzfsjvstlzveyrh.supabase.co";
 export const DEFAULT_SUPABASE_ANON_KEY =

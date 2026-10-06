@@ -12,6 +12,7 @@ import {
   Loader2,
   CalendarCheck,
   Zap,
+  Check,
 } from "lucide-react";
 import {
   startTraining,
@@ -37,10 +38,12 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
   const [totalCheckins, setTotalCheckins] = useState<number>(0);
   const [lastCheckinAt, setLastCheckinAt] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<boolean>(false);
+  const [saveStatusText, setSaveStatusText] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
   const [checkedInToday, setCheckedInToday] = useState<boolean>(false);
   const [recentCheckins, setRecentCheckins] = useState<CheckinItem[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -110,11 +113,24 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
   // Clique em "Iniciar Treino"
   const handleStart = async () => {
     setLoadingAction(true);
+    setErrorMessage(null);
+    setSaveStatusText("Salvando no Supabase...");
     try {
       const res = await startTraining(userId, userName);
       if (res.success) {
         setIsTrainingNow(true);
         setElapsedSeconds(0);
+        setSaveStatusText("Salvo com sucesso!");
+        setTimeout(() => setSaveStatusText(null), 3000);
+        await loadStatusAndStreak();
+      } else {
+        setSaveStatusText(null);
+        const errorMsg = `Falha ao salvar no banco: ${res.error || "Erro desconhecido"}`;
+        console.error("[ERRO SUPABASE]:", res.error);
+        setErrorMessage(errorMsg);
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(errorMsg);
+        }
       }
     } finally {
       setLoadingAction(false);
@@ -124,6 +140,8 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
   // Clique em "Finalizar Treino"
   const handleFinish = async () => {
     setLoadingAction(true);
+    setErrorMessage(null);
+    setSaveStatusText("Salvando no Supabase...");
     try {
       const res = await finishTraining(userId, userName);
       if (res.success) {
@@ -131,11 +149,21 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
         setCheckedInToday(true);
         setStreak(res.streak);
         setTotalCheckins((prev) => prev + 1);
+        setSaveStatusText("Salvo com sucesso!");
         setShowCelebration(true);
+        setTimeout(() => setSaveStatusText(null), 3500);
         if (onCheckinCompleted) {
           onCheckinCompleted(res.streak);
         }
         await loadStatusAndStreak();
+      } else {
+        setSaveStatusText(null);
+        const errorMsg = `Falha ao salvar no banco: ${res.error || "Erro desconhecido"}`;
+        console.error("[ERRO SUPABASE]:", res.error);
+        setErrorMessage(errorMsg);
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(errorMsg);
+        }
       }
     } finally {
       setLoadingAction(false);
@@ -203,6 +231,22 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
                     Feito Hoje
                   </span>
                 )}
+                {saveStatusText && (
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm ${
+                      saveStatusText.includes("Salvando")
+                        ? "bg-[#D8B46A]/20 text-[#D8B46A] border-[#D8B46A]/40 animate-pulse"
+                        : "bg-[#34C759]/20 text-[#34C759] border-[#34C759]/40"
+                    }`}
+                  >
+                    {saveStatusText.includes("Salvando") ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    )}
+                    {saveStatusText}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-[#9B9BA1] mt-0.5">
                 {isTrainingNow
@@ -234,6 +278,26 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Alerta Explícito de Erro Supabase */}
+        {errorMessage && (
+          <div
+            id="checkin-supabase-error-alert"
+            className="p-3.5 rounded-2xl bg-[#FF453A]/15 border border-[#FF453A]/40 text-[#FF453A] text-xs flex items-center justify-between gap-3 animate-in fade-in"
+          >
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="font-semibold">{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-[#FF453A] hover:text-white text-xs font-black px-2 py-0.5 rounded-lg bg-[#FF453A]/20 hover:bg-[#FF453A]/40 transition-colors"
+            >
+              Fechar
+            </button>
+          </div>
+        )}
 
         {/* Visualizador de Dias da Semana (Semana Ativa) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#151518] p-3.5 rounded-2xl border border-[#2B2B2F]/60">
