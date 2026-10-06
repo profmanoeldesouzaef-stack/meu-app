@@ -97,7 +97,7 @@ export const Navigation: React.FC = () => {
       ];
     }
 
-    if (persona === "coach" && isCoach) {
+    if (isCoach && !isModerator) {
       return [
         { id: "coach" as ActiveView, label: "Painel do Coach", icon: ShieldCheck },
         { id: "home" as ActiveView, label: "Área do Aluno", icon: Home },
@@ -106,7 +106,7 @@ export const Navigation: React.FC = () => {
         { id: "profile" as ActiveView, label: "Perfil", icon: User },
       ];
     }
-    if (persona === "moderator" && isModerator) {
+    if (isModerator) {
       return [
         { id: "moderator" as ActiveView, label: "Moderação", icon: ShieldCheck },
         { id: "coach" as ActiveView, label: "Painel do Coach", icon: ShieldCheck },

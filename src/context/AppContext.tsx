@@ -911,11 +911,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   const [registeredModerators, setRegisteredModerators] = useState<string[]>([
     "suporte@vyratraining.com",
     "cubocao@gmail.com",
+    "profmanoeldesouzaef@gmail.com",
     "moderador@vyra.app",
     "admin@vyra.club",
   ]);
   const [registeredCoaches, setRegisteredCoaches] = useState<string[]>([
     "cubocao@gmail.com",
+    "profmanoeldesouzaef@gmail.com",
     "mari@vyra.club",
     "coach.mari@vyra.club",
     "treinador@vyra.club",
@@ -1138,61 +1140,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       let profileRecord: any = null;
       try {
         if (usuario.id) {
-          const { data: fetchedProfile, error } = await supabase
+          const { data: fetchedProfile } = await supabase
             .from("profiles")
             .select(
-              "role, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank, consecutive_months, is_veteran, monthly_fee_paid, patente_level, onboarding_completed, workout_released, diet_released, plan_active, plan_type"
+              "role, cargo, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank, consecutive_months, is_veteran, monthly_fee_paid, patente_level, onboarding_completed, workout_released, diet_released, plan_active, plan_type"
             )
             .eq("id", usuario.id)
             .maybeSingle();
 
           profileRecord = fetchedProfile;
+        }
 
-          // Sincronização do Nome e Apelido Reais com o banco de dados / metadados
-          const realName =
-            profileRecord?.full_name ||
-            profileRecord?.name ||
-            usuario.user_metadata?.full_name ||
-            usuario.user_metadata?.name ||
-            usuario.raw_user_meta_data?.full_name ||
-            usuario.raw_user_meta_data?.name ||
-            usuario.email?.split("@")[0] ||
-            "Aluno";
+        if (!profileRecord && usuario.email) {
+          const { data: byEmail } = await supabase
+            .from("profiles")
+            .select(
+              "role, cargo, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank, consecutive_months, is_veteran, monthly_fee_paid, patente_level, onboarding_completed, workout_released, diet_released, plan_active, plan_type"
+            )
+            .ilike("email", usuario.email.trim())
+            .maybeSingle();
+          if (byEmail) {
+            profileRecord = byEmail;
+          }
+        }
 
-          const realNickname =
-            profileRecord?.nickname ||
-            usuario.user_metadata?.nickname ||
-            usuario.user_metadata?.display_name ||
-            usuario.raw_user_meta_data?.nickname ||
-            usuario.raw_user_meta_data?.display_name ||
-            realName.split(" ")[0] ||
-            realName;
+        // Normalização do Cargo:
+        const userRole = (profileRecord?.role || profileRecord?.cargo || "").toLowerCase();
+        const isCoach = userRole === "coach" || profileRecord?.is_coach === true;
+        const isModerator = userRole === "moderator" || userRole === "moderador";
 
-          setCurrentUserNameState(realName);
-          setCurrentUserNicknameState(realNickname);
-          localStorage.setItem("vyra_user_name", realName);
-          localStorage.setItem("vyra_user_nickname", realNickname);
+        console.log("[AUTH PROFILE]:", { email: usuario.email, profile: profileRecord, userRole, isCoach, isModerator });
 
-          if (!error && profileRecord) {
-            const roleClean = String(profileRecord.role || "").toLowerCase().trim();
-            if (roleClean === "admin") {
-              detectedRole = "admin";
-              detectedPersona = "moderator";
-            } else if (roleClean === "moderator" || roleClean === "moderador") {
-              detectedRole = "moderator";
-              detectedPersona = "moderator";
-            } else if (roleClean === "coach" || roleClean === "treinador" || profileRecord.is_coach === true) {
-              detectedRole = "coach";
-              detectedPersona = "coach";
-            } else {
-              if (
-                !registeredCoaches.some((c) => c.toLowerCase() === userEmail) &&
-                !registeredModerators.some((m) => m.toLowerCase() === userEmail)
-              ) {
-                detectedRole = "aluno";
-                detectedPersona = "student";
-              }
-            }
+        // Sincronização do Nome e Apelido Reais com o banco de dados / metadados
+        const realName =
+          profileRecord?.full_name ||
+          profileRecord?.name ||
+          usuario.user_metadata?.full_name ||
+          usuario.user_metadata?.name ||
+          usuario.raw_user_meta_data?.full_name ||
+          usuario.raw_user_meta_data?.name ||
+          usuario.email?.split("@")[0] ||
+          "Aluno";
+
+        const realNickname =
+          profileRecord?.nickname ||
+          usuario.user_metadata?.nickname ||
+          usuario.user_metadata?.display_name ||
+          usuario.raw_user_meta_data?.nickname ||
+          usuario.raw_user_meta_data?.display_name ||
+          realName.split(" ")[0] ||
+          realName;
+
+        setCurrentUserNameState(realName);
+        setCurrentUserNicknameState(realNickname);
+        localStorage.setItem("vyra_user_name", realName);
+        localStorage.setItem("vyra_user_nickname", realNickname);
+
+        if (profileRecord) {
+          if (userRole === "admin") {
+            detectedRole = "admin";
+            detectedPersona = "moderator";
+          } else if (isCoach) {
+            detectedRole = "coach";
+            detectedPersona = "coach";
+          } else if (isModerator) {
+            detectedRole = "moderator";
+            detectedPersona = "moderator";
+          } else {
+            detectedRole = "aluno";
+            detectedPersona = "student";
+          }
 
             // Gamificação baseada ESTRITAMENTE nos dados do Supabase
             // Coroa: Apenas se is_champion === true ou se tiver 'campeao' em titles
@@ -1270,7 +1287,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
             setDietReleasedState(!isStudent);
             localStorage.setItem("vyra_diet_released", isStudent ? "false" : "true");
           }
-        }
       } catch (e) {
         console.warn("Aviso ao ler perfil do Supabase:", e);
       }
@@ -1279,6 +1295,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem("vyra_user_role", detectedRole);
       setPersonaState(detectedPersona);
       localStorage.setItem("vyra_persona", detectedPersona);
+
+      // Roteamento de Telas imediato conforme o papel do usuário
+      if (detectedRole === "coach") {
+        setActiveViewState((current) => (current === "home" || !current ? "coach" : current));
+      } else if (detectedRole === "moderator" || detectedRole === "admin") {
+        setActiveViewState((current) => (current === "home" || !current ? "moderator" : current));
+      } else if (detectedRole === "aluno") {
+        setActiveViewState((current) => (current === "coach" || current === "moderator" ? "home" : current));
+      }
 
       // 3. Sincronização direta da assinatura ativa com o Supabase (consulta se o usuário possui plan_active === true)
       try {
@@ -1396,7 +1421,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     let isMounted = true;
 
     // Helper: Aplica imediatamente o usuário autenticado sem travar a interface
-    const handleAuthenticatedUser = (sessionUser: any) => {
+    const handleAuthenticatedUser = async (sessionUser: any) => {
       if (!sessionUser) return;
       const userName =
         sessionUser.user_metadata?.full_name ||
@@ -1429,111 +1454,111 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         updated_at: new Date().toISOString(),
       };
 
-      // 1. Liberação IMEDIATA da UI (não aguarda o banco)
+      // 1. Consulta Direta de Papel no Banco (profiles):
+      let profile: any = null;
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("role, cargo, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank")
+          .eq("id", sessionUser.id)
+          .single();
+        if (!error && data) {
+          profile = data;
+        }
+      } catch (e) {
+        console.warn("Aviso ao consultar profiles:", e);
+      }
+
+      if (!profile && sessionUser.email) {
+        const { data: profileByEmail } = await supabase
+          .from("profiles")
+          .select("role, cargo, is_coach, full_name, name, nickname, avatar_url, is_champion, titles, points, rank")
+          .ilike("email", sessionUser.email.trim())
+          .maybeSingle();
+        if (profileByEmail) {
+          profile = profileByEmail;
+        }
+      }
+
+      // Normalização do Cargo:
+      const userRole = (profile?.role || profile?.cargo || "").toLowerCase();
+      const isCoach = userRole === "coach" || profile?.is_coach === true;
+      const isModerator = userRole === "moderator" || userRole === "moderador";
+
+      console.log("[AUTH PROFILE]:", { email: sessionUser.email, profile, userRole, isCoach, isModerator });
+
+      let detectedRole: Persona = "student";
+      let detectedUserRole: UserRole = "aluno";
+      let initialView: ActiveView = "home";
+
+      if (userRole === "admin") {
+        detectedRole = "moderator";
+        detectedUserRole = "admin";
+        initialView = "moderator";
+      } else if (isCoach) {
+        detectedRole = "coach";
+        detectedUserRole = "coach";
+        initialView = "coach";
+      } else if (isModerator) {
+        detectedRole = "moderator";
+        detectedUserRole = "moderator";
+        initialView = "moderator";
+      } else {
+        detectedRole = "student";
+        detectedUserRole = "aluno";
+        initialView = "home";
+      }
+
       setUser(sessionUser);
       setLoggedInState(true);
       localStorage.setItem("vyra_logged_in", "true");
       if (sessionUser.email) {
         setCurrentUserEmailState(sessionUser.email.trim().toLowerCase());
       }
-      setCurrentUserNameState(userName);
-      setCurrentUserNicknameState(userNick);
-      setUserProfile(provisionalStudentProfile);
-      setPersonaState("student");
-      localStorage.setItem("vyra_persona", "student");
+
+      const realName = profile?.full_name || profile?.name || userName;
+      const realNickname = profile?.nickname || userNick;
+      setCurrentUserNameState(realName);
+      setCurrentUserNicknameState(realNickname);
+
+      setUserProfile({
+        ...provisionalStudentProfile,
+        ...(profile || {}),
+        role: userRole || "aluno",
+        cargo: profile?.cargo || userRole || "aluno",
+        is_coach: isCoach,
+      });
+
+      setUserRoleState(detectedUserRole);
+      localStorage.setItem("vyra_user_role", detectedUserRole);
+      setPersonaState(detectedRole);
+      localStorage.setItem("vyra_persona", detectedRole);
+      setActiveViewState(initialView);
       setOnboardingCompletedState(true);
       localStorage.setItem("vyra_onboarding_completed", "true");
       setWorkoutReleasedState(true);
       setDietReleasedState(true);
       setAuthLoading(false);
 
-      // 2. Consulta em segundo plano à tabela profiles com fallback caso falhe ou demore
+      if (typeof profile?.points === "number") {
+        setUserPointsState(profile.points);
+        localStorage.setItem("vyra_user_points", String(profile.points));
+      }
+      if (profile?.rank) {
+        setUserRankState(profile.rank);
+        localStorage.setItem("vyra_user_rank", profile.rank);
+      }
+      if (profile?.is_champion !== undefined) {
+        setIsChampionState(Boolean(profile.is_champion));
+        localStorage.setItem("vyra_is_champion", String(Boolean(profile.is_champion)));
+      }
+
+      // 2. Sincronização em segundo plano dos detalhes completos de assinatura e gamificação
       const fetchProfileInBackground = async () => {
         try {
-          const fetchPromise = supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", sessionUser.id)
-            .maybeSingle();
-
-          const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) => {
-            setTimeout(() => resolve({ data: null, error: new Error("Profile query timeout") }), 2500);
-          });
-
-          const { data: profile, error } = await Promise.race([fetchPromise, timeoutPromise]);
-
-          if (error) {
-            console.warn("[PROFILES] Consulta falhou ou demorou. Mantendo perfil aluno provisório:", error.message || error);
-          }
-
-          if (profile) {
-            const rawRole = String(profile.role || profile.cargo || "").toLowerCase().trim();
-            let detectedRole: Persona = "student";
-            let detectedUserRole: UserRole = "aluno";
-
-            if (rawRole === "admin") {
-              detectedRole = "moderator";
-              detectedUserRole = "admin";
-            } else if (rawRole === "moderator" || rawRole === "moderador") {
-              detectedRole = "moderator";
-              detectedUserRole = "moderator";
-            } else if (rawRole === "coach" || rawRole === "treinador" || profile.is_coach === true) {
-              detectedRole = "coach";
-              detectedUserRole = "coach";
-            } else {
-              detectedRole = "student";
-              detectedUserRole = "aluno";
-            }
-
-            setUserProfile({
-              ...provisionalStudentProfile,
-              ...profile,
-              role: profile.role || "aluno",
-            });
-            setUserRoleState(detectedUserRole);
-            localStorage.setItem("vyra_user_role", detectedUserRole);
-            setPersonaState(detectedRole);
-            localStorage.setItem("vyra_persona", detectedRole);
-
-            if (profile.full_name || profile.name) {
-              const name = profile.full_name || profile.name;
-              setCurrentUserNameState(name);
-              localStorage.setItem("vyra_user_name", name);
-            }
-            if (profile.nickname) {
-              setCurrentUserNicknameState(profile.nickname);
-              localStorage.setItem("vyra_user_nickname", profile.nickname);
-            }
-            if (typeof profile.points === "number") {
-              setUserPointsState(profile.points);
-              localStorage.setItem("vyra_user_points", String(profile.points));
-            }
-            if (profile.rank) {
-              setUserRankState(profile.rank);
-              localStorage.setItem("vyra_user_rank", profile.rank);
-            }
-            if (profile.is_champion !== undefined) {
-              setIsChampionState(Boolean(profile.is_champion));
-              localStorage.setItem("vyra_is_champion", String(Boolean(profile.is_champion)));
-            }
-          } else if (!error) {
-            // Perfil não existe no banco: cadastra como aluno provisório
-            try {
-              await supabase.from("profiles").upsert({
-                id: sessionUser.id,
-                role: "aluno",
-                full_name: userName,
-                nickname: userNick,
-                updated_at: new Date().toISOString(),
-              });
-            } catch (upsertErr: any) {
-              console.warn("[PROFILES UPSERT WARN]:", upsertErr);
-            }
-          }
-
           await definirPerfil(sessionUser);
         } catch (err) {
-          console.warn("[PROFILES BACKGROUND ERROR]: Mantendo perfil aluno em memória:", err);
+          console.warn("[PROFILES BACKGROUND ERROR]:", err);
         }
       };
 

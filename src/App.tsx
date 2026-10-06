@@ -36,6 +36,7 @@ export const MainDashboard: React.FC<{ user?: any }> = ({ user }) => {
     isCoach,
     isModerator,
     isAdmin,
+    userRole,
     milestoneCelebration,
     dismissMilestoneCelebration,
     chatNameColor,
@@ -58,7 +59,17 @@ export const MainDashboard: React.FC<{ user?: any }> = ({ user }) => {
       <Navigation />
 
       <main className="min-h-[calc(100vh-140px)]">
-        {(activeView === "home" || !activeView) && <HomeView />}
+        {(activeView === "home" || !activeView) && (
+          userRole === "aluno" || persona === "student" ? (
+            <HomeView />
+          ) : isCoach ? (
+            <CoachDashboardView />
+          ) : isModerator ? (
+            <ModeratorView />
+          ) : (
+            <HomeView />
+          )
+        )}
         {activeView === "training" && (
           <TrainingView
             onOpenFormChecker={(exerciseName) =>
@@ -156,22 +167,88 @@ export function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Pega a sessão inicial
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
+    // 1. Pega a sessão inicial e consulta o papel diretamente no banco
+    async function loadSessionAndProfile() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          let profile: any = null;
+          try {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('role, cargo, is_coach')
+              .eq('id', session.user.id)
+              .single();
+            if (!error && data) {
+              profile = data;
+            }
+          } catch (e) {
+            console.warn("Aviso ao consultar profiles:", e);
+          }
+
+          if (!profile && session.user.email) {
+            const { data: profileByEmail } = await supabase
+              .from('profiles')
+              .select('role, cargo, is_coach')
+              .ilike('email', session.user.email.trim())
+              .maybeSingle();
+            if (profileByEmail) {
+              profile = profileByEmail;
+            }
+          }
+
+          const userRole = (profile?.role || profile?.cargo || '').toLowerCase();
+          const isCoach = userRole === 'coach' || profile?.is_coach === true;
+          const isModerator = userRole === 'moderator' || userRole === 'moderador';
+
+          console.log('[AUTH PROFILE]:', { email: session.user.email, profile, userRole, isCoach, isModerator });
+        }
         setSession(session);
-        setLoading(false);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.warn("Erro ao obter sessão:", err);
+      } finally {
         setLoading(false);
-      });
+      }
+    }
+
+    loadSessionAndProfile();
 
     // 2. Escuta mudanças de sessão em tempo real (incluindo login e logout)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+    } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+      if (currentSession?.user) {
+        let profile: any = null;
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('role, cargo, is_coach')
+            .eq('id', currentSession.user.id)
+            .single();
+          if (!error && data) {
+            profile = data;
+          }
+        } catch (e) {
+          console.warn("Aviso ao consultar profiles:", e);
+        }
+
+        if (!profile && currentSession.user.email) {
+          const { data: profileByEmail } = await supabase
+            .from('profiles')
+            .select('role, cargo, is_coach')
+            .ilike('email', currentSession.user.email.trim())
+            .maybeSingle();
+          if (profileByEmail) {
+            profile = profileByEmail;
+          }
+        }
+
+        const userRole = (profile?.role || profile?.cargo || '').toLowerCase();
+        const isCoach = userRole === 'coach' || profile?.is_coach === true;
+        const isModerator = userRole === 'moderator' || userRole === 'moderador';
+
+        console.log('[AUTH PROFILE]:', { email: currentSession.user.email, profile, userRole, isCoach, isModerator });
+      }
       setSession(currentSession);
       setLoading(false);
     });
